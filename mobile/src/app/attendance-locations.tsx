@@ -10,8 +10,15 @@ import { Button, Card, InlineError, StateView } from '@/components/ui';
 import { ChoiceField, FormField } from '@/components/form-fields';
 import { ConfirmEdit } from '@/components/editor-sheet';
 import { KeyboardFormScrollView } from '@/components/keyboard-form-scroll-view';
+import { canConfigureAttendance } from '../../../shared/access-permissions';
 
 export default function Route() {
+  const { api, session } = useSession();
+  if (!api || !session || !canConfigureAttendance(session.user)) return <StateView title="Chỉ HCNS được vào cài đặt chấm công" />;
+  return <AttendanceLocations key={`${api.origin}:${session.user.id}:${session.user.storeId}:${session.user.allStores}`} />;
+}
+
+function AttendanceLocations() {
   const { api, session } = useSession(), theme = useTheme(), running = useRef(false);
   const [store, setStore] = useState(''), [latitude, setLatitude] = useState(''), [longitude, setLongitude] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState(''), [confirm, setConfirm] = useState(false), [uncertain, setUncertain] = useState(false);
   const query = useQuery({ queryKey: ['attendance-locations', session?.user.id, session?.user.storeId, session?.user.allStores], queryFn: ({ signal }) => api!.attendanceLocations(signal), enabled: !!api && !!session, retry: false });

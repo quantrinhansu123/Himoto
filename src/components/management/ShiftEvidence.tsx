@@ -21,19 +21,23 @@ export function ShiftEvidence({slots,media,pending,readonly,disabled,onFiles,onD
         <div className="shift-media-gallery">{saved.map(file=><div key={file.id}>{file.mime_type.startsWith('video/')?<video controls preload="metadata" src={file.url} aria-label={file.filename}/>:<a href={file.url} target="_blank" rel="noreferrer"><img src={file.url} alt={file.filename||label} loading="lazy"/></a>}<small>{file.filename||label}</small>{!readonly&&onDelete&&!file.id.startsWith('legacy:')&&<button type="button" className="mg-button" disabled={disabled} onClick={()=>onDelete(file)}>Xóa minh chứng</button>}</div>)}
           {chosen.map(([id,item])=><div key={id}>{item.file.type.startsWith('video/')?<video controls preload="metadata" src={previews[id]} aria-label={item.file.name}/>:<a href={previews[id]} target="_blank" rel="noreferrer"><img src={previews[id]} alt={item.file.name||label}/></a>}<small>{item.file.name} · Chưa lưu</small>{!readonly&&<button type="button" className="mg-button" disabled={disabled} onClick={()=>{const next={...pending};delete next[id];onFiles(next);}}>Bỏ tệp</button>}</div>)}
         </div>
-        {!readonly&&<input type="file" multiple accept={`image/jpeg,image/png,image/webp,${VIDEO_FILE_ACCEPT}`} aria-label={label} disabled={disabled} onChange={async event=>{
-          const input=event.currentTarget,sources=Array.from(input.files||[]);input.value='';
-          if(readBusy.current||!sources.length)return;
-          readBusy.current=true;setReading(true);
-          let files:File[];
-          try{files=await Promise.all(sources.map(normalizeVideoFile));}
-          catch{setError('Không đọc được tệp từ ứng dụng. Lưu video vào Ảnh/Tệp rồi chọn lại, hoặc mở bằng Safari/Chrome.');return;}
-          finally{readBusy.current=false;setReading(false);}
-          const currentImages=media.filter(f=>f.mime_type.startsWith('image/')).length+Object.values(pending).filter(f=>f.file.type.startsWith('image/')).length;
-          const currentVideos=media.filter(f=>f.mime_type.startsWith('video/')).length+Object.values(pending).filter(f=>f.file.type.startsWith('video/')).length;
-          if(currentImages+files.filter(f=>f.type.startsWith('image/')).length>60||currentVideos+files.filter(f=>f.type.startsWith('video/')).length>3){setError('Mỗi phần tối đa 60 ảnh và 3 video.');return;}
-          if(files.some(f=>!f.size||!f.type.startsWith('video/')&&!['image/jpeg','image/png','image/webp'].includes(f.type)||f.size>(f.type.startsWith('video/')?45:30)*1024*1024)){setError('Chọn ảnh JPEG/PNG/WebP tối đa 30 MB hoặc video MP4/MOV/WebM tối đa 45 MB.');return;}
-          setError('');onFiles({...pending,...Object.fromEntries(files.map(file=>[crypto.randomUUID(),{category:slot,file}]))});
-        }}/>}</div>;
+        {!readonly&&<><label className="mg-field"><span>Chọn nhiều ảnh hoặc video</span><input type="file" multiple accept={`image/jpeg,image/png,image/webp,${VIDEO_FILE_ACCEPT}`} aria-label={label} disabled={disabled} onChange={event=>void addFiles(event.currentTarget, slot)}/></label>
+          {(slot==='vehicles'||slot==='batteries')&&<label className="mg-field"><span>Chụp thêm ảnh</span><input type="file" accept="image/*" capture="environment" aria-label={`Chụp thêm · ${label}`} disabled={disabled} onChange={event=>void addFiles(event.currentTarget, slot)}/></label>}
+        </>}</div>;
     })}</div></div>;
+
+  async function addFiles(input:HTMLInputElement, slot:string) {
+    const sources=Array.from(input.files||[]);input.value='';
+    if(readBusy.current||!sources.length)return;
+    readBusy.current=true;setReading(true);
+    let files:File[];
+    try{files=await Promise.all(sources.map(normalizeVideoFile));}
+    catch{setError('Không đọc được tệp từ ứng dụng. Lưu video vào Ảnh/Tệp rồi chọn lại, hoặc mở bằng Safari/Chrome.');return;}
+    finally{readBusy.current=false;setReading(false);}
+    const currentImages=media.filter(f=>f.mime_type.startsWith('image/')).length+Object.values(pending).filter(f=>f.file.type.startsWith('image/')).length;
+    const currentVideos=media.filter(f=>f.mime_type.startsWith('video/')).length+Object.values(pending).filter(f=>f.file.type.startsWith('video/')).length;
+    if(currentImages+files.filter(f=>f.type.startsWith('image/')).length>60||currentVideos+files.filter(f=>f.type.startsWith('video/')).length>3){setError('Mỗi phần tối đa 60 ảnh và 3 video.');return;}
+    if(files.some(f=>!f.size||!f.type.startsWith('video/')&&!['image/jpeg','image/png','image/webp'].includes(f.type)||f.size>(f.type.startsWith('video/')?45:30)*1024*1024)){setError('Chọn ảnh JPEG/PNG/WebP tối đa 30 MB hoặc video MP4/MOV/WebM tối đa 45 MB.');return;}
+    setError('');onFiles({...pending,...Object.fromEntries(files.map(file=>[crypto.randomUUID(),{category:slot,file}]))});
+  }
 }

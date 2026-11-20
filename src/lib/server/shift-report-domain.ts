@@ -2,13 +2,29 @@ import 'server-only';
 import type { PoolClient } from 'pg';
 import type { DataAccess } from './access-context';
 import { hasPermission } from '@/lib/management/permissions';
-import { parseShiftInput,shiftReportTypeLabel,type ShiftReport } from '@/lib/management/shift-reports';
+import { parseShiftInput,shiftReportTypeLabel,type ShiftInput,type ShiftReport } from '@/lib/management/shift-reports';
 import { ShiftRequestError,shiftRequestHash,readShiftReceipt,writeShiftReceipt } from './shift-report-requests';
 import { readShiftSnapshot } from './shift-audits';
 import { readOwnershipReport } from './ownership-report';
 import { ownershipReportText,validateOwnershipSubmission } from '@/lib/management/ownership-report';
 import { queueReportTelegram,shiftTelegramAttachments } from './report-telegram';
 type Database=Pick<PoolClient,'query'>;
+export function shiftInventoryTelegramText(input:ShiftInput, storeName:string) {
+  const date=input.date.split('-').reverse().join('/');
+  const money=(amount:number)=>`${amount.toLocaleString('vi-VN')} đ`;
+  return [
+    `Báo cáo ${shiftReportTypeLabel(input.report_type).toLocaleLowerCase('vi')} PGD ${storeName} · ${date}`,
+    `Nhân sự trực ca: ${input.staff}`,
+    `Xe lưu kho thực tế: ${input.vehicles} xe`,
+    `Pin cửa hàng: ${input.batteries} pin · Pin đầy: ${input.charged}/${input.batteries}`,
+    `Xe điều chuyển: ${input.transfers}`,
+    'Tiền các tài khoản:',
+    `• Tiền mặt: ${money(input.cash)}`,
+    `• TK cá nhân: ${money(input.personal)}`,
+    `• TK công ty: ${money(input.company)}`,
+    ...(input.notes ? [`Ghi chú: ${input.notes}`] : []),
+  ].join('\n').slice(0,3900);
+}
 export async function listShiftReports(client:Database,store:string|null,date:string|null,id?:number,all=false,reportType:string|null=null):Promise<ShiftReport[]> {
   if(date&&(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!Number.isFinite(Date.parse(date))||new Date(date).toISOString().slice(0,10)!==date))throw new ShiftRequestError('Ngày báo cáo không hợp lệ.');
   if(store&&!/^[1-9]\d*$/.test(store))throw new ShiftRequestError('PGD không hợp lệ.');
@@ -36,7 +52,8 @@ export async function saveShiftReport(client:Database,actor:Omit<DataAccess,'ope
   if(!actor.scope_all&&input.store_id!==actor.store_id)throw new ShiftRequestError('PGD nằm ngoài phạm vi được phân công.',403);
   const hash=shiftRequestHash(JSON.stringify({actor:actor.id,id:raw.id??null,revision:raw.revision??null,input,status:raw.status}));
   const receipt=await readShiftReceipt(client,requestId,actor.id,hash);if(receipt)return receipt;
-    if (!(await client.query('SELECT id FROM himoto.stores WHERE id=$1', [input.store_id])).rowCount) throw new ShiftRequestError('PGD không tồn tại.');
+    const store = await client.query('SELECT id,store_name FROM himoto.stores WHERE id=$1', [input.store_id]);
+    if (!store.rowCount) throw new ShiftRequestError('PGD không tồn tại.');
     if (raw.id != null) {
       const existing = (await client.query('SELECT * FROM himoto.management_shift_reports WHERE id=$1 FOR UPDATE', [raw.id])).rows[0];
       if (!existing || existing.status !== 'draft' || existing.revision !== raw.revision || Number(existing.store_id) !== input.store_id || existing.payload.date !== input.date) {
@@ -69,7 +86,7 @@ export async function saveShiftReport(client:Database,actor:Omit<DataAccess,'ope
         await client.query('UPDATE himoto.management_shift_reports SET submitted_at=now() WHERE id=$1',[saved.id]);
       }
       await client.query('RELEASE SAVEPOINT shift_snapshot');
-      const text=input.ownership_report?ownershipReportText(input.date,input.ownership_report):`BÁO CÁO ${shiftReportTypeLabel(input.report_type).toUpperCase()} · PGD #${input.store_id}\nNgày: ${input.date}\nNhân sự: ${input.staff}\nXe tại cơ sở: ${input.vehicles}\nPin: ${input.batteries}\nTiền mặt: ${input.cash.toLocaleString('vi-VN')} đ\nTK cá nhân: ${input.personal.toLocaleString('vi-VN')} đ\nTK công ty: ${input.company.toLocaleString('vi-VN')} đ\n${input.notes}`.slice(0,3900);
+      const text=input.ownership_report?ownershipReportText(input.date,input.ownership_report):shiftInventoryTelegramText(input,store.rows[0]?.store_name || `#${input.store_id}`);
       await queueReportTelegram(client,`shift:${saved.id}`,input.store_id,text,input.ownership_report?'ownership_new':'store',await shiftTelegramAttachments(client,saved.id,'pgd'));
     }
     await writeShiftReceipt(client, requestId, actor.id, input.store_id, hash, saved);

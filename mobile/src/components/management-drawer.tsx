@@ -81,6 +81,8 @@ export function ManagementDrawer({
     {
       title: "VẬN HÀNH & QUẦY",
       items: [
+        { id: "self-shift-registration", label: "Đăng ký ca của tôi", route: "/self-shift-registration", icon: CalendarDays },
+        { id: "shift-registrations", label: "Bảng đăng ký ca", route: "/shift-registrations", icon: CalendarDays },
         { id: "attendance", label: "Chấm công", route: "/attendance", icon: AlarmClock, permission: null },
         { id: "mid-shift-reports", label: "Báo cáo giữa ca", route: "/mid-shift-reports", icon: ReceiptText, permission: "contracts.read" },
         { id: "shift-reports", label: "Báo cáo Hết ca", route: "/shift-reports", icon: ReceiptText, permission: "contracts.read" },
@@ -119,7 +121,6 @@ export function ManagementDrawer({
       items: [
         { id: "attendance-history", label: "Lịch sử chấm công", route: "/attendance-history", icon: History },
         { id: "staff", label: "Nhân sự", route: "/directory/staff", icon: UsersRound, permission: "hr.read" },
-        { id: "shift-registrations", label: "Đăng ký ca", route: "/shift-registrations", icon: CalendarDays, permission: "hr.read" },
         { id: "duty-roster", label: "Lịch trực cơ sở", route: "/duty-roster", icon: CalendarDays, permission: "hr.read" },
         { id: "stores", label: "Cơ sở", route: "/directory/stores", icon: Building2, permission: "contracts.read" },
       ],

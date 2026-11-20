@@ -4,7 +4,7 @@ import { usePreventRemove } from 'expo-router';
 import { FlatList, RefreshControl, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { REGISTRATION_SHIFTS, registrationDates, registrationMonthRange, registrationCredit, type RegistrationInput, type RegisteredStaff, type ShiftRegistration } from '../../../shared/mobile-shift-registration';
-import { dutyToday } from '../../../shared/mobile-duty-roster';
+import { dutyToday, dutyWeekStart, dutyAddDays } from '../../../shared/mobile-duty-roster';
 import { shiftCreditLabel } from '../../../shared/attendance-shifts';
 import { useSession } from '@/providers/session';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
@@ -15,6 +15,8 @@ import { ConfirmEdit } from '@/components/editor-sheet';
 import { DateField } from '@/components/date-field';
 import { FilteredListExport } from '@/components/filtered-list-export';
 
+import { canManageShiftRegistration } from '../../../shared/access-permissions';
+
 function Board() {
   const { api, session } = useSession(), theme = useTheme(), cache = useQueryClient(), running = useRef(false);
   const [month, setMonth] = useState(() => dutyToday().slice(0, 7)), [store, setStore] = useState('all'), [search, setSearch] = useState(''), [day, setDay] = useState(dutyToday);
@@ -23,7 +25,21 @@ function Board() {
   const query = useQuery({ queryKey: ['shift-registrations', session!.user.id, range.from,range.to], queryFn: ({ signal }) => api!.registrationRange(range.from,range.to, signal), retry: false });
   usePreventRemove(busy, () => {});
   const dates = useMemo(() => registrationDates(range.from,range.to), [range.from, range.to]), data = query.data, selectedDay = dates.includes(day) ? day : dates[0];
-  const writable = session!.user.permissions.includes('hr.write'), locked = busy || query.isFetching || query.isError || uncertain;
+  const writable = canManageShiftRegistration(session!.user), locked = busy || query.isFetching || query.isError || uncertain;
+  const selectedWeek=dutyWeekStart(selectedDay);
+  const weekLocked=data?.locked_weeks?.includes(selectedWeek) ?? false;
+  async function toggleWeek() {
+    if (!writable || !data || locked || running.current) return;
+    running.current=true; setBusy(true); setError('');
+    try {
+      await api!.setRegistrationWeekLock(selectedWeek,!weekLocked);
+      await query.refetch();
+      void cache.invalidateQueries({queryKey:['self-shift-registration']});
+    } catch (cause) {
+      setError(cause instanceof Error?cause.message:'Không đổi được trạng thái khóa tuần.');
+      setUncertain(true);
+    } finally { running.current=false; setBusy(false); }
+  }
   const debouncedSearch = useDebouncedValue(search, 250);
   const staff = useMemo(() => {
     const normalize = (value: string) => value.toLocaleLowerCase('vi');
@@ -65,7 +81,9 @@ function Board() {
       <ChoiceField label="Ngày đăng ký" value={selectedDay} choices={dates.map(value => ({ value, label: value.split('-').reverse().join('/') }))} disabled={busy} onChange={setDay} />
       <ChoiceField label="Cơ sở" value={store} searchable choices={[{ value: 'all', label: 'Tất cả cơ sở' }, ...(data?.stores || []).map(s => ({ value: String(s.id), label: s.name })), { value: 'none', label: 'Chưa có cơ sở' }]} onChange={setStore} />
       <FormField label="Tìm nhân viên" placeholder="Họ tên, chức vụ…" value={search} onChangeText={setSearch} maxLength={120} />
-      <FilteredListExport kind="shift-registrations" filters={new URLSearchParams({from:range.from,to:range.to,store,search}).toString()} disabled={locked||!staff.length} />
+      {data && <Text style={{color:theme.muted}}>Tuần {selectedWeek.split('-').reverse().join('/')} – {dutyAddDays(selectedWeek,6).split('-').reverse().join('/')}{weekLocked?' · Đã khóa':''}</Text>}
+      {writable && <Button secondary label={weekLocked?'Mở khóa tuần':'Khóa tuần'} disabled={!data||locked} onPress={()=>void toggleWeek()} />}
+      {writable && <FilteredListExport kind="shift-registrations" filters={new URLSearchParams({from:range.from,to:range.to,store,search}).toString()} disabled={locked||!staff.length} />}
       <Button secondary label="Làm mới bảng" loading={query.isFetching} disabled={busy} onPress={() => void reload()} />
       {!!error && <InlineError message={error} />}
     </View>}
@@ -97,4 +115,4 @@ function Board() {
     </Card>}
   />{pending && <ConfirmEdit title="Lưu đăng ký ca?" message={`${pending.staff.name} · ${pending.input.work_date.split('-').reverse().join('/')}\n${pending.input.shift_code || 'Chưa đăng ký'}`} confirmLabel="Lưu đăng ký ca" onCancel={() => setPending(null)} onConfirm={() => void save()} />}</SafeAreaView>;
 }
-export default function Route() { const { api, session } = useSession(); return !api || !session || !session.user.permissions.includes('hr.read') ? <StateView title="Không có quyền xem đăng ký ca" /> : <Board key={`${api.origin}:${session.token}:${session.user.permissions.join(',')}`} />; }
+export default function Route() { const { api, session } = useSession(); return !api || !session ? <StateView title="Không có quyền xem đăng ký ca" /> : <Board key={`${api.origin}:${session.token}:${session.user.permissions.join(',')}`} />; }

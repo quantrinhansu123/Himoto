@@ -31,15 +31,15 @@ async function main(){
  selfDomain.readSelfRegistrationWeek=async(_db,user)=>{const scope=dataAccess.getStore();assert.equal(user.id,actor.id);assert.equal(scope.store_id,23);assert.equal(scope.scope_all,false);return self;};
  const api=load(path.join(root,'lib/server/mobile-shift-registration'));
  const req=(query='',method='GET',body)=>new NextRequest('https://fixture.invalid/api?'+query,{method,...body?{body:JSON.stringify(body),headers:{'Content-Type':'application/json'}}:{}});
- assert.deepEqual(await api.mobileShiftRegistration(actor,req('month='+month.month),false),month);
+ assert.deepEqual(await api.mobileShiftRegistration({...actor,permissions:[]},req('month='+month.month),false),month);
  assert.deepEqual(await api.mobileShiftRegistration({...actor,permissions:[]},req('week='+week),true),self);
  for(const query of ['month=2026-11&month=2026-12','staff_id=999','month=2026-11&from=2026-11-01&to=2026-11-03','from=2026-11-01'])await assert.rejects(()=>api.mobileShiftRegistration(actor,req(query),false),e=>e.status===400);
  let before=connects;
- await assert.rejects(()=>api.mobileShiftRegistration({...actor,permissions:[]},req(),false),e=>e.status===403);
+ await assert.rejects(()=>api.mobileShiftRegistration(actor,req('','PATCH',{week,locked:true}),false),e=>e.status===403);
  await assert.rejects(()=>api.mobileShiftRegistration({...actor,permissions:['hr.read']},req('','PUT',{staff_id:10}),false),e=>e.status===403);
  assert.equal(connects,before);
  await assert.rejects(()=>api.mobileShiftRegistration(actor,req('','PUT',{week,staff_id:999,days:[]}),true),e=>e.status===400);
- checks.push('New registration API reuses web domains, widens only the HR roster transaction, preserves self actor/store, rejects injected filters and foreign self IDs, and denies missing HR grants before opening a connection');
+ checks.push('New registration API reuses web domains, widens only the HR roster transaction, preserves self actor/store, rejects injected filters and foreign self IDs, and allows global read and denies other roles when editing or locking');
  assert(registrationDto.isRegistrationMonth(month));assert(registrationDto.isSelfRegistrationWeek(self));
  assert(!registrationDto.isRegistrationMonth({...month,month:'2026-13'}));assert(!registrationDto.isShiftRegistration({...registrations[0],shift_code:'UNKNOWN'}));
  assert.equal(registrationDto.REGISTRATION_SHIFTS.length,8);
@@ -75,13 +75,20 @@ async function main(){
    if(sql.includes('INSERT')){locationWrites++;return{rows:[],rowCount:args[2]==='23'?1:0};}
    return{rows:[{id:23,store_name:'QA A',latitude:0,longitude:0}],rowCount:1};
  }});
- const stored=await(await locations.handleAttendanceLocations(req(),actor)).json();
- assert.equal(stored.data[0].latitude,0);
- assert.equal((await locations.handleAttendanceLocations(req('','PUT',{storeId:'23',latitude:91,longitude:0}),actor)).status,400);
+ const hrOperator={...actor,access_role:'hr'};
+ for(const access_role of ['branch_staff','branch_manager','ownership_manager','admin']){
+   const denied={...actor,access_role};
+   assert.equal((await locations.handleAttendanceLocations(req(),denied)).status,403);
+   assert.equal((await locations.handleAttendanceLocations(req('','PUT',{storeId:'23',latitude:0,longitude:0}),denied)).status,403);
+ }
  assert.equal(locationWrites,0);
- assert.equal((await locations.handleAttendanceLocations(req('','PUT',{storeId:'24',latitude:1,longitude:1}),actor)).status,404);
- assert.equal((await locations.handleAttendanceLocations(req('','PUT',{storeId:'23',latitude:0,longitude:0}),actor)).status,200);
- checks.push('Shared attendance GPS handler retains assigned-store scope, accepts zero coordinates and rejects out-of-range/foreign stores; seven work-shift rows export through the real web XLSX builder');
+ const stored=await(await locations.handleAttendanceLocations(req(),hrOperator)).json();
+ assert.equal(stored.data[0].latitude,0);
+ assert.equal((await locations.handleAttendanceLocations(req('','PUT',{storeId:'23',latitude:91,longitude:0}),hrOperator)).status,400);
+ assert.equal(locationWrites,0);
+ assert.equal((await locations.handleAttendanceLocations(req('','PUT',{storeId:'24',latitude:1,longitude:1}),hrOperator)).status,404);
+ assert.equal((await locations.handleAttendanceLocations(req('','PUT',{storeId:'23',latitude:0,longitude:0}),hrOperator)).status,200);
+ checks.push('Only HR can read or change GPS settings within their assigned scope; invalid or foreign locations are rejected');
  const out=process.argv.indexOf('--output');
  if(out>=0){const directory=path.resolve(process.argv[out+1]);assert(directory.startsWith(path.resolve('.backups')+path.sep)&&!fs.existsSync(directory));fs.mkdirSync(directory,{recursive:true});fs.writeFileSync(path.join(directory,'fixture.json'),JSON.stringify({fixtureOnly:true,shifts,month,self,shiftFile:file,payload},null,2));}
  assert(!trace.some(sql=>/INSERT|UPDATE|DELETE/.test(sql)));

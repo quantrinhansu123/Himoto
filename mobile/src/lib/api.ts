@@ -316,6 +316,7 @@ export function createApi(
     registrationRange:(from:string,to:string,signal?:AbortSignal)=>request<RegistrationRange>(`/duty-roster/registrations?${new URLSearchParams({from,to})}`,(v):v is RegistrationRange=>isRegistrationRange(v)&&v.from===from&&v.to===to,{signal}),
     attendanceLocations:(signal?:AbortSignal)=>request<MobileAttendanceLocation[]>('/attendance/locations',isMobileAttendanceLocations,{signal}),
     saveAttendanceLocation:(input:{storeId:string;latitude:number;longitude:number})=>request<{success:true}>('/attendance/locations',(v):v is {success:true}=>!!v&&typeof v==='object'&&'success'in v&&v.success===true,{method:'PUT',body:JSON.stringify(input)}),
+    setRegistrationWeekLock:(week:string,locked:boolean)=>request('/duty-roster/registrations',(value):value is {week:string;locked:boolean}=>!!value&&typeof value==='object'&&'week' in value&&value.week===week&&'locked' in value&&value.locked===locked,{method:'PATCH',body:JSON.stringify({week,locked})}),
     saveRegistration:(input:RegistrationInput)=>request<ShiftRegistration>('/duty-roster/registrations',isShiftRegistration,{method:'PUT',body:JSON.stringify(input)}),
     selfRegistration:(week:string,signal?:AbortSignal)=>request<SelfRegistrationWeek>(`/attendance/shift-registration?${new URLSearchParams({week})}`,isSelfRegistrationWeek,{signal}),
     saveSelfRegistration:(input:SelfRegistrationInput)=>request<SelfRegistrationWeek>('/attendance/shift-registration',isSelfRegistrationWeek,{method:'PUT',body:JSON.stringify(input)}),

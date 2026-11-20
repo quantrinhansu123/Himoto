@@ -37,7 +37,7 @@ export function WeeklyShiftRegistrationDialog({ onClose, onSaved }: { onClose: (
     return () => controller.abort();
   }, [week, reload]);
   const changed = data?.dates.filter(date => date >= data.today && (draft[date] || '') !== (data.registrations.find(row => row.work_date === date)?.shift_code || '')) || [];
-  const unavailable = loading || saving || uncertain || !data;
+  const unavailable = loading || saving || uncertain || !data || data.locked;
   async function save() {
     if (lock.current || unavailable || !data || !changed.length) return;
     lock.current = true; setSaving(true); setError('');
@@ -59,6 +59,7 @@ export function WeeklyShiftRegistrationDialog({ onClose, onSaved }: { onClose: (
       </div>
       {loading && <p role="status">Đang tải đăng ký ca của bạn…</p>}
       {error && <p className="mg-field-error" role="alert">{error} <button type="button" className="mg-button" disabled={saving} onClick={() => setReload(value => value + 1)}>Tải lại để kiểm tra</button></p>}
+      {data?.locked && <p role="status">Tuần này đã khóa. Liên hệ HCNS để điều chỉnh ca.</p>}
       {data && <><div className={styles.days}>{data.dates.map(date => {
         const past = date < data.today;
         return <div key={date} className={`${styles.day} ${past ? styles.past : ''} ${date === data.today ? styles.today : ''}`}>

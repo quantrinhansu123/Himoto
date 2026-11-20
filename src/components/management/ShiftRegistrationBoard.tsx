@@ -2,7 +2,9 @@
 
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Plus, RotateCcw } from 'lucide-react';
-import { dutyRequest, vietnamDate } from '@/lib/management/duty-roster';
+import { addDays, dutyRequest, vietnamDate, weekStart } from '@/lib/management/duty-roster';
+import { canManageShiftRegistration } from '@/lib/management/permissions';
+import { WeeklyShiftRegistrationDialog } from './WeeklyShiftRegistrationDialog';
 import { registrationDates, registrationMonthRange, registrationExcel, REGISTRATION_SHIFTS, registrationCredit, type RegisteredStaff, type RegistrationRange, type ShiftRegistration } from '@/lib/management/shift-registration';
 import { shiftCreditLabel } from '@/lib/management/attendance-shifts';
 import { FilteredExcelButton } from './FilteredExcelButton';
@@ -18,7 +20,9 @@ function adjacentMonth(month: string, offset: number) {
 }
 
 export function ShiftRegistrationBoard({ focusDate, focusStaff }: { focusDate?: string; focusStaff?: string }) {
-  const { can, notify } = useManagement();
+  const { accessUser, notify } = useManagement();
+  const [selfOpen, setSelfOpen] = useState(false);
+  const [chosenWeek, setChosenWeek] = useState(() => weekStart(vietnamDate()));
   const [month, setMonth] = useState(() => (focusDate ?? vietnamDate()).slice(0, 7));
   const [range, setRange] = useState(() => focusDate ? { from: focusDate, to: focusDate } : registrationMonthRange(month));
   const [from, setFrom] = useState(range.from);
@@ -82,7 +86,20 @@ export function ShiftRegistrationBoard({ focusDate, focusStaff }: { focusDate?: 
   const total = (person: RegisteredStaff) => dates.reduce((sum, date) => sum + registrationCredit(cells.get(keyOf(person.id, date))?.shift_code), 0);
   const excel=data?registrationExcel({...data,staff:people}):{headers:[],rows:[]};
   const unavailable = loading || Boolean(error) || !data;
-  const writable = can('hr.write');
+  const writable = canManageShiftRegistration(accessUser);
+  const weeks = [...new Set(dates.map(weekStart))];
+  const week = weeks.includes(chosenWeek) ? chosenWeek : weeks[0];
+  const weekLocked = data?.locked_weeks?.includes(week) ?? false;
+  async function toggleWeek() {
+    if (lock.current || unavailable || !writable) return;
+    lock.current = true; setPending(week); setSaved('');
+    try {
+      await dutyRequest('/api/auth/duty-roster/registrations', 'PATCH', { week, locked: !weekLocked });
+      if (mounted.current) setReload(value => value + 1);
+    } catch (cause) {
+      if (mounted.current) setError(cause instanceof Error ? cause.message : 'Không đổi được trạng thái khóa tuần.');
+    } finally { lock.current = false; if (mounted.current) setPending(''); }
+  }
   async function register(person: RegisteredStaff, date: string, code: string) {
     if (lock.current || unavailable || !writable || !person.store_id) return;
     const key = keyOf(person.id, date), previous = cells.get(key);
@@ -100,8 +117,10 @@ export function ShiftRegistrationBoard({ focusDate, focusStaff }: { focusDate?: 
     } finally { lock.current = false; if (mounted.current) setPending(''); }
   }
   return <section className="mg-page mg-shift-registration-page" aria-label="Đăng ký ca làm việc"><div className="mg-page-content">
+    {selfOpen && <WeeklyShiftRegistrationDialog onClose={() => setSelfOpen(false)} onSaved={() => { refresh(); notify('Đã lưu đăng ký ca.'); }} />}
     <div className="mg-page-heading"><div><div className="mg-eyebrow">QUẢN LÝ NHÂN SỰ</div><h1>Đăng ký ca</h1><p>Bảng ca làm theo tháng, nhóm nhân viên theo cơ sở. Dùng chung dữ liệu nhân viên đăng ký trong tuần.</p></div><div className="mg-heading-actions">
-      <FilteredExcelButton filename={`himoto-dang-ky-ca-${range.from}-${range.to}`} disabled={unavailable || !people.length || Boolean(pending)} headers={excel.headers} getRows={()=>excel.rows} />
+      <button type="button" className="mg-button mg-button-primary" onClick={() => setSelfOpen(true)}>Đăng ký ca của tôi</button>
+      {writable && <FilteredExcelButton filename={`himoto-dang-ky-ca-${range.from}-${range.to}`} disabled={unavailable || !people.length || Boolean(pending)} headers={excel.headers} getRows={()=>excel.rows} />}
       <button type="button" className="mg-button" disabled={loading || Boolean(pending)} onClick={refresh}><RotateCcw size={16} />Làm mới</button>
     </div></div>
     <div className={styles.toolbar}>
@@ -121,6 +140,12 @@ export function ShiftRegistrationBoard({ focusDate, focusStaff }: { focusDate?: 
         <span>Chỉ thêm cột hiển thị, không tự điền ca. Tối đa 93 ngày.</span>
       </div>
       {filterError && <p className="mg-field-error" role="alert">{filterError}</p>}
+      {writable && <div className={styles.range}>
+        <label>Tuần đăng ký<select value={week} disabled={Boolean(pending)} onChange={event => setChosenWeek(event.target.value)}>
+          {weeks.map(start => <option key={start} value={start}>{start.split('-').reverse().join('/')} – {addDays(start, 6).split('-').reverse().join('/')}{data?.locked_weeks?.includes(start) ? ' · Đã khóa' : ''}</option>)}
+        </select></label>
+        <button type="button" className="mg-button" disabled={unavailable || Boolean(pending)} onClick={() => void toggleWeek()}>{weekLocked ? 'Mở khóa tuần' : 'Khóa tuần'}</button>
+      </div>}
     </div>
     <div className={styles.summary}><span><strong>{people.length}</strong> nhân viên</span><span><strong>{dates.length}</strong> ngày · {range.from.split('-').reverse().join('/')} – {range.to.split('-').reverse().join('/')}</span><label><input type="checkbox" checked={fitMonth} disabled={dates.length > 31} onChange={event => setFitMonth(event.target.checked)} /> Thu gọn xem trọn tháng (máy tính)</label><span>{writable ? 'Chọn mã ca để đăng ký · Ô trống = chưa đăng ký' : 'Bạn có quyền xem bảng, không có quyền sửa ca.'}</span></div>
     <p className={styles.status} role="status" aria-live="polite">{loading ? 'Đang tải bảng đăng ký ca…' : pending ? 'Đang lưu đăng ký…' : saved || 'Công đăng ký là dự kiến, không thay thế công chấm và công được duyệt.'}</p>

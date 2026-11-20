@@ -2,21 +2,20 @@ import 'server-only';
 import type { NextRequest } from 'next/server';
 import type { PoolClient } from 'pg';
 import type { SessionUser } from './management-session';
-import { hasPermission } from '@/lib/management/permissions';
-import { withMobileData } from './mobile-context';
+import { canManageShiftRegistration } from '@/lib/management/permissions';
 import { himotoPool, ownerDatabase } from './himoto-database';
+import { withMobileData } from './mobile-context';
 import { MobileError } from './mobile-session';
 import { mobileBody } from './mobile-writes';
 import { DutyError } from './duty-roster';
-import { readRegistrationMonth, readRegistrationRange, saveRegistration } from './shift-registration';
+import { readRegistrationMonth, readRegistrationRange, saveRegistration, setRegistrationWeekLock } from './shift-registration';
 import { readSelfRegistrationWeek, saveSelfRegistrationWeek } from './self-shift-registration';
 import { dutyToday, dutyWeekStart } from '../../../shared/mobile-duty-roster';
-import type { SelfRegistrationWeek, RegistrationMonth, RegistrationRange, ShiftRegistration } from '../../../shared/mobile-shift-registration';
 
-async function transaction<T>(user: SessionUser, self: boolean, write: boolean, run: (db: PoolClient) => Promise<T>) {
-  if (!self && (!hasPermission(user, 'hr.read') || write && !hasPermission(user, 'hr.write'))) throw new MobileError('Không có quyền đăng ký ca làm việc.', 403, 'FORBIDDEN');
+async function transaction<T>(user: SessionUser, self: boolean, write: boolean, run: (db: PoolClient) => Promise<T>, updateLock = false) {
+  if (!self && write && !canManageShiftRegistration(user)) throw new MobileError('Chỉ HCNS được chỉnh sửa hoặc khóa bảng đăng ký ca.', 403, 'FORBIDDEN');
   return withMobileData(self ? user : { ...user, store_id: null, scope_all: true }, self ? '' : 'duty_roster', async () => {
-    const db = await (self ? ownerDatabase : himotoPool).connect();
+    const db = await (self || updateLock ? ownerDatabase : himotoPool).connect();
     try {
       await db.query(write ? 'BEGIN' : 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
       await db.query("SET LOCAL statement_timeout='20s'");
@@ -30,11 +29,16 @@ async function transaction<T>(user: SessionUser, self: boolean, write: boolean, 
   });
 }
 export async function mobileShiftRegistration(user: SessionUser, request: NextRequest, self: boolean) {
+  if (!self && request.method === 'PATCH') {
+    if (request.nextUrl.search) throw new MobileError('Bộ lọc đăng ký ca không hợp lệ.');
+    const input = await mobileBody(request, 8192);
+    return transaction(user, false, true, db => setRegistrationWeekLock(db, user.id, input), true);
+  }
   const write = request.method === 'PUT', params = request.nextUrl.searchParams;
   const allowed = self ? ['week'] : ['month','from','to'];
   if ([...params.keys()].some(k => write || !allowed.includes(k) || params.getAll(k).length !== 1)||!self&&(params.has('month')&&(params.has('from')||params.has('to'))||params.has('from')!==params.has('to'))) throw new MobileError('Bộ lọc đăng ký ca không hợp lệ.');
   const body = write ? await mobileBody(request, 8192) : null;
-  return transaction<SelfRegistrationWeek | RegistrationMonth | RegistrationRange | ShiftRegistration>(user, self, write, db => self
+  return transaction(user, self, write, async db => self
     ? write ? saveSelfRegistrationWeek(db, user, body) : readSelfRegistrationWeek(db, user, params.get('week') || dutyWeekStart(dutyToday()))
     : write ? saveRegistration(db, user.id, body) : params.has('from')?readRegistrationRange(db,params.get('from')!,params.get('to')!):readRegistrationMonth(db, params.get('month') || dutyToday().slice(0, 7)));
 }

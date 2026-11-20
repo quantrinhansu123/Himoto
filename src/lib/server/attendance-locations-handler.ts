@@ -1,13 +1,14 @@
 import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
-import { isAdminAccount } from '@/lib/management/permissions';
+import { canConfigureAttendance } from '@/lib/management/permissions';
 import { ownerDatabase } from './himoto-database';
 import type { SessionUser } from './management-session';
 import { failureResponse } from './public-failure';
 
 const error = (message: string, status: number) => NextResponse.json({ status: 'error', message }, { status });
 export async function handleAttendanceLocations(request: NextRequest, user: SessionUser) {
-  const scope = [isAdminAccount(user) || user.scope_all === true, user.store_id ?? null];
+  if (!canConfigureAttendance(user)) return error('Chỉ HCNS được vào cài đặt chấm công.', 403);
+  const scope = [user.scope_all === true, user.store_id ?? null];
   try {
     if (request.method === 'GET') {
       const { rows } = await ownerDatabase.query(`SELECT s.id,s.store_name,l.latitude,l.longitude

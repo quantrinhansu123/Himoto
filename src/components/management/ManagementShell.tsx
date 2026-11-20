@@ -7,7 +7,7 @@ import { AlarmClock, ArrowLeft, BookOpen, BatteryCharging, Bike, Building2, Cale
 import { ManagementProvider, useManagement } from './ManagementProvider';
 import { ReloadButton, requestReload } from './ReloadButton';
 import { lockBodyScroll, trapFocusWithin } from './Dialog';
-import { canRecordContractPayment,hasPermission,isAdminAccount,type AccessPermission } from '@/lib/management/permissions';
+import { canRecordContractPayment,canManageShiftRegistration,hasPermission,isAdminAccount,type AccessPermission } from '@/lib/management/permissions';
 import { ContractTypesProvider } from '@/components/contracts/ContractTypesProvider';
 import type { SessionUser } from '@/lib/server/management-session';
 import { SePayNotifications } from './SePayNotifications';
@@ -23,6 +23,7 @@ const navigation: (NavLink | NavGroup)[] = [
     { href: '/attendance', label: 'Chấm công', kind: 'attendance', icon: AlarmClock },
     { href: '/attendance/history', label: 'Lịch sử chấm công', kind: 'attendance', icon: History },
   ] },
+  { href: '/shift-registration', label: 'Đăng ký ca', kind: 'shift-registration', icon: CalendarDays },
   { href: '/dashboard', label: 'Dashboard', kind: 'dashboard', icon: LayoutDashboard },
   { id: 'contracts', label: 'Hợp đồng', icon: Files, links: [
     { href: '/contracts', label: 'Danh sách hợp đồng', kind: 'contracts', icon: Files },
@@ -36,7 +37,6 @@ const navigation: (NavLink | NavGroup)[] = [
   ] },
   { id: 'hr', label: 'HCNS', icon: UsersRound, links: [
     { href: '/staff', label: 'Nhân sự', kind: 'staff', icon: UsersRound },
-    { href: '/shift-registration', label: 'Đăng ký ca', kind: 'shift-registration', icon: CalendarDays },
     { href: '/duty-roster', label: 'Lịch trực cơ sở', kind: 'duty-roster', icon: CalendarDays },
   ] },
   { id: 'finance', label: 'Kế toán', icon: Wallet, links: [
@@ -63,7 +63,7 @@ const navigation: (NavLink | NavGroup)[] = [
 ];
 const navLinks = navigation.flatMap(item => 'links' in item ? item.links : [item]);
 // Store reads follow contract access; store mutations still require settings.write.
-const navigationPermission=(kind:string):AccessPermission|null=>(kind==='attendance'||kind==='help')?null:kind==='accounts'?'accounts.manage':kind==='staff'||kind==='duty-roster'||kind==='shift-registration'?'hr.read':kind==='cashbook'?'finance.read':kind==='customers'?'customers.read':kind==='contract-types'||kind==='integrations'?'settings.write':kind==='vehicles'||kind==='vehicle-transfers'||kind==='gps'?'vehicles.read':'contracts.read';
+const navigationPermission=(kind:string):AccessPermission|null=>(kind==='attendance'||kind==='help'||kind==='shift-registration')?null:kind==='accounts'?'accounts.manage':kind==='staff'||kind==='duty-roster'?'hr.read':kind==='cashbook'?'finance.read':kind==='customers'?'customers.read':kind==='contract-types'||kind==='integrations'?'settings.write':kind==='vehicles'||kind==='vehicle-transfers'||kind==='gps'?'vehicles.read':'contracts.read';
 
 function Shell({ children, user }: { children: ReactNode; user: SessionUser | null }) {
   const { dataset, selectedStore, selectStore, source, canSaveContractDrafts, reload, refreshing,notify } = useManagement();
@@ -80,7 +80,7 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
   const writableCustomers = source === 'api' && active.kind === 'customers';
   const writableStores = source === 'api' && active.kind === 'stores' && hasPermission(user,'settings.write');
   const writableDuties = source === 'api' && active.kind === 'duty-roster';
-  const writableRegistrations = source === 'api' && active.kind === 'shift-registration' && hasPermission(user, 'hr.write');
+  const writableRegistrations = source === 'api' && active.kind === 'shift-registration' && canManageShiftRegistration(user);
   const writableBattery = source === 'api' && active.kind === 'battery-contracts';
   const writableVehicles = source === 'api' && active.kind === 'vehicles';
   const writableDrafts = source === 'api' && active.kind === 'contracts' && canSaveContractDrafts;

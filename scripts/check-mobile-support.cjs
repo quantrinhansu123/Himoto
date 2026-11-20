@@ -7,7 +7,7 @@ const {load,root}=require('./lib/load-typescript.cjs');
 async function main(){
   const at=process.argv.indexOf('--pglite-path');assert(at>=0,'Pass --pglite-path');
   const {PGlite}=require(path.resolve(process.argv[at+1])),pg=new PGlite(),checks=[];
-  await pg.exec(`CREATE SCHEMA himoto;CREATE TABLE himoto.users(id bigint PRIMARY KEY);CREATE TABLE himoto.stores(id bigint PRIMARY KEY,store_name text);CREATE TABLE himoto.staff_profiles(id bigint PRIMARY KEY,user_id bigint,full_name text,store_id bigint,status text);CREATE TABLE himoto.store_duty_schedules(id bigint,staff_id bigint,store_id bigint,shift_name text,starts_at timestamptz,ends_at timestamptz,deleted_at timestamptz);INSERT INTO himoto.users VALUES(7),(8),(9);INSERT INTO himoto.stores VALUES(2,'Branch QA'),(3,'Other QA');INSERT INTO himoto.staff_profiles VALUES(101,7,'Actor QA',2,'active'),(102,8,'Other QA',3,'active');`);
+  await pg.exec(`CREATE SCHEMA himoto;CREATE TABLE himoto.users(id bigint PRIMARY KEY);CREATE TABLE himoto.stores(id bigint PRIMARY KEY,store_name text,status text,kind text);CREATE TABLE himoto.staff_profiles(id bigint PRIMARY KEY,user_id bigint,full_name text,store_id bigint,status text);CREATE TABLE himoto.store_duty_schedules(id bigint,staff_id bigint,store_id bigint,shift_name text,starts_at timestamptz,ends_at timestamptz,deleted_at timestamptz);INSERT INTO himoto.users VALUES(7),(8),(9);INSERT INTO himoto.stores VALUES(2,'Branch QA','opening','physical'),(3,'Other QA','opening','physical');INSERT INTO himoto.staff_profiles VALUES(101,7,'Actor QA',2,'active'),(102,8,'Other QA',3,'active');`);
   await pg.exec(fs.readFileSync('scripts/attendance-schema.sql','utf8'));
   await pg.exec(`CREATE TABLE himoto.staff_shift_registrations(staff_id bigint,store_id bigint,work_date date,shift_code text);
     CREATE TABLE himoto.management_attendance_locations(store_id bigint,latitude numeric,longitude numeric);
@@ -24,10 +24,12 @@ async function main(){
   const dto=load(path.resolve(root,'../shared/mobile-support'));
   const request=(name,method='GET',body)=>new NextRequest('https://fixture.invalid/api/mobile/v1/'+name,{method,...(body?{body}:{})});
   const image=Buffer.from([255,216,255,224]),location={latitude:21,longitude:105.8,accuracy:8,timestamp:Date.now()};
-  const body=(action,key)=>{const form=new FormData();form.set('action',action);form.set('request_id',key);form.set('location',JSON.stringify(location));form.set('photo',new File([image],'synthetic.jpg',{type:'image/jpeg'}));return form;};
+  const body=(action,key,storeId,note)=>{const form=new FormData();form.set('action',action);form.set('request_id',key);form.set('location',JSON.stringify(location));form.set('photo',new File([image],'synthetic.jpg',{type:'image/jpeg'}));if(storeId)form.set('store_id',storeId);if(note)form.set('note',note);return form;};
   try{
     denied=true;assert.equal((await attendance.GET(request('attendance'))).status,401);assert.equal((await faq.GET(request('guide-faq'))).status,401);denied=false;
     const into=randomUUID(),out=randomUUID();
+    const overview=await(await attendance.GET(request('attendance?view=summary'))).json();
+    assert.deepEqual(overview.stores,[{id:2,name:'Branch QA'},{id:3,name:'Other QA'}]);
     const first=await attendance.POST(request('attendance','POST',body('in',into)));assert.equal(first.status,200);const receipt=await first.json();assert(dto.isAttendanceReceipt(receipt));
     assert.equal((await attendance.POST(request('attendance','POST',body('in',into)))).status,200);
     assert.equal((await attendance.POST(request('attendance','POST',body('in',randomUUID())))).status,409);
@@ -39,11 +41,16 @@ async function main(){
     const summary=await(await attendance.GET(request(`attendance?from=${today}&to=${today}`))).json();assert(dto.isAttendanceSummary(summary));assert.equal(summary.total,1);assert.equal(Number(summary.open.id),receipt.id);
     const evidence=await attendance.GET(request('attendance?photo='+receipt.id+'&side=in'));assert.equal(evidence.status,200);assert.deepEqual(Buffer.from(await evidence.arrayBuffer()),image);assert.equal(evidence.headers.get('vary'),'Authorization');
     actor={...user,id:9,permissions:['hr.read']};const review=await(await attendance.GET(request(`attendance?from=${today}&to=${today}`))).json();assert.equal(review.total,1);actor=user;
-    assert.equal((await attendance.POST(request('attendance','POST',body('out',out)))).status,200);assert.equal((await attendance.POST(request('attendance','POST',body('out',out)))).status,200);
+    assert.equal((await attendance.POST(request('attendance','POST',body('out',out,'3')))).status,400);
+    assert.equal((await attendance.POST(request('attendance','POST',body('out',out,'3','Hỗ trợ cơ sở')))).status,200);
+    assert.equal((await attendance.POST(request('attendance','POST',body('out',out,'3','Hỗ trợ cơ sở')))).status,200);
     assert.equal((await pg.query('SELECT count(*)::integer AS n FROM himoto.management_staff_attendance WHERE actor_id=7')).rows[0].n,1);
     checks.push('Actual web attendance writer: in/out pairing, repeated UUID and lost-response lookup, double-in rejection, actor-bound resolution/photos, HR branch scope and authenticated image headers');
     const closed=await(await attendance.GET(request(`attendance?from=${today}&to=${today}`))).json(),row=closed.rows[0];
     assert.equal(row.in_distance_m,0);assert.equal(row.earned_credit,null);assert.equal(row.can_manage,false);
+    assert.deepEqual(row.out_nearest_store,{store_name:'Branch QA',distance_m:0});
+    assert.equal(row.out_location.store_name,'Other QA');
+    assert.equal(row.out_location.note,'Hỗ trợ cơ sở');
     assert(!dto.isAttendanceSummary({...closed,rows:[{...row,earned_credit:-1}]}));
     const edit={id:row.id,original_in:row.clock_in_at,original_out:row.clock_out_at,clock_in_at:new Date(Date.parse(row.clock_in_at)-60000).toISOString(),clock_out_at:row.clock_out_at};
     assert.equal((await attendance.PATCH(request('attendance','PATCH',JSON.stringify(edit)))).status,403);

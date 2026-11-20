@@ -3,7 +3,7 @@ import { ATTENDANCE_SHIFTS } from './attendance-shifts';
 export const REGISTRATION_SHIFTS = [...ATTENDANCE_SHIFTS, { code: 'G1+G3', name: 'Ca sáng + tối', start: '08:00', end: '21:00', credit: 1 }] as const;
 export interface RegisteredStaff { id: number; name: string; position: string; store_id: number | null; store_name: string; status: string }
 export interface ShiftRegistration { staff_id: number; store_id: number; work_date: string; shift_code: string | null; revision: string }
-export interface RegistrationMonth { month: string; staff: RegisteredStaff[]; registrations: ShiftRegistration[]; stores: { id: number; name: string }[] }
+export interface RegistrationMonth { month: string; staff: RegisteredStaff[]; registrations: ShiftRegistration[]; stores: { id: number; name: string }[]; locked_weeks?: string[] }
 export interface RegistrationRange extends Omit<RegistrationMonth,'month'> {from:string;to:string}
 export function registrationDates(from: string, to: string) {
   for (const date of [from,to]) {
@@ -20,7 +20,7 @@ export function registrationExcel(data:RegistrationRange,store='all',search='') 
   const people=data.staff.filter(person=>(store==='all'||(store==='none'?person.store_id===null:String(person.store_id)===store))&&`${person.name} ${person.position}`.toLocaleLowerCase('vi').includes(search.trim().toLocaleLowerCase('vi')));
   return{headers:['Địa điểm làm việc','Họ và tên','Chức vụ',...dates.map(date=>date.split('-').reverse().join('/')),'Tổng công đăng ký'],rows:people.map(person=>[person.store_name,person.name,person.position,...dates.map(date=>cells.get(`${person.id}:${date}`)?.shift_code||''),dates.reduce((sum,date)=>sum+registrationCredit(cells.get(`${person.id}:${date}`)?.shift_code),0)])};
 }
-export interface SelfRegistrationWeek { week: string; today: string; dates: string[]; staff: { id: number; name: string; store_id: number; store_name: string }; registrations: ShiftRegistration[] }
+export interface SelfRegistrationWeek { week: string; today: string; dates: string[]; staff: { id: number; name: string; store_id: number; store_name: string }; registrations: ShiftRegistration[]; locked?: boolean }
 export type RegistrationInput = Omit<ShiftRegistration, 'revision'> & { revision: string | null };
 export interface SelfRegistrationInput { week: string; days: Pick<RegistrationInput, 'work_date' | 'shift_code' | 'revision'>[] }
 export function monthDates(month: string) {
@@ -37,10 +37,12 @@ export function isShiftRegistration(value: unknown): value is ShiftRegistration 
 }
 export function isRegistrationMonth(value: unknown): value is RegistrationMonth {
   if (!object(value) || typeof value.month !== 'string') return false;
+  if (value.locked_weeks !== undefined && (!Array.isArray(value.locked_weeks) || !value.locked_weeks.every(date))) return false;
   try { monthDates(value.month); } catch { return false; }
   return Array.isArray(value.staff) && value.staff.every(s => object(s) && id(s.id) && [s.name, s.position, s.store_name, s.status].every(v => typeof v === 'string') && (s.store_id === null || id(s.store_id))) && Array.isArray(value.registrations) && value.registrations.every(isShiftRegistration) && Array.isArray(value.stores) && value.stores.every(s => object(s) && id(s.id) && typeof s.name === 'string');
 }
 export function isSelfRegistrationWeek(value: unknown): value is SelfRegistrationWeek {
+  if (object(value) && value.locked !== undefined && typeof value.locked !== 'boolean') return false;
   return object(value) && date(value.week) && date(value.today) && Array.isArray(value.dates) && value.dates.length === 7 && value.dates.every(date) && object(value.staff) && id(value.staff.id) && id(value.staff.store_id) && typeof value.staff.name === 'string' && typeof value.staff.store_name === 'string' && Array.isArray(value.registrations) && value.registrations.every(isShiftRegistration);
 }
 export function isRegistrationRange(value:unknown):value is RegistrationRange {

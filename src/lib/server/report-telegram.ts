@@ -12,11 +12,16 @@ export async function queueReportTelegram(db:Database,key:string,store:number,te
     VALUES($1,$2,$3,$4,$5::jsonb) ON CONFLICT(delivery_key) DO NOTHING`,[key,store,route,text,JSON.stringify(attachments)]);
 }
 export async function shiftTelegramAttachments(db:Database,id:number,stage:'pgd'|'audit'):Promise<Attachment[]>{
-  return(await db.query(`SELECT 'shift-'||stage||'-'||id::text AS slot,mime_type,encode(data,'base64') AS bytes,
-    cloudinary_public_id,cloudinary_cloud_name,cloudinary_version,object_bucket,object_key,object_etag
-    FROM himoto.management_shift_media WHERE report_id=$1 AND stage=$2
-    UNION ALL SELECT 'shift-legacy-'||slot,mime_type,encode(data,'base64'),NULL::text,NULL::text,NULL::integer,object_bucket,object_key,object_etag
-    FROM himoto.management_shift_photos WHERE report_id=$1 AND $2='pgd' ORDER BY slot`,[id,stage])).rows;
+  return(await db.query(`SELECT slot,mime_type,bytes,cloudinary_public_id,cloudinary_cloud_name,cloudinary_version,object_bucket,object_key,object_etag
+    FROM (
+      SELECT 'shift-'||stage||'-'||id::text AS slot,category,mime_type,encode(data,'base64') AS bytes,
+        cloudinary_public_id,cloudinary_cloud_name,cloudinary_version,object_bucket,object_key,object_etag,created_at
+      FROM himoto.management_shift_media WHERE report_id=$1 AND stage=$2
+      UNION ALL SELECT 'shift-legacy-'||slot,slot,mime_type,encode(data,'base64'),NULL::text,NULL::text,NULL::integer,object_bucket,object_key,object_etag,NULL
+      FROM himoto.management_shift_photos WHERE report_id=$1 AND $2='pgd'
+    ) evidence
+    ORDER BY CASE WHEN mime_type LIKE 'video/%' THEN 3 WHEN category='vehicles' THEN 0 WHEN category='batteries' THEN 1 ELSE 2 END,
+      created_at NULLS FIRST,slot`,[id,stage])).rows;
 }
 /** A committed outbox entry is claimed once. Ambiguous sends never retry. */
 export async function deliverReportTelegram(key:string,db:Database=ownerDatabase,send:typeof fetch=fetch) {

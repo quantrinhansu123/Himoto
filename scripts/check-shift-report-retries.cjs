@@ -1,7 +1,9 @@
 // Real PostgreSQL transactions and RLS, with every business table redirected to TEMP.
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),{randomUUID}=require('node:crypto');
 require('@next/env').loadEnvConfig(process.cwd(),false,{info(){},error(){}});
+globalThis.AsyncLocalStorage ??= require('node:async_hooks').AsyncLocalStorage;
 const {NextRequest}=require('next/server');
+const {workAsyncStorage}=require('next/dist/server/app-render/work-async-storage.external');
 const {load,root}=require('./lib/load-typescript.cjs');
 const database=load(path.join(root,'lib/server/himoto-database'));
 const session=load(path.join(root,'lib/server/management-session'));
@@ -21,7 +23,7 @@ async function main(){
   try {
     await c.query('BEGIN');
     await c.query("SET LOCAL statement_timeout='15s'");
-    await c.query('CREATE TEMP TABLE stores(id bigint PRIMARY KEY); CREATE TEMP TABLE users(id bigint PRIMARY KEY); INSERT INTO stores VALUES(1),(2); INSERT INTO users VALUES(1),(2)');
+    await c.query("CREATE TEMP TABLE stores(id bigint PRIMARY KEY,store_name text); CREATE TEMP TABLE users(id bigint PRIMARY KEY); INSERT INTO stores VALUES(1,'PGD QA A'),(2,'PGD QA B'); INSERT INTO users VALUES(1),(2)");
     for(const name of ['2026-10-22-shift-reports.sql','2026-10-22-shift-report-requests.sql','2026-10-22-shift-audits.sql']) {
       const sql=sqlForTemp(fs.readFileSync(path.join(process.cwd(),'docs/sql',name),'utf8').replace(/ALTER TABLE himoto.management_account_access[\s\S]*/, '').replace(/^BEGIN;|^COMMIT;/gm,'')).replaceAll('pg_temp.access_store(', 'himoto.access_store(');
       for(const statement of sql.split(';').filter(s=>s.trim())) {
@@ -34,7 +36,12 @@ async function main(){
     for(const statement of objectMigration.split(';').filter(sql=>sql.trim()&&!sql.includes('himoto.management_record_photos'))){
       await c.query(sqlForTemp(statement));
     }
+    const photoMigration=fs.readFileSync('docs/sql/2026-11-11-cloudfly-photos.sql','utf8');
+    for(const statement of photoMigration.split(';').filter(sql=>/ALTER TABLE himoto.management_shift_(media|photos)\b/.test(sql))){
+      await c.query(sqlForTemp(statement));
+    }
     await c.query('GRANT SELECT ON stores,users TO himoto_scoped');
+    await c.query('CREATE TEMP TABLE management_report_deliveries (LIKE himoto.management_report_deliveries INCLUDING DEFAULTS INCLUDING INDEXES); GRANT SELECT, INSERT ON management_report_deliveries TO himoto_scoped');
     const scope=async()=>{
       const current=dataAccess.getStore();
       await c.query("SELECT set_config('himoto.scope_all',$1,true),set_config('himoto.store_id',$2,true)",[String(current.scope_all),String(current.store_id)]);
@@ -59,7 +66,7 @@ async function main(){
     const photos=load(path.join(root,'app/api/auth/shift-reports/[id]/photos/[slot]/route'));
     const readPhoto=(id,slot)=>photos.GET(new NextRequest(`http://localhost/api/auth/shift-reports/${id}/photos/${slot}`),{params:Promise.resolve({id:String(id),slot})});
     async function post(body,key=randomUUID()){
-      const response=await reports.POST(new NextRequest('http://localhost/api/auth/shift-reports',{method:'POST',headers:{origin:'http://localhost','content-type':'application/json','x-shift-request-id':key},body:JSON.stringify(body)}));
+      const response=await workAsyncStorage.run({afterContext:{after(){}}},()=>reports.POST(new NextRequest('http://localhost/api/auth/shift-reports',{method:'POST',headers:{origin:'http://localhost','content-type':'application/json','x-shift-request-id':key},body:JSON.stringify(body)})));
       return {status:response.status,...await response.json()};
     }
     async function photo(id,slot,revision,key=randomUUID(),bytes=Buffer.from([255,216,255,1])){
@@ -134,7 +141,7 @@ async function main(){
     actor={...actor,id:2,access_role:'internal_control',permissions:['contracts.read','shift.review']};
     const auditInput={...auditDomain.emptyAuditInput(),book:{other_vehicles:0,daily_vehicles:0,monthly_vehicles:0,vehicles:1,external_vehicles:0,batteries:1,cash:0,personal:0,company:0,revenue_day:0,revenue_month:0},actual:{other_vehicles:0,daily_vehicles:0,monthly_vehicles:0,vehicles:1,external_vehicles:0,batteries:1,cash:0,personal:0,company:0,revenue_day:0,revenue_month:0}};
     async function audit(body,key=randomUUID()){
-      const response=await auditRoute.POST(new NextRequest(`http://localhost/api/auth/shift-reports/${mediaReportId}/audit`,{method:'POST',headers:{origin:'http://localhost','content-type':'application/json','x-shift-request-id':key},body:JSON.stringify(body)}),{params:Promise.resolve({id:String(mediaReportId)})});
+      const response=await workAsyncStorage.run({afterContext:{after(){}}},()=>auditRoute.POST(new NextRequest(`http://localhost/api/auth/shift-reports/${mediaReportId}/audit`,{method:'POST',headers:{origin:'http://localhost','content-type':'application/json','x-shift-request-id':key},body:JSON.stringify(body)}),{params:Promise.resolve({id:String(mediaReportId)})}));
       return {status:response.status,...await response.json()};
     }
     const auditBody={revision:0,report_revision:mediaRevision,input:auditInput,fingerprint:fixtureSnapshot.fingerprint,status:'draft'},auditKey=randomUUID();

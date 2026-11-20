@@ -22,7 +22,7 @@ function WeekForm({ initial, moveWeek }: { initial: SelfRegistrationWeek; moveWe
   const prevent = usePreventRemove(!leaving && (busy || changed.length > 0), ({ repeat }) => { if (!running.current) setExit(() => repeat); });
   function apply(value: SelfRegistrationWeek) { setData(value); setDraft(Object.fromEntries(value.dates.map(date => [date, value.registrations.find(row => row.work_date === date)?.shift_code || '']))); }
   async function save() {
-    if (running.current || !changed.length) return;
+    if (running.current || data.locked || !changed.length) return;
     running.current = true; setBusy(true); setConfirm(false); setError(''); setMessage('');
     try {
       const result = await api!.saveSelfRegistration({ week: data.week, days: changed.map(date => ({ work_date: date, shift_code: draft[date] || null, revision: data.registrations.find(row => row.work_date === date)?.revision || null })) });
@@ -39,11 +39,12 @@ function WeekForm({ initial, moveWeek }: { initial: SelfRegistrationWeek; moveWe
     <Text style={{ color: theme.text }}>{data.staff.name} · {data.staff.store_name}</Text>
     <Text style={{ color: theme.muted }}>Tuần {labelDate(data.week)} – {labelDate(data.dates[6])}</Text>
     <View style={{ gap: 8 }}><Button secondary label="Tuần trước" disabled={busy || changed.length > 0 || data.week <= dutyWeekStart(dutyToday())} onPress={() => moveWeek(dutyAddDays(data.week, -7))} /><Button secondary label="Tuần sau" disabled={busy || changed.length > 0} onPress={() => moveWeek(dutyAddDays(data.week, 7))} /></View>
-    {data.dates.map(date => <Card key={date} style={{ gap: 8 }}><ChoiceField label={`Ca làm ngày ${labelDate(date)}${date < data.today ? ' · Đã qua' : date === data.today ? ' · Hôm nay' : ''}`} value={draft[date] || ''} searchable disabled={busy || uncertain || date < data.today} choices={[{ value: '', label: 'Chưa đăng ký' }, ...REGISTRATION_SHIFTS.map(shift => ({ value: shift.code, label: `${shift.code} · ${shift.name}${shift.start ? ` (${shift.start}–${shift.end}${shift.code === 'G1+G3' ? ', nghỉ 12:00–17:00' : ''})` : ''} · ${shiftCreditLabel(shift.credit)} công` }))]} onChange={value => { setDraft(current => ({ ...current, [date]: value })); setMessage(''); }} /></Card>)}
+    {data.locked && <Text>Tuần này đã khóa. Liên hệ HCNS để điều chỉnh ca.</Text>}
+    {data.dates.map(date => <Card key={date} style={{ gap: 8 }}><ChoiceField label={`Ca làm ngày ${labelDate(date)}${date < data.today ? ' · Đã qua' : date === data.today ? ' · Hôm nay' : ''}`} value={draft[date] || ''} searchable disabled={busy || uncertain || data.locked || date < data.today} choices={[{ value: '', label: 'Chưa đăng ký' }, ...REGISTRATION_SHIFTS.map(shift => ({ value: shift.code, label: `${shift.code} · ${shift.name}${shift.start ? ` (${shift.start}–${shift.end}${shift.code === 'G1+G3' ? ', nghỉ 12:00–17:00' : ''})` : ''} · ${shiftCreditLabel(shift.credit)} công` }))]} onChange={value => { setDraft(current => ({ ...current, [date]: value })); setMessage(''); }} /></Card>)}
     <Text style={{ color: theme.text, fontWeight: '700' }}>Tổng công đăng ký dự kiến: {shiftCreditLabel(data.dates.reduce((sum, date) => sum + registrationCredit(draft[date]), 0))} công</Text>
     <Text style={{ color: theme.muted, lineHeight: 22 }}>Chỉ đăng ký ca của chính bạn tại cơ sở trong hồ sơ. Ngày đã qua không thể sửa. Ca đăng ký được hiển thị trên bảng tháng của quản lý, chưa thay thế lịch trực và công chấm thực tế.</Text>
     {!!error && <InlineError message={error} />}{!!message && <Text accessibilityLiveRegion="polite" style={{ color: theme.text }}>{message}</Text>}
-    <Button label="Lưu đăng ký ca" loading={busy} disabled={uncertain || !changed.length} onPress={() => setConfirm(true)} />
+    <Button label="Lưu đăng ký ca" loading={busy} disabled={uncertain || data.locked || !changed.length} onPress={() => setConfirm(true)} />
     {!!changed.length && <Button secondary label="Bỏ thay đổi" disabled={busy} onPress={() => apply(data)} />}
     <Button secondary label="Tải lại để đối chiếu" loading={busy} disabled={!uncertain && changed.length > 0} onPress={() => void reload()} />
     {confirm && <ConfirmEdit title="Lưu đăng ký ca?" message={`${data.staff.name} · ${changed.length} ngày thay đổi. Kiểm tra ca đã chọn trước khi xác nhận.`} confirmLabel="Lưu đăng ký ca" onCancel={() => setConfirm(false)} onConfirm={() => void save()} />}

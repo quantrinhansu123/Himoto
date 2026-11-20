@@ -3,7 +3,7 @@ import type { PoolClient } from 'pg';
 import type { SessionUser } from './management-session';
 import { attendanceStaff } from './attendance';
 import { DutyError, validDutyDate } from './duty-roster';
-import { saveRegistration, parseRegistration } from './shift-registration';
+import { saveRegistration, parseRegistration, lockRegistrationWeekTransaction, lockedRegistrationWeeks } from './shift-registration';
 import { addDays, vietnamDate, weekStart } from '@/lib/management/duty-roster';
 import { monthDates } from '@/lib/management/shift-registration';
 import type { SelfRegistrationWeek } from '@/lib/management/self-shift-registration';
@@ -25,7 +25,8 @@ export async function readSelfRegistrationWeek(db: Database, user: SessionUser, 
   const staff = await ownStaff(db, user);
   const result = await db.query(`SELECT staff_id,store_id,work_date::text,shift_code,revision::text
     FROM himoto.staff_shift_registrations WHERE staff_id=$1 AND work_date BETWEEN $2::date AND $3::date ORDER BY work_date`, [staff.id, dates[0], dates[6]]);
-  return { week, today, dates, staff, registrations: result.rows.map(row => ({ staff_id: Number(row.staff_id), store_id: Number(row.store_id), work_date: String(row.work_date), shift_code: row.shift_code == null ? null : String(row.shift_code), revision: String(row.revision) })) };
+  const locked = (await lockedRegistrationWeeks(db, week, week)).length > 0;
+  return { week, today, dates, staff, locked, registrations: result.rows.map(row => ({ staff_id: Number(row.staff_id), store_id: Number(row.store_id), work_date: String(row.work_date), shift_code: row.shift_code == null ? null : String(row.shift_code), revision: String(row.revision) })) };
 }
 /** All selected days are committed together by the route's transaction. Never accept a target staff ID. */
 export async function saveSelfRegistrationWeek(db: Database, user: SessionUser, raw: unknown, today = vietnamDate()) {
@@ -33,6 +34,8 @@ export async function saveSelfRegistrationWeek(db: Database, user: SessionUser, 
   const body = raw as Record<string, unknown>;
   if (Object.keys(body).some(key => !['week','days'].includes(key)) || typeof body.week !== 'string' || !Array.isArray(body.days) || !body.days.length || body.days.length > 7) throw new DutyError('Chọn từ 1 đến 7 ngày cần đăng ký.');
   const dates = selfRegistrationDates(body.week, today);
+  await lockRegistrationWeekTransaction(db, body.week, true);
+  if ((await lockedRegistrationWeeks(db, body.week, body.week)).length) throw new DutyError('Tuần đăng ký đã khóa. Liên hệ HCNS để điều chỉnh ca.', 409);
   const staff = await ownStaff(db, user);
   const seen = new Set<string>();
   const inputs = body.days.map(rawDay => {

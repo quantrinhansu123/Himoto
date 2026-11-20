@@ -9,17 +9,19 @@ import { Dialog } from './Dialog';
 import { FilteredExcelButton } from './FilteredExcelButton';
 import { RowActionsMenu, type RowAction } from './RowActionsMenu';
 import { vietnamDate } from '@/lib/management/duty-roster';
-import { shiftCreditLabel } from '@/lib/management/attendance-shifts';
+import { shiftCreditLabel, splitAttendanceShiftHours } from '@/lib/management/attendance-shifts';
 import { buildAttendanceWorkbook } from '@/lib/management/attendance-workbook';
 import { downloadExcel } from '@/lib/management/excel-export';
 import { formatDateTime } from '@/lib/formatters';
-import { isAdminAccount } from '@/lib/management/permissions';
+import { canConfigureAttendance, isAdminAccount } from '@/lib/management/permissions';
 import { WeeklyShiftRegistrationDialog } from './WeeklyShiftRegistrationDialog';
 import { BrowserLocationError, requestBrowserLocation, type BrowserLocation as Location } from '@/lib/management/browser-geolocation';
 
+import { attendanceLocationLabel, type AttendanceLocation, type AttendanceStoreOption, type NearestAttendanceStore } from '../../../shared/mobile-support';
+
 type InitialClockLocation = Location | Error;
-type Attendance = {id:number;staff_id:number|string;staff_name:string;store_name:string|null;store_from_profile:boolean;clock_in_at:string;clock_out_at:string|null;in_location:Location;out_location:Location|null;has_out_photo:boolean;has_store_location:boolean;in_distance_m:number|null;out_distance_m:number|null;shift_name:string|null;scheduled_in:string|null;scheduled_out:string|null;late_minutes:number|null;early_leave_minutes:number|null;standard_credit:number|null;earned_credit:number|null;credit_aggregated:boolean;credit_on_other_row:boolean;can_manage:boolean};
-type Summary = {staff:{name:string;store_id:number|null;store_name:string|null}|null;open:{id:number;clock_in_at:string}|null;latest:{clock_in_at:string;clock_out_at:string|null}|null;shift:{shift_name:string;starts_at:string;ends_at:string}|null;shift_code:string|null;late_minutes:number|null;early_leave_minutes:number|null;server_now:string};
+type Attendance = {id:number;staff_id:number|string;staff_name:string;store_name:string|null;store_from_profile:boolean;clock_in_at:string;clock_out_at:string|null;in_location:AttendanceLocation|null;out_location:AttendanceLocation|null;in_nearest_store?:NearestAttendanceStore|null;out_nearest_store?:NearestAttendanceStore|null;has_out_photo:boolean;has_store_location:boolean;in_distance_m:number|null;out_distance_m:number|null;shift_name:string|null;scheduled_in:string|null;scheduled_out:string|null;late_minutes:number|null;early_leave_minutes:number|null;standard_credit:number|null;earned_credit:number|null;credit_aggregated:boolean;credit_on_other_row:boolean;can_manage:boolean};
+type Summary = {stores:AttendanceStoreOption[];staff:{name:string;store_id:number|null;store_name:string|null}|null;open:{id:number;clock_in_at:string}|null;latest:{clock_in_at:string;clock_out_at:string|null}|null;shift:{shift_name:string;starts_at:string;ends_at:string}|null;shift_code:string|null;schedule_offset_minutes?:number;late_minutes:number|null;early_leave_minutes:number|null;server_now:string};
 type Report = {rows:Attendance[];total:number;page:number};
 async function responseData<T>(response:Response):Promise<T> {
   const body = await response.json().catch(()=>null);
@@ -32,7 +34,7 @@ function Evidence({row,side}:{row:Attendance;side:'in'|'out'}) {
   const label = entering?'Vào ca':'Ra ca';
   const timestamp = entering?row.clock_in_at:row.clock_out_at;
   const location = entering?row.in_location:row.out_location;
-  const distance = entering?row.in_distance_m:row.out_distance_m;
+  const nearest = entering?row.in_nearest_store:row.out_nearest_store;
   const hasPhoto = entering || row.has_out_photo;
   const photo = `/api/auth/attendance?photo=${row.id}&side=${side}`;
 
@@ -45,15 +47,15 @@ function Evidence({row,side}:{row:Attendance;side:'in'|'out'}) {
       </a> : <p className="mg-attendance-evidence-empty">{photoFailed?'Không tải được ảnh':'Chưa có ảnh chấm công'}</p>}
       <dl>
         <dt>Vị trí chấm công</dt>
-        <dd>{location ? <>
+        <dd><strong>{attendanceLocationLabel(location, nearest)}</strong></dd>
+        {location && <dd>
           <a href={`https://www.google.com/maps?q=${location.latitude},${location.longitude}`} target="_blank" rel="noopener noreferrer">
             <MapPin size={14}/> {location.latitude.toFixed(6)}, {location.longitude.toFixed(6)}
           </a>
           <small>Độ chính xác GPS ±{Math.round(location.accuracy)} m</small>
-        </> : 'Chưa ghi nhận GPS'}</dd>
-        <dt>Khoảng cách đến cơ sở</dt>
-        <dd>{distance != null ? <strong>{distance.toLocaleString('vi-VN')} m</strong> :
-          !row.has_store_location ? (row.store_name?'Cơ sở chưa cấu hình tọa độ':'Lượt chấm công chưa có cơ sở') : 'Chưa có GPS để tính'}</dd>
+        </dd>}
+        {location?.store_name && <><dt>Cơ sở đã chọn</dt><dd>{location.store_name}</dd></>}
+        {location?.note && <><dt>Ghi chú</dt><dd>{location.note}</dd></>}
       </dl>
     </> : <p className="mg-attendance-evidence-empty">{missingCheckout}</p>}
   </section>;
@@ -104,8 +106,8 @@ function LiveVietnamClock({serverNow,onDayChanged}:{serverNow:string|null|undefi
 }
 
 export function AttendancePage() {
-  const {notify,can} = useManagement();
-  const canViewRegistration = can('hr.read');
+  const {notify,accessUser} = useManagement();
+  const canConfigure = canConfigureAttendance(accessUser);
   const [retry,setRetry] = useState(0);
   const refresh = useCallback(()=>setRetry(value=>value+1),[]);
   const [data,setData] = useState<Summary|null>(null),[loading,setLoading] = useState(true),[error,setError] = useState('');
@@ -133,8 +135,8 @@ export function AttendancePage() {
     : !data?.open ? 'Chưa có ca đang mở để chấm công ra.'
     : undefined;
   return <section className="mg-page mg-attendance-page"><div className="mg-page-content">
-    {settingsOpen && <AttendanceLocationsDialog canEdit onClose={() => setSettingsOpen(false)} />}
-    {registrationOpen && <WeeklyShiftRegistrationDialog onClose={() => setRegistrationOpen(false)} onSaved={() => { setRegistrationOpen(false); refresh(); notify('Đã lưu đăng ký ca làm trong tuần.'); }} />}
+    {canConfigure && settingsOpen && <AttendanceLocationsDialog canEdit onClose={() => setSettingsOpen(false)} />}
+    {canConfigure && registrationOpen && <WeeklyShiftRegistrationDialog onClose={() => setRegistrationOpen(false)} onSaved={() => { setRegistrationOpen(false); refresh(); notify('Đã lưu đăng ký ca làm trong tuần.'); }} />}
     <div className="mg-page-heading">
       <div>
         <div className="mg-eyebrow">NHÂN SỰ</div>
@@ -142,18 +144,18 @@ export function AttendancePage() {
         <p>Ghi nhận giờ vào, giờ ra cùng ảnh chụp và vị trí GPS.</p>
       </div>
       <div className="mg-heading-actions mg-attendance-header-actions">
-        <button type="button" className="mg-button" onClick={() => setSettingsOpen(true)}><Settings size={16}/>Cài đặt</button>
+        {canConfigure && <button type="button" className="mg-button" onClick={() => setSettingsOpen(true)}><Settings size={16}/>Cài đặt</button>}
         <Link className="mg-button" href="/attendance/history"><History size={16}/>Lịch sử chấm công</Link>
-        <button type="button" className="mg-button mg-attendance-register-action" onClick={() => setRegistrationOpen(true)}><CalendarDays size={16}/>Đăng ký ca trong tuần</button>
+        {canConfigure && <button type="button" className="mg-button mg-attendance-register-action" onClick={() => setRegistrationOpen(true)}><CalendarDays size={16}/>Đăng ký ca trong tuần</button>}
       </div>
     </div>
     <div className="mg-data-panel mg-attendance-dashboard">
       <div className="mg-attendance-filters"><p><MapPin size={16}/> Cơ sở chấm công: <strong>{loading?'Đang tải…':data?.staff?.store_name||'Chưa gắn cơ sở'}</strong></p>
-        {canViewRegistration&&<Link className="mg-button" href="/shift-registration">Bảng đăng ký ca</Link>}
+        {canConfigure && <Link className="mg-button" href="/shift-registration">Bảng đăng ký ca</Link>}
       </div>
-      <p className="mg-attendance-hint">Vào ca được ghi nhận tại cơ sở của hồ sơ nhân viên.</p>
+      <p className="mg-attendance-hint">Có thể chọn cơ sở khác khi chấm công và ghi rõ lý do.</p>
       <div className="mg-attendance-clock-heading"><div><strong>{data?.staff?.name || 'Tài khoản chấm công'}</strong><p>{loading?'Đang kiểm tra ca…':data?.open?'Đang trong ca':data?.staff?'Chưa vào ca':error?'Không tải được trạng thái ca.':'Tài khoản chưa liên kết nhân viên đang hoạt động.'}</p></div><LiveVietnamClock serverNow={data?.server_now} onDayChanged={handleDayChanged}/></div>
-      <div className="mg-attendance-shift-label">{data?.shift_code==='G1+G3'&&!data.latest?'G1+G3 · 08:00–12:00 · 17:00–21:00':data?.shift?data.shift.shift_name+' · '+timeOnly(data.shift.starts_at)+' – '+timeOnly(data.shift.ends_at):data?.shift_code==='O'?'Đăng ký nghỉ':'Chưa có ca đăng ký'}</div>
+      <div className="mg-attendance-shift-label">{data?.shift_code==='G1+G3'&&!data.latest?`G1+G3 · ${splitAttendanceShiftHours(data.schedule_offset_minutes)}`:data?.shift?data.shift.shift_name+' · '+timeOnly(data.shift.starts_at)+' – '+timeOnly(data.shift.ends_at):data?.shift_code==='O'?'Đăng ký nghỉ':'Chưa có ca đăng ký'}</div>
       <dl className="mg-attendance-time-metrics"><div><dt>Giờ vào</dt><dd>{timeOnly(data?.latest?.clock_in_at)}</dd></div><div><dt>Giờ ra</dt><dd>{timeOnly(data?.latest?.clock_out_at)}</dd></div><div className={data?.late_minutes?'is-late':''}><dt>Đi muộn</dt><dd>{lateLabel(data?.late_minutes,data?.shift_code)}</dd></div><div className={data?.early_leave_minutes?'is-late':''}><dt>Về sớm</dt><dd>{earlyLabel(data?.early_leave_minutes,data?.latest?.clock_out_at,data?.shift_code)}</dd></div></dl>
       <div className="mg-attendance-punch-actions">
         <button type="button" className="mg-button" disabled={Boolean(clockInBlockedReason)} title={clockInBlockedReason} onClick={()=>startClock('in')}>
@@ -165,13 +167,13 @@ export function AttendancePage() {
       </div>
     </div>
     {error && <p className="mg-field-error" role="alert">{error}</p>}
-    {clock&&<ClockCapture action={clock.action} initialLocation={clock.initialLocation} onClose={()=>setClock(null)} onSaved={()=>{setClock(null);refresh();notify(clock.action==='in'?'Đã ghi nhận vào ca.':'Đã ghi nhận ra ca.');}}/>}
+    {clock&&data?.staff?.store_id&&<ClockCapture homeStore={data.staff.store_id} stores={data.stores ?? [{id:data.staff.store_id,name:data.staff.store_name || 'Cơ sở được phân công'}]} action={clock.action} initialLocation={clock.initialLocation} onClose={()=>setClock(null)} onSaved={()=>{setClock(null);refresh();notify(clock.action==='in'?'Đã ghi nhận vào ca.':'Đã ghi nhận ra ca.');}}/>}
   </div></section>;
 }
 
 export function AttendanceHistoryPage() {
-  const {selectedStore,selectStore,dataset,ensureData,notify,can,accessUser} = useManagement();
-  const canViewRegistration = can('hr.read');
+  const {selectedStore,selectStore,dataset,ensureData,notify,accessUser} = useManagement();
+  const canViewRegistration = canConfigureAttendance(accessUser);
   const isAdmin = isAdminAccount(accessUser);
   useEffect(()=>{void ensureData(['stores']).catch(()=>{});},[ensureData]);
   useEffect(()=>{setPage(1);},[selectedStore]);
@@ -302,7 +304,7 @@ function AttendanceRecordDialog({mode,row,onClose,onSaved}:{
         <label>Giờ vào (Việt Nam)<input type="datetime-local" required value={clockIn} onChange={event=>setClockIn(event.target.value)} disabled={busy}/></label>
         <label>Giờ ra (Việt Nam)<input type="datetime-local" required={Boolean(row.clock_out_at)} value={clockOut} onChange={event=>setClockOut(event.target.value)} disabled={busy}/></label>
       </div> : view ? <>
-        <p>Cơ sở: <strong>{row.store_name || 'Chưa gắn cơ sở'}</strong>{row.store_from_profile && ' (theo hồ sơ nhân viên hiện tại)'}</p>
+        <p>Cơ sở phụ trách <strong>{row.store_name || 'Chưa gắn cơ sở'}</strong>{row.store_from_profile && ' (theo hồ sơ nhân viên hiện tại)'}</p>
         <div className="mg-attendance-evidence-pair">
           <Evidence row={row} side="in"/>
           <Evidence row={row} side="out"/>
@@ -322,11 +324,13 @@ function AttendanceRecordDialog({mode,row,onClose,onSaved}:{
   </Dialog>;
 }
 
-function ClockCapture({action,initialLocation,onClose,onSaved}:{action:'in'|'out';initialLocation:Promise<InitialClockLocation>;onClose:()=>void;onSaved:()=>void}) {
+function ClockCapture({action,homeStore,stores,initialLocation,onClose,onSaved}:{homeStore:number;stores:AttendanceStoreOption[];action:'in'|'out';initialLocation:Promise<InitialClockLocation>;onClose:()=>void;onSaved:()=>void}) {
   const video=useRef<HTMLVideoElement>(null),stream=useRef<MediaStream|null>(null),lock=useRef(false),requestId=useRef(crypto.randomUUID());
   const [cameraReady,setCameraReady]=useState(false),[photo,setPhoto]=useState<Blob|null>(null),[preview,setPreview]=useState(''),[locating,setLocating]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
   const [clockLocation,setClockLocation]=useState<InitialClockLocation|null>(null);
   const [deniedRetries,setDeniedRetries]=useState(0);
+  const [store,setStore]=useState(String(homeStore)), [note,setNote]=useState('');
+  const needsNote=store!==String(homeStore)&&!note.trim();
   useEffect(()=>{let current=true;
     void initialLocation.then(location => {
       if(!current)return;
@@ -369,12 +373,12 @@ function ClockCapture({action,initialLocation,onClose,onSaved}:{action:'in'|'out
     canvas.getContext('2d')?.drawImage(video.current,0,0);canvas.toBlob(blob=>{if(blob){setPhoto(blob);}else setError('Không chụp được ảnh. Vui lòng thử lại.');},'image/jpeg',0.8);
   }
   async function save() {
-    if(lock.current||locating||!photo||!clockLocation||clockLocation instanceof Error)return;
+    if(lock.current||locating||!photo||needsNote||!clockLocation||clockLocation instanceof Error)return;
     lock.current=true;setBusy(true);setError('');
     try {
       const location = Math.abs(Date.now()-clockLocation.timestamp)<60_000 ? clockLocation : await retryLocation();
       if(!location)return;
-      const form=new FormData();form.set('action',action);form.set('request_id',requestId.current);form.set('photo',photo,'cham-cong.jpg');form.set('location',JSON.stringify(location));await responseData(await fetch('/api/auth/attendance',{method:'POST',body:form}));onSaved();
+      const form=new FormData();form.set('action',action);form.set('request_id',requestId.current);form.set('photo',photo,'cham-cong.jpg');form.set('location',JSON.stringify(location));form.set('store_id',store);form.set('note',note.trim());await responseData(await fetch('/api/auth/attendance',{method:'POST',body:form}));onSaved();
     }
     catch(cause){setError(cause instanceof Error?cause.message:'Chưa xác nhận được chấm công. Giữ màn hình này để thử lại cùng lần chấm.');}
     finally {lock.current=false;setBusy(false);}
@@ -389,6 +393,8 @@ function ClockCapture({action,initialLocation,onClose,onSaved}:{action:'in'|'out
       <video ref={video} autoPlay playsInline muted onLoadedData={()=>setCameraReady(true)} aria-label="Camera chấm công"/>
       <button type="button" className="mg-button" disabled={!cameraReady||busy} onClick={capture}><Camera size={17}/>{photo?'Chụp lại':'Chụp ảnh'}</button>
       {preview&&<img src={preview} alt="Ảnh chấm công vừa chụp"/>}
+      <label className="mg-field">Cơ sở chấm công<select value={store} disabled={busy} onChange={event=>setStore(event.target.value)}>{stores.map(option=><option key={option.id} value={option.id}>{option.name}</option>)}</select></label>
+      <label className="mg-field">{store===String(homeStore)?'Ghi chú (không bắt buộc)':'Lý do chấm công tại cơ sở khác (bắt buộc)'}<textarea value={note} maxLength={500} disabled={busy} onChange={event=>setNote(event.target.value)} /></label>
       {error&&<p className="mg-field-error" role="alert">{error}</p>}
     </div>
     {showLocationHelp && <div className="mg-dialog-body">
@@ -411,7 +417,7 @@ function ClockCapture({action,initialLocation,onClose,onSaved}:{action:'in'|'out
         ? <button type="button" className="mg-button mg-button-primary" disabled={locating} onClick={()=>void retryLocation()}>
           <MapPin size={17} aria-hidden="true"/>{locating?'Đang lấy vị trí…':showLocationHelp?'Kiểm tra lại vị trí':'Lấy vị trí hiện tại'}
         </button>
-        : <button type="button" className="mg-button mg-button-primary" disabled={busy||checkingLocation||!photo} onClick={()=>void save()}>
+        : <button type="button" className="mg-button mg-button-primary" disabled={busy||checkingLocation||!photo||needsNote} onClick={()=>void save()}>
           {checkingLocation?'Đang lấy vị trí…':busy?'Đang lưu…':action==='in'?'Xác nhận vào ca':'Xác nhận ra ca'}
         </button>}
     </div>

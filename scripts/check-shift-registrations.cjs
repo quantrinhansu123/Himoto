@@ -21,7 +21,7 @@ async function main() {
   for (const patch of [{staff_id:0},{staff_id:'1'},{store_id:-1},{work_date:'2026-02-30'},{work_date:'2101-01-01'},{shift_code:'X'},{shift_code:''},{revision:'0'},{revision:1},{revision:undefined},{actor_id:1}]) assert.throws(() => server.parseRegistration({...base,...patch}));
   assert.equal(server.parseRegistration({...base,shift_code:null,revision:'2'}).shift_code,null);
   const access = load(path.resolve('src/lib/server/access-request'));
-  assert.equal(access.requestPermission('/api/auth/duty-roster/registrations','GET'),'hr.read');
+  assert.equal(access.requestPermission('/api/auth/duty-roster/registrations','GET'),null);
   assert.equal(access.requestPermission('/api/auth/duty-roster/registrations','PUT'),'hr.write');
   assert.equal(access.requestPermission('/api/auth/attendance/shift-registration','GET'),null);
   assert.equal(access.requestPermission('/api/auth/attendance/shift-registration','PUT'),null);
@@ -42,7 +42,7 @@ async function main() {
       assert.equal((await c.query('SELECT count(*)::int n FROM himoto.staff_shift_registrations')).rows[0].n,0);
     } finally { await c.query('ROLLBACK'); }
   }
-  const tables = ['staff_shift_registration_history','staff_shift_registrations','staff_profiles','stores'];
+  const tables = ['staff_shift_registration_week_locks','staff_shift_registration_history','staff_shift_registrations','staff_profiles','stores'];
   let failHistory = false;
   const db = {query: async (sql,args) => {
     if (failHistory && sql.startsWith('INSERT INTO himoto.staff_shift_registration_history')) throw new Error('simulated audit failure');
@@ -57,7 +57,8 @@ async function main() {
   const save = (patch={}) => atomic(() => server.saveRegistration(db, 143, {...base,...patch}));
   try {
     await c.query('BEGIN');
-    await c.query(`CREATE TEMP TABLE qa_registration_staff_profiles(id bigint,full_name text,position text,store_id bigint,status text) ON COMMIT DROP;
+    await c.query(`CREATE TEMP TABLE qa_registration_staff_shift_registration_week_locks(week_start date PRIMARY KEY,locked_by bigint) ON COMMIT DROP;
+      CREATE TEMP TABLE qa_registration_staff_profiles(id bigint,full_name text,position text,store_id bigint,status text) ON COMMIT DROP;
       INSERT INTO qa_registration_staff_profiles VALUES(1,'QA Active','PT',23,'active'),(2,'QA Inactive','PT',23,'inactive'),(3,'QA No store','PT',null,'active');
       CREATE TEMP TABLE qa_registration_stores(id bigint,store_name text,status text) ON COMMIT DROP;
       INSERT INTO qa_registration_stores VALUES(23,'QA Store','opening'),(24,'QA Closed','inactive');

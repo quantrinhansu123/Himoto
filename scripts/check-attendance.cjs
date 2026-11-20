@@ -2,13 +2,25 @@ const assert = require('node:assert/strict'), fs = require('node:fs'), path = re
 require('@next/env').loadEnvConfig(process.cwd(),false,{info(){},error(){}});
 const {load,root} = require('./lib/load-typescript.cjs');
 const {ownerDatabase} = load(path.join(root,'lib/server/himoto-database'));
-const {ATTENDANCE_SHIFT_JOIN,compareRegisteredAttendance,recordAttendance,manageAttendance,parseAttendanceLocation,attendanceDistanceMeters,attendancePhotoMime,attendanceScope} = load(path.join(root,'lib/server/attendance'));
+const {ATTENDANCE_SCHEDULE_OFFSET,ATTENDANCE_SHIFT_JOIN,compareRegisteredAttendance,recordAttendance,manageAttendance,parseAttendanceLocation,attendanceDistanceMeters,nearestAttendanceStore,attendancePhotoMime,attendanceScope} = load(path.join(root,'lib/server/attendance'));
+const {attendanceLocationLabel} = load(path.resolve(root,'../shared/mobile-support'));
+const {setRegistrationWeekLock,lockedRegistrationWeeks} = load(path.join(root,'lib/server/shift-registration'));
+const {saveSelfRegistrationWeek} = load(path.join(root,'lib/server/self-shift-registration'));
+const {canManageShiftRegistration} = load(path.resolve(root,'../shared/access-permissions'));
 const {requestPermission} = load(path.join(root,'lib/server/access-request'));
 async function main() {
   const location = parseAttendanceLocation(JSON.stringify({latitude:21.03,longitude:105.85,accuracy:15,timestamp:Date.now()}));
   assert.equal(attendanceDistanceMeters(location,location),0);
   assert.equal(attendanceDistanceMeters({latitude:0,longitude:0.01},{latitude:0,longitude:0}),1112);
   assert.equal(attendanceDistanceMeters(location,null),null);
+  const near = nearestAttendanceStore(location,[{latitude:0,longitude:0,store_name:'Far'},{...location,store_name:'Near'}]);
+  assert.deepEqual(near,{store_name:'Near',distance_m:0});
+  assert.equal(attendanceLocationLabel(location,{...near,distance_m:100}),'Near');
+  assert.match(attendanceLocationLabel(location,{...near,distance_m:100.1}),/101 m$/);
+  assert.match(attendanceLocationLabel(location,{...near,distance_m:1100}),/1,1 km$/);
+  assert.equal(requestPermission('/api/auth/duty-roster/registrations','GET'),null);
+  assert.equal(canManageShiftRegistration({access_role:'branch_manager',permissions:['hr.write']}),false);
+  assert.equal(canManageShiftRegistration({access_role:'hr',permissions:['hr.write']}),true);
   assert.throws(()=>parseAttendanceLocation(JSON.stringify({...location,latitude:91})));
   assert.throws(()=>parseAttendanceLocation(JSON.stringify({...location,timestamp:Date.now()-600000})));
   assert.throws(()=>attendancePhotoMime(Buffer.from('not an image')));
@@ -45,6 +57,19 @@ async function main() {
   const client=await ownerDatabase.connect();
   try {
     await client.query('BEGIN');
+    const {rows: offsets} = await client.query(`SELECT ${ATTENDANCE_SCHEDULE_OFFSET} AS minutes
+      FROM (VALUES (1,'Trụ Sở Chính','physical','2026-11-20'),(2,'CS Thuê sở hữu','lease_to_own','2026-11-20'),
+        (3,'PGD Nguyễn Hoàng','physical','2026-11-20'),(4,'Trụ Sở Chính','physical','2026-11-19')) s(id,store_name,kind,day)
+      CROSS JOIN LATERAL (SELECT s.day::date AS work_date) registration ORDER BY s.id`);
+    assert.deepEqual(offsets.map(row=>row.minutes),[15,15,0,0]);
+    const day='2026-11-20';
+    const shifted = compareRegisteredAttendance({work_date:day,shift_code:'S'}, `${day}T08:16:00+07:00`, `${day}T17:14:00+07:00`, offsets[0].minutes);
+    assert.equal(shifted.scheduled_in,'2026-11-20T01:15:00.000Z');
+    assert.equal(shifted.scheduled_out,'2026-11-20T10:15:00.000Z');
+    assert.equal(shifted.late_minutes,1);
+    assert.equal(shifted.early_leave_minutes,1);
+    assert.equal(compareRegisteredAttendance({work_date:day,shift_code:'G1+G3'}, `${day}T12:10:00+07:00`, null, 15).scheduled_out,'2026-11-20T05:15:00.000Z');
+    assert.equal(compareRegisteredAttendance({work_date:day,shift_code:'O'}, null, null, 15).scheduled_in,null);
     await client.query(`CREATE TEMP TABLE qa_attendance (LIKE himoto.management_staff_attendance INCLUDING ALL EXCLUDING INDEXES) ON COMMIT DROP;
       ALTER TABLE qa_attendance ADD PRIMARY KEY (id), ADD UNIQUE (in_request), ADD UNIQUE (out_request);
       CREATE UNIQUE INDEX management_staff_attendance_open ON qa_attendance(staff_id) WHERE clock_out_at IS NULL`);
@@ -53,18 +78,22 @@ async function main() {
       .replace('ON himoto.management_staff_attendance(','ON pg_temp.qa_attendance(')
       .replace('DROP INDEX IF EXISTS himoto.', 'DROP INDEX IF EXISTS pg_temp.');
     await client.query(migration);
-    const staff = {id:900001,full_name:'QA chấm công',store_id:2};
+    const staff = {id:900001,full_name:'QA chấm công',store_id:2,store_name:'Home'};
+    await client.query('CREATE TEMP TABLE qa_week_locks (week_start date PRIMARY KEY,locked_by bigint NOT NULL) ON COMMIT DROP');
     let linked=true, punchTime;
     const db = {query(sql,args) {
       if(punchTime && sql==='SELECT clock_timestamp() AS now') return Promise.resolve({rows:[{now:punchTime}]});
       if(sql.includes('FROM himoto.staff_profiles')) return Promise.resolve({rows:linked?[staff]:[]});
+      if(sql.includes('SELECT store_name FROM himoto.stores')) return Promise.resolve({rows:args[0]==='3'?[{store_name:'Other'}]:[]});
       sql=sql.replaceAll('himoto.management_staff_attendance','pg_temp.qa_attendance');
+      sql=sql.replaceAll('himoto.staff_shift_registration_week_locks','pg_temp.qa_week_locks');
       assert(!sql.includes('himoto.'));
       return client.query(sql,args);
     }};
     const user={id:900001,access_role:'branch_staff',store_id:2}, photo=Buffer.from([255,216,255,224]);
     const into='11111111-1111-4111-8111-111111111111',out='22222222-2222-4222-8222-222222222222';
-    const first=await recordAttendance(db,user,'in',into,photo,location);
+    await assert.rejects(recordAttendance(db,user,'in',into,photo,location,'3',' '), /Nhập lý do/);
+    const first=await recordAttendance(db,user,'in',into,photo,location,'3','  Support shift  ');
     assert.equal((await recordAttendance(db,user,'in',into,photo,location)).replayed,true);
     await assert.rejects(recordAttendance(db,user,'in','33333333-3333-4333-8333-333333333333',photo,location),e=>e.status===409);
     await assert.rejects(recordAttendance(db,user,'out',into,photo,location),e=>e.status===409);
@@ -73,6 +102,13 @@ async function main() {
     await assert.rejects(recordAttendance(db,user,'out','44444444-4444-4444-8444-444444444444',photo,location),e=>e.status===409);
     const row=(await client.query('SELECT * FROM qa_attendance')).rows[0];
     assert(row.clock_out_at>=row.clock_in_at);assert.equal(row.staff_name,staff.full_name);assert(row.in_photo.equals(photo));assert(row.out_photo.equals(photo));
+    assert.equal(row.in_location.store_name,'Other');assert.equal(row.in_location.note,'Support shift');assert.equal(row.out_location.store_name,'Home');
+    const week='2026-11-16', days=[{work_date:week,shift_code:'S',revision:null}];
+    await setRegistrationWeekLock(db,user.id,{week,locked:true});
+    assert.deepEqual(await lockedRegistrationWeeks(db,'2026-11-17','2026-11-19'),[week]);
+    await assert.rejects(saveSelfRegistrationWeek(db,user,{week,days},week), /Tuần đăng ký đã khóa/);
+    await setRegistrationWeekLock(db,user.id,{week,locked:false});
+    assert.deepEqual(await lockedRegistrationWeeks(db,week,week),[]);
     await client.query(`CREATE TEMP TABLE qa_attendance_registrations (LIKE himoto.staff_shift_registrations INCLUDING ALL) ON COMMIT DROP;
       INSERT INTO qa_attendance_registrations(staff_id,store_id,work_date,shift_code,created_by,updated_by)
       VALUES (900001,2,'2026-11-04','G3',900001,900001),(900001,2,'2026-11-05','S',900001,900001),(900002,2,'2026-11-06','G2',900001,900001);`);

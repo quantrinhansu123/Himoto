@@ -2,8 +2,31 @@ import 'server-only';
 import type { PoolClient } from 'pg';
 import { monthDates, registrationDates, REGISTRATION_SHIFTS, type RegistrationMonth, type RegistrationRange, type ShiftRegistration } from '@/lib/management/shift-registration';
 import { DutyError, validDutyDate } from './duty-roster';
+import { weekStart } from '@/lib/management/duty-roster';
 
 type Database = Pick<PoolClient, 'query'>;
+export async function lockedRegistrationWeeks(db: Database, from: string, to: string): Promise<string[]> {
+  const result = await db.query('SELECT week_start::text FROM himoto.staff_shift_registration_week_locks WHERE week_start BETWEEN $1::date AND $2::date ORDER BY week_start', [weekStart(from), weekStart(to)]);
+  return result.rows.map(row => String(row.week_start));
+}
+
+export async function lockRegistrationWeekTransaction(db: Database, week: string, shared = false) {
+  await db.query("SET LOCAL lock_timeout='5s'");
+  await db.query(`SELECT pg_advisory_xact_lock${shared ? '_shared' : ''}(hashtext('staff-shift-registration-week'), $1::date - DATE '2000-01-01')`, [week]);
+}
+
+export async function setRegistrationWeekLock(db: Database, actorId: number, raw: unknown) {
+  const { week, locked } = (raw ?? {}) as { week?: unknown; locked?: unknown };
+  if (typeof week !== 'string' || !validDutyDate(week) || weekStart(week) !== week || typeof locked !== 'boolean') throw new DutyError('Chọn tuần bắt đầu vào thứ Hai.');
+  if (week < weekStart('2000-01-01') || week > weekStart('2100-12-31')) throw new DutyError('Tuần đăng ký không hợp lệ.');
+  await lockRegistrationWeekTransaction(db, week);
+  if (locked) {
+    await db.query('INSERT INTO himoto.staff_shift_registration_week_locks(week_start,locked_by) VALUES ($1::date,$2) ON CONFLICT DO NOTHING', [week, actorId]);
+  } else {
+    await db.query('DELETE FROM himoto.staff_shift_registration_week_locks WHERE week_start=$1::date', [week]);
+  }
+  return { week, locked };
+}
 export function parseRegistration(raw: unknown) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new DutyError('Đăng ký ca không hợp lệ.');
   const v = raw as Record<string, unknown>;
@@ -35,7 +58,8 @@ export async function readRegistrationRange(db: Database, from: string, to: stri
     ORDER BY s.store_name NULLS LAST,p.full_name,p.id`, args);
   const registrations = await db.query(`SELECT ${columns} FROM himoto.staff_shift_registrations WHERE work_date BETWEEN $1::date AND $2::date`, args);
   const stores = await db.query('SELECT id,store_name FROM himoto.stores ORDER BY store_name,id');
-  return { from, to, staff: staff.rows.map(p => ({ id: Number(p.id), name: String(p.full_name), position: String(p.position || ''), store_id: p.store_id == null ? null : Number(p.store_id), store_name: String(p.store_name || 'Chưa có cơ sở'), status: String(p.status) })), registrations: registrations.rows.map(map), stores: stores.rows.map(s => ({ id: Number(s.id), name: String(s.store_name) })) };
+  const locked_weeks = await lockedRegistrationWeeks(db, from, to);
+  return { from, to, locked_weeks, staff: staff.rows.map(p => ({ id: Number(p.id), name: String(p.full_name), position: String(p.position || ''), store_id: p.store_id == null ? null : Number(p.store_id), store_name: String(p.store_name || 'Chưa có cơ sở'), status: String(p.status) })), registrations: registrations.rows.map(map), stores: stores.rows.map(s => ({ id: Number(s.id), name: String(s.store_name) })) };
 }
 export async function saveRegistration(db: Database, actorId: number, raw: unknown) {
   const input = parseRegistration(raw);

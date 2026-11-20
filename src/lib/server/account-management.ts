@@ -25,7 +25,7 @@ export async function listManagedAccounts(client:Pick<PoolClient,'query'>,user?:
   }
   if(storeId!==null&&(!Number.isSafeInteger(storeId)||storeId<1))throw new AccountAccessError('Cơ sở không hợp lệ.');
   return (await client.query(`SELECT u.id,u.name,u.email,u.status,a.login_name,COALESCE(a.access_role,CASE WHEN u.role_id=1 THEN 'admin' ELSE 'accounting' END) AS access_role,${effectiveStoreSql} AS store_id,
-    CASE WHEN a.access_role='ownership_manager' THEN false ELSE COALESCE(a.scope_all,true) END AS scope_all,COALESCE(a.permissions,CASE WHEN u.role_id=1 THEN $1::jsonb ELSE $2::jsonb END) AS permissions,a.enabled,s.store_name,s.kind AS store_kind,
+    CASE WHEN a.access_role='ownership_manager' THEN false ELSE COALESCE(a.scope_all,true) END AS scope_all,COALESCE((to_jsonb(a)->'scope_all_read')='true'::jsonb,false) AS scope_all_read,COALESCE(a.permissions,CASE WHEN u.role_id=1 THEN $1::jsonb ELSE $2::jsonb END) AS permissions,a.enabled,s.store_name,s.kind AS store_kind,
     p.id AS staff_id,p.staff_code,p.status AS staff_status,u.xmin::text AS revision,u.password AS password_hash,pw.password_fingerprint,
     COALESCE(u.management_password_changed_at,pw.changed_at) AS password_changed_at
     FROM himoto.users u LEFT JOIN himoto.management_account_access a ON a.user_id=u.id
@@ -42,12 +42,15 @@ export async function saveManagedAccount(client:Pick<PoolClient,'query'>,actorId
   if(user)requireAccountScope(user);
   const scopedManager=isOwnershipManager(user??dataAccess.getStore())?user??dataAccess.getStore():undefined;
   const input=parseAccountValues(raw,!id);
+  const allStoresRead=(raw as Record<string,unknown>).scope_all_read;
+  if(allStoresRead!==undefined&&typeof allStoresRead!=='boolean')throw new AccountAccessError('Phạm vi xem không hợp lệ.');
+  if(allStoresRead!==undefined&&!isAdminAccount(user))throw new AccountAccessError('Chỉ quản trị viên được đổi quyền xem tất cả cơ sở.',403);
   requireManagedTarget(scopedManager,input);
   if(id&&input.password)throw new AccountAccessError('Đã bỏ chức năng đặt lại mật khẩu. Nhân viên tự đổi mật khẩu của mình.',403);
   if(!id){if(!input.login_name)input.login_name='nv.'+randomBytes(6).toString('hex');if(!input.password)input.password=randomBytes(18).toString('base64url');}
   await client.query("SET LOCAL lock_timeout='5s'");
   await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',['management-accounts']);
-  const before=id?(await client.query(`SELECT u.id,u.name,u.status,u.xmin::text AS revision,a.login_name,a.access_role,${effectiveStoreSql} AS store_id,CASE WHEN a.access_role='ownership_manager' THEN false ELSE a.scope_all END AS scope_all,a.permissions,a.enabled
+  const before=id?(await client.query(`SELECT u.id,u.name,u.status,u.xmin::text AS revision,a.login_name,a.access_role,${effectiveStoreSql} AS store_id,CASE WHEN a.access_role='ownership_manager' THEN false ELSE a.scope_all END AS scope_all,COALESCE((to_jsonb(a)->'scope_all_read')='true'::jsonb,false) AS scope_all_read,a.permissions,a.enabled
     FROM himoto.users u LEFT JOIN himoto.management_account_access a ON a.user_id=u.id WHERE u.id=$1 AND u.deleted_at IS NULL FOR UPDATE OF u`,[id])).rows[0]:null;
   if(id&&!before)throw new AccountAccessError('Không tìm thấy tài khoản.',404);
   if(before)requireManagedTarget(scopedManager,before);
@@ -73,13 +76,14 @@ export async function saveManagedAccount(client:Pick<PoolClient,'query'>,actorId
     VALUES($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$8) ON CONFLICT(user_id) DO UPDATE SET login_name=EXCLUDED.login_name,access_role=EXCLUDED.access_role,
     store_id=EXCLUDED.store_id,scope_all=EXCLUDED.scope_all,permissions=EXCLUDED.permissions,enabled=EXCLUDED.enabled,updated_by=$8,updated_at=now()`,
     [id,input.login_name,input.access_role,input.store_id,input.scope_all,JSON.stringify(input.permissions),input.enabled,actorId]);
+  if(allStoresRead!==undefined)await client.query('UPDATE himoto.management_account_access SET scope_all_read=$2 WHERE user_id=$1',[id,!input.scope_all&&allStoresRead]);
   if(password)await rememberAccountPassword(client,id!,input.password,password,actorId,'create');
   const admins=await client.query(`SELECT 1 FROM himoto.users u LEFT JOIN himoto.management_account_access a ON a.user_id=u.id
     WHERE u.status='active' AND u.deleted_at IS NULL AND (a.access_role='admin' AND a.enabled OR a.user_id IS NULL AND u.role_id=1) LIMIT 1`);
   if(!admins.rowCount)throw new AccountAccessError('Phải giữ ít nhất một tài khoản quản trị đang hoạt động.',409);
   const {password:omitted,...safe}=input;void omitted;
   await client.query(`INSERT INTO himoto.management_access_audit(actor_id,target_user_id,action,before_value,after_value) VALUES($1,$2,$3,$4::jsonb,$5::jsonb)`,
-    [actorId,id,before?'update':'create',before?JSON.stringify(before):null,JSON.stringify({...safe,password_changed:Boolean(password)})]);
+    [actorId,id,before?'update':'create',before?JSON.stringify(before):null,JSON.stringify({...safe,scope_all_read:allStoresRead===undefined?before?.scope_all_read??false:!input.scope_all&&allStoresRead,password_changed:Boolean(password)})]);
   return {id,...(!before?{credentials:{login_name:input.login_name,password:input.password,enabled:input.enabled}}:{})};
 }
 

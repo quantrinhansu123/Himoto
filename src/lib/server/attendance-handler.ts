@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { SessionUser } from '@/lib/server/management-session';
 import { ownerDatabase } from '@/lib/server/himoto-database';
-import { ATTENDANCE_ON_LOCAL_DATE, ATTENDANCE_SHIFT_JOIN, SPLIT_SHIFT_MORNING_END, compareRegisteredAttendance, AttendanceError, attendanceDistanceMeters, attendanceScope, attendanceStaff, attendancePhotoMime, manageAttendance, parseAttendanceLocation, recordAttendance } from '@/lib/server/attendance';
+import { ATTENDANCE_ON_LOCAL_DATE, ATTENDANCE_SCHEDULE_OFFSET, ATTENDANCE_SHIFT_JOIN, SPLIT_SHIFT_MORNING_END, compareRegisteredAttendance, AttendanceError, attendanceDistanceMeters, nearestAttendanceStore, attendanceScope, attendanceStaff, attendancePhotoMime, manageAttendance, parseAttendanceLocation, recordAttendance } from '@/lib/server/attendance';
 import { failureResponse } from '@/lib/server/public-failure';
 import { vietnamDate } from '@/lib/management/duty-roster';
 import { isAdminAccount } from '@/lib/management/permissions';
@@ -40,22 +40,27 @@ export async function handleAttendance(request: NextRequest, user: SessionUser) 
       const { now } = (await client.query('SELECT clock_timestamp() AS now')).rows[0];
       const open = staff ? (await client.query(`SELECT id,clock_in_at FROM himoto.management_staff_attendance
         WHERE staff_id=$1 AND clock_out_at IS NULL AND ${ATTENDANCE_ON_LOCAL_DATE}`,[staff.id,now])).rows[0] : null;
-      const latest = staff ? (await client.query(`SELECT clock_in_at,clock_out_at FROM himoto.management_staff_attendance
+      const latest = staff ? (await client.query(`SELECT clock_in_at,clock_out_at,store_id FROM himoto.management_staff_attendance
         WHERE staff_id=$1 AND ${ATTENDANCE_ON_LOCAL_DATE} ORDER BY clock_in_at DESC,id DESC LIMIT 1`,[staff.id,now])).rows[0] : null;
-      const registration = staff ? (await client.query(`SELECT registration.work_date::text,registration.shift_code FROM (SELECT $1::bigint AS staff_id,$2::timestamptz AS clock_in_at) a ${ATTENDANCE_SHIFT_JOIN}`,[staff.id,latest?.clock_in_at || now])).rows[0] : undefined;
-      const comparison = compareRegisteredAttendance(registration, latest?.clock_in_at, latest?.clock_out_at);
+      const registration = staff ? (await client.query(`SELECT registration.work_date::text,registration.shift_code,
+        ${ATTENDANCE_SCHEDULE_OFFSET} AS offset_minutes FROM (SELECT $1::bigint AS staff_id,$2::timestamptz AS clock_in_at) a
+        LEFT JOIN himoto.stores s ON s.id=$3 ${ATTENDANCE_SHIFT_JOIN}`,[staff.id,latest?.clock_in_at || now,latest?.store_id ?? staff.store_id])).rows[0] : undefined;
+      const offsetMinutes = Number(registration?.offset_minutes ?? 0);
+      const comparison = compareRegisteredAttendance(registration, latest?.clock_in_at, latest?.clock_out_at, offsetMinutes);
       const shift = comparison.scheduled_in && comparison.scheduled_out
         ? { shift_name: comparison.shift_name, starts_at: comparison.scheduled_in, ends_at: comparison.scheduled_out }
         : null;
       const summary = {
         staff:staff?{name:staff.full_name,store_id:staff.store_id,store_name:staff.store_name}:null,
-        open:open||null,latest:latest||null,shift,shift_code:comparison.shift_name,
+        open:open||null,latest:latest?{clock_in_at:latest.clock_in_at,clock_out_at:latest.clock_out_at}:null,
+        shift,shift_code:comparison.shift_name,schedule_offset_minutes:offsetMinutes,
         late_minutes:comparison.late_minutes,early_leave_minutes:comparison.early_leave_minutes,
         server_now:now.toISOString(),
       };
       if (params.get('view') === 'summary') {
+        const stores = staff ? (await client.query("SELECT id,store_name FROM himoto.stores WHERE status IN ('active','opening') OR id=$1 ORDER BY store_name,id",[staff.store_id])).rows.map(row => ({id:Number(row.id),name:String(row.store_name)})) : [];
         await client.query('COMMIT');
-        return NextResponse.json({status:'success',data:summary},{headers:{'Cache-Control':'no-store'}});
+        return NextResponse.json({status:'success',data:{...summary,stores}},{headers:{'Cache-Control':'no-store'}});
       }
       // The profile supplies a display/filter reference for older punches with no recorded branch.
       const attendanceSource = `FROM himoto.management_staff_attendance a
@@ -72,7 +77,7 @@ export async function handleAttendance(request: NextRequest, user: SessionUser) 
         a.in_location,a.out_location,a.out_photo IS NOT NULL AS has_out_photo,
         profile.store_id IS NOT NULL AS store_from_profile,
         location.latitude AS store_latitude,location.longitude AS store_longitude,
-        registration.work_date::text,registration.shift_code,
+        registration.work_date::text,registration.shift_code,${ATTENDANCE_SCHEDULE_OFFSET} AS offset_minutes,
         min(a.clock_in_at) OVER shift_punches AS first_in,
         max(a.clock_out_at) OVER shift_punches AS last_out,
         bool_or(a.clock_out_at IS NULL) OVER shift_punches AS shift_open,
@@ -82,33 +87,41 @@ export async function handleAttendance(request: NextRequest, user: SessionUser) 
         LEFT JOIN himoto.stores s ON s.id=${displayStore}
         LEFT JOIN himoto.management_attendance_locations location ON location.store_id=s.id
         ${ATTENDANCE_SHIFT_JOIN} WHERE ${rangeScope}
-        WINDOW shift_punches AS (PARTITION BY a.staff_id,(a.clock_in_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date,
+        WINDOW shift_punches AS (PARTITION BY a.staff_id,(a.clock_in_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date,${ATTENDANCE_SCHEDULE_OFFSET},
           CASE WHEN registration.shift_code='G1+G3'
-            THEN (a.clock_in_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::time < $9::time END)
+            THEN (a.clock_in_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::time < $9::time + make_interval(mins => ${ATTENDANCE_SCHEDULE_OFFSET}) END)
       )
       SELECT * FROM punches WHERE ($7::bigint IS NULL OR display_store_id=$7)
       ORDER BY clock_in_at DESC,id DESC LIMIT $10 OFFSET $8`,[...args,(currentPage-1)*50,SPLIT_SHIFT_MORNING_END,exporting?50000:50])).rows;
+      const locations = !exporting && rows.length ? (await client.query<{store_name:string;latitude:number;longitude:number}>(`
+        SELECT s.store_name,l.latitude::float8,l.longitude::float8
+        FROM himoto.management_attendance_locations l JOIN himoto.stores s ON s.id=l.store_id
+        WHERE l.latitude IS NOT NULL AND l.longitude IS NOT NULL ORDER BY s.id`)).rows : [];
       await client.query('COMMIT');
       const canManage = isAdminAccount(user);
       return NextResponse.json({status:'success',data:{
         ...summary,
-        rows:rows.map(({work_date,shift_code,store_latitude,store_longitude,display_store_id:_displayStoreId,
+        rows:rows.map(({work_date,shift_code,offset_minutes,store_latitude,store_longitude,display_store_id:_displayStoreId,
           first_in,last_out,shift_open,punch_count,credit_rank,...row})=>{
           const storeLocation = store_latitude != null && store_longitude != null
             ? {latitude:Number(store_latitude),longitude:Number(store_longitude)}
             : null;
           const registration = {work_date,shift_code};
-          const comparison = compareRegisteredAttendance(registration,row.clock_in_at,row.clock_out_at);
+          const comparison = compareRegisteredAttendance(registration,row.clock_in_at,row.clock_out_at,Number(offset_minutes));
           const creditRow = Number(credit_rank) === 1;
           const aggregated = comparison.standard_credit !== null && Number(punch_count) > 1;
           const credit = creditRow && aggregated
-            ? compareRegisteredAttendance(registration,first_in,shift_open?null:last_out).earned_credit
+            ? compareRegisteredAttendance(registration,first_in,shift_open?null:last_out,Number(offset_minutes)).earned_credit
             : comparison.earned_credit;
           return {...row,
             can_manage:canManage,
             has_store_location:storeLocation !== null,
             in_distance_m:attendanceDistanceMeters(row.in_location,storeLocation),
             out_distance_m:attendanceDistanceMeters(row.out_location,storeLocation),
+            ...(!exporting && {
+              in_nearest_store:nearestAttendanceStore(row.in_location,locations),
+              out_nearest_store:nearestAttendanceStore(row.out_location,locations),
+            }),
             ...comparison,
             earned_credit:creditRow?credit:null,
             credit_aggregated:aggregated && creditRow,
@@ -131,7 +144,7 @@ export async function handleAttendance(request: NextRequest, user: SessionUser) 
     const photo = Buffer.from(await file.arrayBuffer()); attendancePhotoMime(photo);
     const location = parseAttendanceLocation(String(form.get('location') || ''));
     await client.query('BEGIN');
-    const data = await recordAttendance(client,user,String(form.get('action')),String(form.get('request_id')),photo,location);
+    const data = await recordAttendance(client,user,String(form.get('action')),String(form.get('request_id')),photo,location,form.get('store_id'),form.get('note'));
     await client.query('COMMIT');
     return NextResponse.json({status:'success',data},{headers:{'Cache-Control':'no-store'}});
   } catch (error) {

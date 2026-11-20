@@ -1,10 +1,19 @@
 const assert = require('node:assert/strict');
 const path = require('node:path');
+globalThis.AsyncLocalStorage ??= require('node:async_hooks').AsyncLocalStorage;
 const { NextRequest } = require('next/server');
+const { workAsyncStorage } = require('next/dist/server/app-render/work-async-storage.external');
 const { load, root } = require('./lib/load-typescript.cjs');
 const { parseShiftInput, SHIFT_PHOTOS, emptyShiftSummary, shiftVehicleTotal } = load(path.join(root, 'lib/management/shift-reports'));
+const {shiftInventoryTelegramText} = load(path.join(root,'lib/server/shift-report-domain'));
 const base = { store_id: 1, date: '2026-10-21', staff: 'Chu Văn Tú, Nguyễn Anh Tú', vehicles: 19, batteries: 4, charged: 2, transfers: 1, cash: 1865000, personal: 64300134, company: 26790959, electricity_off: false, notes: 'Không' };
 async function main() {
+  for (const [report_type,label] of [['mid_shift','giữa ca'],['end_shift','cuối ca']]) {
+    const text=shiftInventoryTelegramText({...base,report_type},'Giáp Bát');
+    assert(text.startsWith(`Báo cáo ${label} PGD Giáp Bát · 21/10/2026\n`));
+    assert.match(text,/Xe lưu kho thực tế: 19 xe\nPin cửa hàng: 4 pin · Pin đầy: 2\/4\nXe điều chuyển: 1/);
+    assert.match(text,/Tiền các tài khoản:\n• Tiền mặt: 1\.865\.000 đ/);
+  }
   assert.deepEqual(parseShiftInput(base), base);
   assert.equal(parseShiftInput({...base,rented_batteries:7}).rented_batteries,7);
   for(const rented_batteries of [-1,1.5,'7',null,100001])assert.throws(()=>parseShiftInput({...base,rented_batteries}));
@@ -36,19 +45,19 @@ async function main() {
       session.userFromSession=async()=>({id:7,access_role:'admin',scope_all:true,permissions:[]});
       Object.defineProperty(database.himotoPool,'connect',{configurable:true,value:async()=>({release(){},query:async(sql,params)=>{
         statements.push(sql);
-        if(sql==='SELECT id FROM himoto.stores WHERE id=$1')return {rows:[{id:1}],rowCount:1};
+        if(sql==='SELECT id,store_name FROM himoto.stores WHERE id=$1')return {rows:[{id:1,store_name:'Giáp Bát'}],rowCount:1};
         if(sql.startsWith('SELECT * FROM himoto.management_shift_reports'))return {rows:[{id:1,status:locked?'submitted':'draft',revision:1,store_id:1,payload:base}]};
         if(sql.startsWith('UPDATE himoto.management_shift_reports SET app_snapshot')||sql.startsWith('UPDATE himoto.management_shift_reports SET submitted_at'))return {rows:[]};
         if(sql.startsWith('UPDATE himoto.management_shift_reports')){assert.equal(params[1],'submitted');return {rows:[{id:1,revision:2}]};}
         if(sql.startsWith('INSERT INTO himoto.management_shift_reports')){assert.equal(params[4],'submitted');return {rows:[{id:2,revision:1}]};}
         return {rows:[]};
       }})});
-      const submit=(electricity_off,id=1)=>POST(new NextRequest('http://localhost/api/auth/shift-reports',{method:'POST',headers:{origin:'http://localhost','Content-Type':'application/json'},body:JSON.stringify({id,revision:1,payload:{...base,electricity_off},status:'submitted'})}));
+      const submit=(electricity_off,id=1)=>workAsyncStorage.run({afterContext:{after(){}}},()=>POST(new NextRequest('http://localhost/api/auth/shift-reports',{method:'POST',headers:{origin:'http://localhost','Content-Type':'application/json'},body:JSON.stringify({id,revision:1,payload:{...base,electricity_off},status:'submitted'})})));
       assert.equal((await submit(true)).status,200);
       assert.equal((await submit(false)).status,400);
       assert.equal((await submit(true,null)).status,200);
       locked=true;assert.equal((await submit(true)).status,409);
-      assert(!statements.some(sql=>sql.includes('management_shift_photos')));
+      assert.equal(statements.filter(sql=>sql.includes('INSERT INTO himoto.management_report_deliveries')).length,2);
       console.log('PASS: chốt không có ảnh, vẫn cần xác nhận tắt điện và khóa báo cáo đã chốt.');
     } finally {session.userFromSession=original;Object.defineProperties(database.himotoPool,descriptors);}
   }

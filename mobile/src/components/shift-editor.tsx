@@ -65,6 +65,7 @@ export function ShiftEditor({ record, options, initialStore, initialReportType =
     return value;
   });
   const [baseline] = useState(() => JSON.stringify(input)), [tab, setTab] = useState("information"), [busy, setBusy] = useState(false), [pending, setPending] = useState(false), [error, setError] = useState(""), [confirm, setConfirm] = useState<"draft" | "submitted" | null>(null), [exit, setExit] = useState<(() => void) | null>(null), [filled, setFilled] = useState<Record<string, ShiftAutofillResult>>({}), [leaving, setLeaving] = useState(false);
+  const [photoCategory,setPhotoCategory] = useState<'vehicles'|'batteries'|null>(null);
   const [inventoryDetailOpen, setInventoryDetailOpen] = useState(false);
   const [transferPreview, setTransferPreview] = useState<{ key: string; rows?: ShiftTransfer[]; error?: string }>({ key: "" });
   const alive = useRef(true), running = useRef(false), started = useRef(new Set<string>()), loadingTransferRef = useRef("");
@@ -143,14 +144,14 @@ export function ShiftEditor({ record, options, initialStore, initialReportType =
   const outgoingTransfers = transfers ? transfers.filter(item => item.direction === "out").length : 0;
   const uniqueTransferVehicles = transfers ? new Set(transfers.map(item => item.vehicle_id)).size : 0;
 
-  function review(status: "draft" | "submitted") {
+  function review(status: "draft" | "submitted", category: 'vehicles'|'batteries'|null = null) {
     try {
       parseShiftInput(input);
       if (status === "submitted") {
         if (!input.electricity_off) throw Error("Xác nhận đã tắt thiết bị điện trước khi chốt.");
         if (input.ownership_report) validateOwnershipSubmission(input.ownership_report);
       }
-      setError(""); setConfirm(status);
+      setError(""); setPhotoCategory(category); setConfirm(status);
     } catch (cause) { setError((cause as Error).message); }
   }
 
@@ -167,7 +168,7 @@ export function ShiftEditor({ record, options, initialStore, initialReportType =
       await api.saveShift({ payload: parseShiftInput(input), status, ...(record ? { id: record.id, revision: record.revision } : {}) }, intent.key);
       if (!alive.current) return;
       setLeaving(true); disablePrevention();
-      router.replace({ pathname: "/shift-result/[key]", params: { key: intent.key } });
+      router.replace({ pathname: "/shift-result/[key]", params: { key: intent.key, ...(photoCategory && {category:photoCategory}) } });
     } catch (cause) { if (alive.current) setError((cause as Error).message); }
     finally { running.current = false; if (alive.current) setBusy(false); }
   }
@@ -205,6 +206,7 @@ export function ShiftEditor({ record, options, initialStore, initialReportType =
         {n("monthly_vehicles", "Đang thuê tháng")}
         {n("vehicles", "Lưu kho thực tế")}
         {n("other_vehicles", "Xe khác / thuê sở hữu")}
+        <Button secondary label="Thêm bộ ảnh kiểm kê xe" disabled={busy || pending} onPress={() => review("draft","vehicles")} />
         <Text style={{ color: theme.text, fontWeight: "700", fontSize: 16 }}>Tổng số xe: {shiftVehicleTotal(input) ?? "Chưa đủ số liệu"} (gồm cả xe giữ bên ngoài)</Text>
         {inventoryFilled?.inventory && <View style={{ gap: 10 }}>
           <Button secondary label={inventoryDetailOpen ? "Ẩn chi tiết đối chiếu xe" : "Chi tiết đối chiếu xe"} onPress={() => setInventoryDetailOpen(open => !open)} />
@@ -224,6 +226,7 @@ export function ShiftEditor({ record, options, initialStore, initialReportType =
         {n("batteries", "Tổng số pin (pin)")}
         {n("charged", "Trong đó pin đầy (pin)")}
         {n("rented_batteries", "Pin đã cho thuê (pin)")}
+        <Button secondary label="Thêm bộ ảnh kiểm kê pin" disabled={busy || pending} onPress={() => review("draft","batteries")} />
         <Button secondary label="Tự điền số pin từ DB" loading={busy} disabled={pending || !input.store_id || !input.date} onPress={() => { void fill("batteries"); }} />
       </Card>
       <Card style={{ gap: 14 }}>
@@ -257,7 +260,7 @@ export function ShiftEditor({ record, options, initialStore, initialReportType =
     {!!error && <InlineError message={error} />}
     <Button secondary label="Lưu nháp" loading={busy} disabled={pending} onPress={() => review("draft")} /><Button label="Chốt báo cáo" loading={busy} disabled={pending} onPress={() => review("submitted")} />
     {pending && !busy && <Button secondary label="Mở Tài khoản để đối chiếu báo cáo ca" onPress={() => { setLeaving(true); disablePrevention(); router.push("/(tabs)/account"); }} />}
-    {confirm && <ConfirmEdit title={confirm === "submitted" ? `Chốt báo cáo ${typeLabel.toLowerCase()}?` : "Lưu nháp?"} message={`${input.date} · ${options.stores.find(s => s.id === input.store_id)?.name || ""}\nLoại báo cáo: ${typeLabel}\nNhân sự: ${input.staff}\nTổng số xe: ${shiftVehicleTotal(input) ?? "Chưa đủ"}\nTiền mặt: ${money(input.cash)}\n${confirm === "submitted" ? "Sau chốt, số kiểm kê và minh chứng PGD được giữ nguyên để KTNB đối soát." : "Lưu nháp để thêm minh chứng và tiếp tục kiểm kê."}`} confirmLabel={confirm === "submitted" ? "Xác nhận chốt báo cáo ca" : "Xác nhận lưu nháp báo cáo ca"} onCancel={() => setConfirm(null)} onConfirm={() => { void save(); }} />}
+    {confirm && <ConfirmEdit title={confirm === "submitted" ? `Chốt báo cáo ${typeLabel.toLowerCase()}?` : photoCategory ? "Lưu nháp để thêm ảnh kiểm kê?" : "Lưu nháp?"} message={`${input.date} · ${options.stores.find(s => s.id === input.store_id)?.name || ""}\nLoại báo cáo: ${typeLabel}\nNhân sự: ${input.staff}\nTổng số xe: ${shiftVehicleTotal(input) ?? "Chưa đủ"}\nTiền mặt: ${money(input.cash)}\n${confirm === "submitted" ? "Sau chốt, số kiểm kê và minh chứng PGD được giữ nguyên để KTNB đối soát." : "Lưu nháp để thêm minh chứng và tiếp tục kiểm kê."}`} confirmLabel={confirm === "submitted" ? "Xác nhận chốt báo cáo ca" : "Xác nhận lưu nháp báo cáo ca"} onCancel={() => setConfirm(null)} onConfirm={() => { void save(); }} />}
     {exit && <ConfirmEdit title={pending ? "Giữ mã và rời báo cáo?" : "Bỏ thay đổi chưa lưu?"} message={pending ? "Mã yêu cầu vẫn được giữ trên thiết bị. Đối chiếu trong Tài khoản trước khi tạo lần lưu mới." : "Các thay đổi trên biểu mẫu chưa được lưu. Lưu nháp trước khi rời nếu cần giữ lại."} confirmLabel="Rời báo cáo ca" onCancel={() => setExit(null)} onConfirm={() => { const repeat = exit; setExit(null); setLeaving(true); disablePrevention(); repeat(); }} />}
   </KeyboardFormScrollView></SafeAreaView>;
 }

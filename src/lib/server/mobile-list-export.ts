@@ -46,6 +46,7 @@ export async function exportMobileList(user:SessionUser,kind:string,request:Next
     return{filename:`himoto-cham-cong-${exportFrom}-${exportTo}.xlsx`,mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',contentBase64:Buffer.from(bytes).toString('base64'),rowCount:rows.length};
   }
   if(kind==='shift-registrations'){
+    if(!hasPermission(user,'hr.read'))throw new MobileError('Không có quyền xuất bảng đăng ký ca.',403,'FORBIDDEN');
     if([...params.keys()].some(k=>!['from','to','store','search'].includes(k)||params.getAll(k).length!==1))throw new MobileError('Bộ lọc đăng ký ca không hợp lệ.');
     const from=params.get('from')||'',to=params.get('to')||'',store=params.get('store')||'all',search=params.get('search')||'';
     try{registrationDates(from,to);}catch(error){throw new MobileError((error as Error).message);}

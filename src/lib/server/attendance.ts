@@ -66,6 +66,22 @@ export function parseAttendanceLocation(value: string) {
 type Coordinates = { latitude: number; longitude: number };
 
 export function attendanceDistanceMeters(punch: Coordinates | null, store: Coordinates | null) {
+  const distance = distanceMeters(punch, store);
+  return distance === null ? null : Math.round(distance);
+}
+
+export function nearestAttendanceStore(punch: Coordinates | null, stores: (Coordinates & {store_name: string})[]) {
+  let nearest: {store_name: string; distance_m: number} | null = null;
+  for (const store of stores) {
+    const distance = distanceMeters(punch, store);
+    if (distance !== null && (nearest === null || distance < nearest.distance_m)) {
+      nearest = {store_name: store.store_name, distance_m: distance};
+    }
+  }
+  return nearest;
+}
+
+function distanceMeters(punch: Coordinates | null, store: Coordinates | null) {
   if (!punch || !store) return null;
   const valid = ({latitude,longitude}: Coordinates) =>
     Number.isFinite(latitude) && Math.abs(latitude) <= 90 &&
@@ -76,7 +92,7 @@ export function attendanceDistanceMeters(punch: Coordinates | null, store: Coord
   const longitudeDelta = radians(punch.longitude - store.longitude);
   const haversine = Math.sin(latitudeDelta / 2) ** 2 +
     Math.cos(radians(punch.latitude)) * Math.cos(radians(store.latitude)) * Math.sin(longitudeDelta / 2) ** 2;
-  return Math.round(2 * 6371000 * Math.asin(Math.sqrt(Math.min(1,haversine))));
+  return 2 * 6371000 * Math.asin(Math.sqrt(Math.min(1,haversine)));
 }
 
 export function attendancePhotoMime(bytes: Buffer) {
@@ -91,7 +107,7 @@ export async function attendanceStaff(db: Database, user: SessionUser) {
   if (result.rows.length !== 1) return null;
   return result.rows[0];
 }
-export async function recordAttendance(db: Database, user: SessionUser, action: string, requestId: string, photo: Buffer, location: ReturnType<typeof parseAttendanceLocation>) {
+export async function recordAttendance(db: Database, user: SessionUser, action: string, requestId: string, photo: Buffer, location: ReturnType<typeof parseAttendanceLocation>, selectedStore: unknown = null, rawNote: unknown = null) {
   if (!['in','out'].includes(action) || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId)) throw new AttendanceError('Lần chấm công không hợp lệ.');
   const mime = attendancePhotoMime(photo);
   const staff = await attendanceStaff(db,user);
@@ -104,17 +120,30 @@ export async function recordAttendance(db: Database, user: SessionUser, action: 
     if (String(previous.rows[0][action === 'in' ? 'in_request' : 'out_request']).toLowerCase() !== requestId.toLowerCase()) throw new AttendanceError('Mã lần chấm công thuộc thao tác khác.',409);
     return { id: Number(previous.rows[0].id), replayed: true };
   }
+  if (selectedStore !== null && (typeof selectedStore !== 'string' || !/^[1-9]\d{0,14}$/.test(selectedStore))) throw new AttendanceError('Cơ sở chấm công không hợp lệ.');
+  if (rawNote !== null && typeof rawNote !== 'string') throw new AttendanceError('Ghi chú chấm công không hợp lệ.');
+  const note = typeof rawNote === 'string' ? rawNote.trim() : '';
+  if (note.length > 500) throw new AttendanceError('Ghi chú chấm công tối đa 500 ký tự.');
+  const otherStore = selectedStore !== null && selectedStore !== String(staff.store_id);
+  if (otherStore && !note) throw new AttendanceError('Nhập lý do chấm công tại cơ sở khác.');
+  let storeName = staff.store_name;
+  if (otherStore) {
+    const store = (await db.query("SELECT store_name FROM himoto.stores WHERE id=$1 AND status IN ('active','opening') FOR SHARE", [selectedStore])).rows[0];
+    if (!store) throw new AttendanceError('Cơ sở chấm công không còn hoạt động.',409);
+    storeName = store.store_name;
+  }
+  const evidence = JSON.stringify({...location,store_id:Number(selectedStore ?? staff.store_id),store_name:storeName,...(note && {note})});
   const { now } = (await db.query('SELECT clock_timestamp() AS now')).rows[0];
   const opened = await db.query(`SELECT id FROM himoto.management_staff_attendance
     WHERE staff_id=$1 AND clock_out_at IS NULL AND ${ATTENDANCE_ON_LOCAL_DATE} FOR UPDATE`,[staff.id,now]);
   if (action === 'in') {
     if (opened.rows.length) throw new AttendanceError('Bạn đã vào ca. Bấm Ra ca trước khi bắt đầu ca mới.',409);
     const result = await db.query(`INSERT INTO himoto.management_staff_attendance(staff_id,actor_id,store_id,staff_name,in_request,in_photo,in_mime,in_location,clock_in_at)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9) RETURNING id`,[staff.id,user.id,staff.store_id,staff.full_name,requestId,photo,mime,JSON.stringify(location),now]);
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9) RETURNING id`,[staff.id,user.id,staff.store_id,staff.full_name,requestId,photo,mime,evidence,now]);
     return { id: Number(result.rows[0].id) };
   }
   if (!opened.rows.length) throw new AttendanceError('Bạn chưa có ca đang mở trong ngày hôm nay.',409);
-  await db.query(`UPDATE himoto.management_staff_attendance SET clock_out_at=$6,out_request=$2,out_photo=$3,out_mime=$4,out_location=$5::jsonb WHERE id=$1`,[opened.rows[0].id,requestId,photo,mime,JSON.stringify(location),now]);
+  await db.query(`UPDATE himoto.management_staff_attendance SET clock_out_at=$6,out_request=$2,out_photo=$3,out_mime=$4,out_location=$5::jsonb WHERE id=$1`,[opened.rows[0].id,requestId,photo,mime,evidence,now]);
   return { id: Number(opened.rows[0].id) };
 }
 
@@ -122,6 +151,8 @@ type AttendanceTime = string | Date | null | undefined;
 const morningShift = attendanceShift('G1')!;
 const eveningShift = attendanceShift('G3')!;
 export const SPLIT_SHIFT_MORNING_END = morningShift.end;
+export const ATTENDANCE_SCHEDULE_OFFSET = `CASE WHEN registration.work_date >= DATE '2026-11-20'
+  AND (s.kind='lease_to_own' OR lower(btrim(s.store_name))='trụ sở chính') THEN 15 ELSE 0 END`;
 
 function minutesAfter(later: AttendanceTime, earlier: AttendanceTime) {
   if (!later || !earlier) return null;
@@ -132,11 +163,12 @@ export function compareRegisteredAttendance(
   registration: { work_date: string | null; shift_code: string | null } | undefined,
   clockIn: AttendanceTime,
   clockOut: AttendanceTime,
+  offsetMinutes = 0,
 ) {
   const shift = REGISTRATION_SHIFTS.find(option => option.code === registration?.shift_code);
   const workDate = registration?.work_date;
   const atWorkTime = (time: string | null | undefined) =>
-    workDate && time ? new Date(`${workDate}T${time}:00+07:00`).toISOString() : null;
+    workDate && time ? new Date(Date.parse(`${workDate}T${time}:00+07:00`) + offsetMinutes * 60_000).toISOString() : null;
   let segment = shift;
   const morningEnd = atWorkTime(SPLIT_SHIFT_MORNING_END);
   if (shift?.code === 'G1+G3' && clockIn && morningEnd) {

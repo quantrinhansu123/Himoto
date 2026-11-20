@@ -6,3 +6,4 @@ export const runtime = 'nodejs';
 export const maxDuration = 30;
 export async function GET(request: NextRequest) { try { const { user } = await requireMobileSession(request); return mobileJson(await mobileShiftRegistration(user, request, false)); } catch (error) { return mobileFailure(error); } }
 export const PUT = GET;
+export const PATCH = GET;
