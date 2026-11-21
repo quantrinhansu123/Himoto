@@ -1,11 +1,23 @@
 import type { ManagementRow } from './types';
 
 export async function updateCustomerBlacklist(customer: ManagementRow, blacklisted: boolean) {
-  if (!customer.customer_revision) throw new Error('Nhấn Làm mới để tải phiên bản hồ sơ trước khi đổi Blacklist.');
-  const response = await fetch(`/api/auth/customers/${customer.id}/blacklist`, {
+  const url = `/api/auth/customers/${customer.id}/blacklist`;
+  let revision = customer.customer_revision;
+  if (typeof revision !== 'string' || !/^\d{1,20}$/.test(revision)) {
+    const response = await fetch(url, { method: 'GET', credentials: 'same-origin', cache: 'no-store', headers: { Accept: 'application/json' } });
+    const result = await response.json().catch(() => null);
+    const row = result?.data;
+    if (!response.ok || result?.status !== 'success' || Number(row?.id) !== customer.id ||
+        typeof row?.blacklisted !== 'boolean' || typeof row?.customer_revision !== 'string' || !/^\d{1,20}$/.test(row.customer_revision)) {
+      throw new Error(result?.message || 'Không tải được phiên bản hồ sơ khách hàng. Nhấn Làm mới rồi thử lại.');
+    }
+    if (row.blacklisted !== (customer.status === 'blacklist')) throw new Error('Trạng thái Blacklist đã thay đổi. Nhấn Làm mới trước khi thử lại.');
+    revision = row.customer_revision;
+  }
+  const response = await fetch(url, {
     method: 'PATCH', credentials: 'same-origin', cache: 'no-store',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({ blacklisted, revision: customer.customer_revision }),
+    body: JSON.stringify({ blacklisted, revision }),
   });
   const result = await response.json().catch(() => null);
   if (!response.ok || result?.status !== 'success') throw new Error(result?.message || 'Chưa xác nhận được thay đổi Blacklist. Nhấn Làm mới để kiểm tra.');

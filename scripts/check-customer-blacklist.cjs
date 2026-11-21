@@ -48,8 +48,25 @@ async function main() {
     assert.deepEqual(await updateCustomerBlacklist(customer, true), { status: 'blacklist', customer_revision: '124' });
     assert.equal(calls[0].options.method, 'PATCH'); assert.equal(calls[0].url, '/api/auth/customers/7/blacklist');
     assert.deepEqual(JSON.parse(calls[0].options.body), { blacklisted: true, revision: '123' });
-    await assert.rejects(updateCustomerBlacklist({ ...customer, customer_revision: '' }, true));
     assert.equal(calls.length, 1);
+    const legacyCustomer = { ...customer, customer_revision: '' };
+    calls.length = 0;
+    let currentBlacklisted = false;
+    global.fetch = async (url, options) => {
+      calls.push({ url, options });
+      const data = options.method === 'GET'
+        ? { id: '7', blacklisted: currentBlacklisted, customer_revision: '125' }
+        : { id: '7', status: 'blacklist', customer_revision: '126' };
+      return { ok: true, json: async () => ({ status: 'success', data }) };
+    };
+    assert.deepEqual(await updateCustomerBlacklist(legacyCustomer, true), { status: 'blacklist', customer_revision: '126' });
+    assert.deepEqual(calls.map(call => call.options.method), ['GET', 'PATCH']);
+    assert.deepEqual(JSON.parse(calls[1].options.body), { blacklisted: true, revision: '125' });
+    calls.length = 0;
+    currentBlacklisted = true;
+    await assert.rejects(updateCustomerBlacklist(legacyCustomer, true), /Trạng thái Blacklist đã thay đổi/);
+    assert.deepEqual(calls.map(call => call.options.method), ['GET']);
+    checks.push('legacy rows fetch their revision before writing and reject a changed Blacklist state');
     for (const response of [
       { ok: false, json: async () => ({ message: 'conflict' }) },
       { ok: true, json: async () => ({ status: 'success', data: { id: 8, status: 'blacklist', customer_revision: '124' } }) },
