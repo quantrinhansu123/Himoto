@@ -14,7 +14,7 @@ export function requestPermission(path:string,method:string,action=''):AccessPer
   const read=method==='GET';
   if(path==='/api/auth/guide-faq')return null; // Authenticated shared guide; answer permission is checked in the handler.
   if(path.startsWith('/api/auth/attendance'))return null; // Self-service; handler enforces actor and HR branch scope.
-  if(path==='/api/auth/duty-roster/registrations'&&read)return null;
+  if((path==='/api/auth/duty-roster' || path==='/api/auth/duty-roster/registrations')&&read)return null;
   if(path.startsWith('/api/auth/shift-reports'))return 'contracts.read';
   if(path.startsWith('/api/auth/accounts'))return 'accounts.manage';
   if(path==='/api/auth/password')return null;

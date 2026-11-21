@@ -20,6 +20,7 @@ import { ManagementRow } from '@/lib/management/types';
 import { formatMoney } from '@/lib/formatters';
 import { MobileDetailsCard } from './MobileDetailsCard';
 import { StoreWorkShifts } from './StoreWorkShifts';
+import { canViewStaffDirectory } from '@/lib/management/permissions';
 
 const SECTIONS = [
   { id: 'shifts', label: 'Ca làm việc' },
@@ -162,9 +163,11 @@ function StoreCashbook({ storeId, onOpenCashbook }: { storeId: number; onOpenCas
 
 export function StoreDetail({ row, canEdit, onEdit, onClose }: { row: ManagementRow; canEdit: boolean; onEdit: () => void; onClose: () => void }) {
   const config = MANAGEMENT_CONFIG.stores;
-  const { selectStore } = useManagement();
+  const { selectStore, accessUser } = useManagement();
+  const staffVisible = canViewStaffDirectory(accessUser);
   const router = useRouter();
-  const [section, setSection] = useState<StoreSection>('details');
+  const [selectedSection, setSection] = useState<StoreSection>('details');
+  const section = selectedSection === 'staff' && !staffVisible ? 'details' : selectedSection;
   function openList(target: ListSection | 'cashbook') {
     selectStore(String(row.id)); onClose(); router.push(LIST_PATHS[target]);
   }
@@ -174,14 +177,14 @@ export function StoreDetail({ row, canEdit, onEdit, onClose }: { row: Management
 
   return <Dialog title={String(row.name)} subtitle={`${row.code} · ${config.title}`} className="mg-store-detail" onClose={onClose}>
     <div className="mg-dialog-body">
-      <ContractSectionTabs prefix="store-detail" label={config.title} sections={SECTIONS} active={section} onChange={setSection} />
+      <ContractSectionTabs prefix="store-detail" label={config.title} sections={SECTIONS.filter(tab => tab.id !== 'staff' || staffVisible)} active={section} onChange={setSection} />
       {panel('details', <>
         <span className={`mg-status mg-status-${statusTone(row.status)}`}><span />{optionLabel(config, 'status', row.status)}</span>
         <dl className="mg-detail-grid">{config.columns.filter(column => column.key !== 'name' && column.key !== 'status').map(column => <div key={column.key} data-detail-field={column.key}><dt>{column.label}</dt><dd>{optionLabel(config, column.key, formatValue(row[column.key], column.format))}</dd></div>)}
           {config.fields.filter(field => !config.columns.some(column => column.key === field.key)).map(field => <div key={field.key} data-detail-field={field.key}><dt>{field.label}</dt><dd>{row[field.key] || '—'}</dd></div>)}</dl>
       </>)}
       {panel('shifts', section === 'shifts' && <StoreWorkShifts storeId={row.id} onClose={onClose} />)}
-      {LIST_SECTIONS.map(kind => panel(kind, section === kind && <StoreRelatedList kind={kind} storeId={row.id} onOpenList={() => openList(kind)} onClose={onClose} />))}
+      {LIST_SECTIONS.filter(kind => kind !== 'staff' || staffVisible).map(kind => panel(kind, section === kind && <StoreRelatedList kind={kind} storeId={row.id} onOpenList={() => openList(kind)} onClose={onClose} />))}
       {panel('cashbook', section === 'cashbook' && <StoreCashbook storeId={row.id} onOpenCashbook={() => openList('cashbook')} />)}
     </div>
     <div className="mg-dialog-footer"><button type="button" className="mg-button" onClick={onClose}>Đóng</button>{canEdit && <button type="button" className="mg-button mg-button-primary" onClick={onEdit}>Chỉnh sửa thông tin</button>}</div>

@@ -27,12 +27,12 @@ function map(row: Record<string, unknown>): DutySchedule {
   const time=(value:unknown)=>value instanceof Date ? value.toISOString() : value == null ? null : String(value);
   return {id:Number(row.id),store_id:Number(row.store_id),store_name:String(row.store_name||''),staff_id:row.staff_id==null?null:Number(row.staff_id),staff_name:String(row.staff_name||''),staff_phone:String(row.staff_phone||''),duty_date:String(row.duty_date),shift_name:String(row.shift_name||''),role_in_shift:String(row.role_in_shift||''),notes:String(row.notes||''),starts_at:time(row.starts_at),ends_at:time(row.ends_at),revision:String(row.revision)};
 }
-export async function listDuties(client: Database, date: string, storeId?: number) {
+export async function listDuties(client: Database, date: string, storeId?: number, includePrivateDetails = true) {
   if (!validDutyDate(date) || (storeId!==undefined && (!Number.isSafeInteger(storeId)||storeId<=0))) throw new DutyError('Tuần hoặc cơ sở không hợp lệ.');
   const start=weekStart(date),end=addDays(start,7);
   const result=await client.query(`${SELECT} WHERE d.deleted_at IS NULL AND ($3::bigint IS NULL OR d.store_id=$3)
     AND ((d.starts_at<$2::timestamptz AND d.ends_at>$1::timestamptz) OR (d.starts_at IS NULL AND d.duty_date>=$4::date AND d.duty_date<$5::date)) ORDER BY d.duty_date,d.starts_at,d.id`,[`${start}T00:00:00+07:00`,`${end}T00:00:00+07:00`,storeId??null,start,end]);
-  return {week:start,schedules:result.rows.map(map)};
+  return {week:start,schedules:result.rows.map(row => map(includePrivateDetails ? row : { ...row, staff_phone: '', notes: '' }))};
 }
 async function lock(client: Database) { await client.query("SET LOCAL lock_timeout='5s'"); await client.query("SET LOCAL statement_timeout='15s'"); await client.query('LOCK TABLE himoto.store_duty_schedules IN SHARE ROW EXCLUSIVE MODE'); }
 async function readOne(client: Database,id:number) { const r=await client.query(`${SELECT} WHERE d.id=$1 AND d.deleted_at IS NULL`,[id]);if(!r.rowCount)throw new DutyError('Ca trực không còn tồn tại.',404);return map(r.rows[0]); }

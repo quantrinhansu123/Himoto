@@ -25,8 +25,11 @@ async function main() {
   assert.throws(()=>parseAttendanceLocation(JSON.stringify({...location,timestamp:Date.now()-600000})));
   assert.throws(()=>attendancePhotoMime(Buffer.from('not an image')));
   assert.equal(requestPermission('/api/auth/attendance','POST'),null);
-  assert.equal(attendanceScope({id:1,access_role:'branch_staff',store_id:2}).reviewer,false);
-  assert.deepEqual(attendanceScope({id:1,access_role:'branch_manager',permissions:['hr.read'],store_id:2}),{reviewer:true,all:false,store:2});
+  for (const access_role of ['branch_staff','ownership_staff','branch_manager','ownership_manager']) {
+    assert.equal(attendanceScope({id:1,access_role,permissions:['hr.read'],store_id:2,store_kind:'lease_to_own',scope_all:false}).reviewer,false);
+  }
+  assert.deepEqual(attendanceScope({id:1,access_role:'hr',permissions:['hr.read'],store_id:2}),{reviewer:true,all:false,store:2});
+  assert.equal(attendanceScope({id:1,access_role:'admin'}).reviewer,true);
   const compare = (code, clockIn, clockOut) => compareRegisteredAttendance(
     {work_date:'2026-11-05',shift_code:code}, clockIn, clockOut,
   );

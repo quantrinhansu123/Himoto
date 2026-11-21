@@ -104,20 +104,23 @@ async function main() {
     return tree;
   };
   let drawer = renderDrawer();
-  assert.equal(sectionButtons(drawer).length, 5);
+  assert.equal(sectionButtons(drawer).length, 6);
   assert.equal(sectionButtons(drawer).filter(n => n.props.accessibilityState.expanded).length, 1);
   assert.equal(drawer.find(n => n.key === 'contracts').props.accessibilityState.selected, true);
   assert(!drawer.some(n => n.key === 'staff'));
-  drawer = openSection('VẬN HÀNH & QUẦY');
-  assert(drawer.some(n => n.key === 'attendance')); assert(!drawer.some(n => n.key === 'contracts'));
+  drawer = openSection('Nhân sự');
+  assert.deepEqual(drawer.filter(n => n.type === 'Pressable' && n.key).map(n => n.key), ['attendance','self-shift-registration']);
   sectionButtons(drawer).find(n => n.props.accessibilityState.expanded).props.onPress(); drawer = renderDrawer();
   assert.equal(sectionButtons(drawer).filter(n => n.props.accessibilityState.expanded).length, 0);
   assert(!drawer.some(n => n.key === 'attendance'));
   pathname = '/gps'; drawer = renderDrawer();
   assert.equal(drawer.find(n => n.key === 'gps').props.accessibilityState.selected, true);
   assert.equal(sectionButtons(drawer).find(n => n.props.accessibilityState.expanded).props.accessibilityLabel, 'ĐỘI XE & ĐỊNH VỊ');
-  pathname = '/contracts'; drawer = openSection('NHÂN SỰ & CƠ SỞ');
-  for (const [key, route] of [['staff','/directory/staff'],['stores','/directory/stores']]) { drawer.find(n => n.key === key).props.onPress(); assert.equal(pushed.pop(), route); }
+  pathname = '/contracts'; user.role = 'hr'; drawer = openSection('HCNS');
+  assert.deepEqual(drawer.filter(n => n.type === 'Pressable' && n.key).map(n => n.key), ['staff','shift-registrations','duty-roster','attendance-history']);
+  drawer.find(n => n.key === 'staff').props.onPress(); assert.equal(pushed.pop(), '/directory/staff');
+  drawer = openSection('CƠ SỞ');
+  drawer.find(n => n.key === 'stores').props.onPress(); assert.equal(pushed.pop(), '/directory/stores');
   const files = fs.readdirSync(path.join(root,'mobile/src/app'), { recursive: true }).filter(file => /\.tsx$/.test(file));
   const routes = files.map(file => file.replaceAll('\\','/').replace(/\.tsx$/,'').replace(/(^|\/)index$/,'').replace(/(^|\/)\([^/]+\)(?=\/|$)/g,'').replace(/^\//,''));
   function exists(route) { const clean = typeof route === 'string' ? route : route.pathname; return routes.some(pattern => new RegExp('^/' + pattern.replace(/\[[^\]]+\]/g,'[^/]+') + '/?$').test(clean.replace(/\/\([^/]+\)/g,'') || '/')); }
@@ -130,9 +133,9 @@ async function main() {
   assert(openSection('TÀI CHÍNH & HỆ THỐNG').some(n=>n.key==='integrations'));
   user.role='staff';user.permissions=user.permissions.filter(p=>p!=='contracts.read');
   assert(!openSection('VẬN HÀNH & QUẦY').some(n=>n.key==='shift-reports'));
-  assert(openSection('VẬN HÀNH & QUẦY').some(n=>n.key==='attendance'));
+  assert(openSection('Nhân sự').some(n=>n.key==='attendance'));
   checks.push('Integration menu follows the admin-only API even with settings.write; end-of-shift reporting requires contracts.read while personal attendance remains available');
-  user.permissions = ['contracts.read']; const limitedDrawer = openSection('NHÂN SỰ & CƠ SỞ');
+  user.permissions = ['contracts.read']; const limitedDrawer = openSection('CƠ SỞ');
   assert(!limitedDrawer.some(n => n.key === 'staff'));
   assert(limitedDrawer.some(n => n.key === 'stores'));
   assert(!sectionButtons(limitedDrawer).some(n => n.props.accessibilityLabel === 'ĐỘI XE & ĐỊNH VỊ'));

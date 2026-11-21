@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { router, Stack, useLocalSearchParams } from "expo-router";
 import { Linking, ScrollView, Text } from "react-native";
 import type { MobileStoreProfile } from "../../../../shared/mobile-stores";
+import { canViewStaffDirectory } from "../../../../shared/access-permissions";
 import { useSession } from "@/providers/session";
 import { useStoreWrite } from "@/hooks/use-store-write";
 import { useTheme } from "@/theme";
@@ -30,7 +31,7 @@ function StoreDetails({ row }: { row: MobileStoreProfile }) {
       <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 18, fontWeight: "700" }}>Dữ liệu tại cơ sở</Text>
       {session!.user.permissions.includes('contracts.read')&&<Button secondary label="Hợp đồng của cơ sở" onPress={()=>router.push({pathname:'/store-records/[id]/[kind]',params:{id:String(row.id),kind:'contracts'}})}/>}
       {session!.user.permissions.includes("finance.read") && <Button secondary label="Sổ quỹ / Sổ két của cơ sở" onPress={() => router.push({ pathname: "/cashbook", params: { store: String(row.id) } })} />}
-      {([{ kind: "staff", permission: "hr.read", label: "Nhân sự của cơ sở" }, { kind: "vehicles", permission: "vehicles.read", label: "Xe tại cơ sở" }, { kind: "customers", permission: "customers.read", label: "Khách hàng của cơ sở" }] as const).filter(link => session!.user.permissions.includes(link.permission)).map(link => <Button key={link.kind} secondary label={link.label} onPress={() => router.push({ pathname: "/store-records/[id]/[kind]", params: { id: String(row.id), kind: link.kind } })} />)}
+      {([{ kind: "staff", permission: "hr.read", label: "Nhân sự của cơ sở" }, { kind: "vehicles", permission: "vehicles.read", label: "Xe tại cơ sở" }, { kind: "customers", permission: "customers.read", label: "Khách hàng của cơ sở" }] as const).filter(link => link.kind === 'staff' ? canViewStaffDirectory(session?.user) : session!.user.permissions.includes(link.permission)).map(link => <Button key={link.kind} secondary label={link.label} onPress={() => router.push({ pathname: "/store-records/[id]/[kind]", params: { id: String(row.id), kind: link.kind } })} />)}
       {editable && <Button secondary label="Xóa cơ sở" disabled={write.busy || write.checking || write.pending} onPress={() => setRemove(true)} />}
     </ScrollView></SafeAreaView>
     {remove && <ConfirmEdit title="Xóa cơ sở?" message={`${row.code} · ${row.name}\nChỉ xóa được cơ sở không có dữ liệu liên quan, kể cả dữ liệu lưu trữ. Thao tác xóa không thể hoàn tác. Có thể chọn Tạm ngừng trong Chỉnh sửa cơ sở để giữ lịch sử.`} confirmLabel="Xóa cơ sở" busy={write.busy} onCancel={() => setRemove(false)} onConfirm={() => { setRemove(false); void write.save({ revision: row.revision }, true); }} />}

@@ -76,7 +76,7 @@ export async function completeReturnBatch(db:Database,actor:number,inputs:Return
 }
 
 /** Shared by first return and a correction, after the caller establishes the exact current balance. */
-export async function settleReturnedItems(db:Database,actor:number,settlement:ReturnSettlement,selected:number[],returns:ReturnResult[]) {
+export async function settleReturnedItems(db:Database,actor:number,settlement:ReturnSettlement,selected:number[],returns:ReturnResult[],options:{recordExistingRefund?:boolean}={}) {
     // Phí quá hạn / sửa chữa trên hợp đồng chỉ là gợi ý — số thu thực tế có thể khác; không khóa khớp.
     let context=await readPaymentContext(db,settlement.order_id);
     const transactionIds:number[]=[];
@@ -96,7 +96,7 @@ export async function settleReturnedItems(db:Database,actor:number,settlement:Re
     }
     if(settlement.refund){
       if(context.items.length)throw new ContractReturnError('Chỉ hoàn cọc trong lượt trả sau khi đã nhận đủ xe của hợp đồng.',409);
-      if(context.remaining===null||context.remaining>0)throw new ContractReturnError('Cần thu đủ phí quá hạn, sửa chữa và công nợ trước khi hoàn cọc.',409);
+      if(context.remaining===null||context.remaining>0&&!options.recordExistingRefund)throw new ContractReturnError('Cần thu đủ phí quá hạn, sửa chữa và công nợ trước khi hoàn cọc.',409);
       const refund=settlement.refund;
       const paid=await recordContractPayment(db,settlement.order_id,actor,{request_id:refund.request_id,revision:context.revision,amount:refund.amount,method:refund.method,account_id:refund.account_id,paid_at:refund.paid_at,purpose:'deposit_refund',note:`Hoàn cọc khi trả xe_${context.code}${refund.recipient_bank||refund.recipient_account||refund.recipient_name?` · ${[refund.recipient_bank,refund.recipient_account,refund.recipient_name].filter(Boolean).join(' · ')}`:''}`});
       context=paid.context;refundId=paid.transaction_id;

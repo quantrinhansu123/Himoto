@@ -13,7 +13,7 @@ import { shiftCreditLabel, splitAttendanceShiftHours } from '@/lib/management/at
 import { buildAttendanceWorkbook } from '@/lib/management/attendance-workbook';
 import { downloadExcel } from '@/lib/management/excel-export';
 import { formatDateTime } from '@/lib/formatters';
-import { canConfigureAttendance, isAdminAccount } from '@/lib/management/permissions';
+import { canConfigureAttendance, canReviewAttendance, isAdminAccount } from '@/lib/management/permissions';
 import { WeeklyShiftRegistrationDialog } from './WeeklyShiftRegistrationDialog';
 import { BrowserLocationError, requestBrowserLocation, type BrowserLocation as Location } from '@/lib/management/browser-geolocation';
 
@@ -174,9 +174,11 @@ export function AttendancePage() {
 export function AttendanceHistoryPage() {
   const {selectedStore,selectStore,dataset,ensureData,notify,accessUser} = useManagement();
   const canViewRegistration = canConfigureAttendance(accessUser);
+  const canReview = canReviewAttendance(accessUser);
+  const historyStore = canReview ? selectedStore : 'all';
   const isAdmin = isAdminAccount(accessUser);
-  useEffect(()=>{void ensureData(['stores']).catch(()=>{});},[ensureData]);
-  useEffect(()=>{setPage(1);},[selectedStore]);
+  useEffect(()=>{if (canReview) void ensureData(['stores']).catch(()=>{});},[canReview,ensureData]);
+  useEffect(()=>{setPage(1);},[historyStore]);
   const [from,setFrom] = useState(()=>vietnamDate().slice(0,7)+'-01'),[to,setTo] = useState(vietnamDate),[page,setPage] = useState(1);
   const [retry,setRetry] = useState(0);
   const refresh = useCallback(()=>setRetry(value=>value+1),[]);
@@ -186,7 +188,7 @@ export function AttendanceHistoryPage() {
   async function exportAttendance() {
     const exportFrom = from || vietnamDate().slice(0, 7) + '-01';
     const exportTo = to || exportFrom;
-    const query = new URLSearchParams({from:exportFrom,to:exportTo,store:selectedStore});
+    const query = new URLSearchParams({from:exportFrom,to:exportTo,store:historyStore});
     const rows: Attendance[] = [];
     let total = 0;
     for (let index=1; index===1 || rows.length<total; index++) {
@@ -207,10 +209,10 @@ export function AttendanceHistoryPage() {
   }
   useEffect(()=>{
     const controller=new AbortController();setLoading(true);setError('');setData(null);
-    const query = new URLSearchParams({from,to,store:selectedStore,page:String(page)});
+    const query = new URLSearchParams({from,to,store:historyStore,page:String(page)});
     void fetch(`/api/auth/attendance?${query}`,{cache:'no-store',signal:controller.signal}).then(responseData<Report>).then(value=>{if(!controller.signal.aborted)setData(value);}).catch(cause=>{if(!controller.signal.aborted)setError(cause instanceof Error?cause.message:'Không tải được chấm công.');}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});
     return()=>controller.abort();
-  },[from,to,selectedStore,page,retry]);
+  },[from,to,historyStore,canReview,page,retry]);
   const shiftLink = (row:Attendance) => {
     const label = row.shift_name==='O'?'Nghỉ':row.shift_name||'Chưa đăng ký ca';
     if (!canViewRegistration) return label;
@@ -238,7 +240,7 @@ export function AttendanceHistoryPage() {
       refresh();
     }} />}
     <div className="mg-page-heading"><div><div className="mg-eyebrow">NHÂN SỰ</div><h1>Lịch sử chấm công</h1></div><div className="mg-heading-actions"><Link className="mg-button" href="/attendance">Chấm công</Link>{isAdmin && <FilteredExcelButton disabled={loading||Boolean(error)||!data?.total} label="Tải Excel theo nhân sự" exportFile={exportAttendance}/>}</div></div>
-    <div className="mg-data-panel"><div className="mg-attendance-filters"><label>Cơ sở xem lịch sử<select aria-label="Cơ sở xem lịch sử chấm công" value={selectedStore} onChange={event=>{selectStore(event.target.value);setPage(1);}}><option value="all">Tất cả cơ sở được phép</option>{dataset?.stores.map(store=><option key={store.id} value={String(store.id)}>{store.name}</option>)}</select></label><label>Từ ngày<input aria-label="Từ ngày chấm công" type="date" value={from} onChange={event=>{setFrom(event.target.value);setPage(1);}}/></label><label>Đến ngày<input aria-label="Đến ngày chấm công" type="date" value={to} onChange={event=>{setTo(event.target.value);setPage(1);}}/></label><button type="button" className="mg-button" onClick={monthPreset}>Tháng này</button><span>{data?.total??'—'} lượt chấm công</span></div>
+    <div className="mg-data-panel"><div className="mg-attendance-filters">{canReview&&<label>Cơ sở xem lịch sử<select aria-label="Cơ sở xem lịch sử chấm công" value={selectedStore} onChange={event=>{selectStore(event.target.value);setPage(1);}}><option value="all">Tất cả cơ sở được phép</option>{dataset?.stores.map(store=><option key={store.id} value={String(store.id)}>{store.name}</option>)}</select></label>}<label>Từ ngày<input aria-label="Từ ngày chấm công" type="date" value={from} onChange={event=>{setFrom(event.target.value);setPage(1);}}/></label><label>Đến ngày<input aria-label="Đến ngày chấm công" type="date" value={to} onChange={event=>{setTo(event.target.value);setPage(1);}}/></label><button type="button" className="mg-button" onClick={monthPreset}>Tháng này</button><span>{data?.total??'—'} lượt chấm công</span></div>
     {error?<p className="mg-field-error" role="alert">{error}</p>:loading?<p className="mg-table-state" role="status">Đang tải bảng chấm công…</p>:<>
       <div className="mg-attendance-mobile-list">{data?.rows.map(row=><article key={row.id} className="mg-attendance-history-card"><div className="mg-attendance-history-heading"><strong>{row.staff_name}</strong><small>#{row.id} · {new Date(row.clock_in_at).toLocaleDateString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})}</small></div><p>{row.store_name||'Chưa gắn cơ sở'} · {shiftLink(row)}{row.standard_credit!=null?' · '+shiftCreditLabel(row.standard_credit)+' công quy định':''}{row.scheduled_in?' · '+timeOnly(row.scheduled_in)+' – '+timeOnly(row.scheduled_out):''}</p><div className="mg-attendance-history-times"><span>Vào <b>{timeOnly(row.clock_in_at)}</b></span><span>Ra <b>{row.clock_out_at ? timeOnly(row.clock_out_at) : missingCheckout}</b></span><span className={row.late_minutes?'is-late':''}>Đi muộn <b>{lateLabel(row.late_minutes,row.shift_name)}</b></span><span className={row.early_leave_minutes?'is-late':''}>Về sớm <b>{earlyLabel(row.early_leave_minutes,row.clock_out_at,row.shift_name)}</b></span><span>Công thực tế <b>{attendanceCreditLabel(row)}</b>{row.credit_aggregated && ' · Tổng hợp cùng ca'}</span></div>{rowActions(row)}</article>)}{!data?.rows.length&&<p className="mg-table-state">Chưa có chấm công trong khoảng ngày đã chọn.</p>}</div>
       <div className="mg-table-scroll mg-attendance-desktop-table" role="region" aria-label="Bảng chấm công" tabIndex={0}><table className="mg-table"><thead><tr>{['ID','Tên nhân viên','Ca làm','Giờ vào','Giờ ra','Đi muộn','Về sớm','Công thực tế','Thao tác'].map(label=><th scope="col" key={label}>{label}</th>)}</tr></thead><tbody>{data?.rows.map(row=><tr key={row.id}><td>#{row.id}</td><td><strong>{row.staff_name}</strong><small className="mg-attendance-store">{row.store_name||'Chưa gắn cơ sở'}</small></td><td>{shiftLink(row)}{row.standard_credit!=null&&<small className="mg-attendance-store">Công quy định: {shiftCreditLabel(row.standard_credit)}</small>}{row.scheduled_in&&<small className="mg-attendance-store">{timeOnly(row.scheduled_in)} – {timeOnly(row.scheduled_out)}</small>}</td><td>{formatDateTime(row.clock_in_at)}</td><td>{row.clock_out_at?formatDateTime(row.clock_out_at):missingCheckout}</td><td className={row.late_minutes?'is-late':''}>{lateLabel(row.late_minutes,row.shift_name)}</td><td className={row.early_leave_minutes?'is-late':''}>{earlyLabel(row.early_leave_minutes,row.clock_out_at,row.shift_name)}</td><td><strong>{attendanceCreditLabel(row)}</strong>{row.credit_aggregated && <small className="mg-attendance-store">Tổng hợp cùng ca</small>}</td><td>{rowActions(row)}</td></tr>)}{!data?.rows.length&&<tr><td colSpan={9}>Chưa có chấm công trong khoảng ngày đã chọn.</td></tr>}</tbody></table></div>

@@ -162,7 +162,7 @@ export async function correctReturn(db:Database,actor:number,raw:unknown) {
   payload.management_composer=nextComposer;
   await db.query('UPDATE himoto.orders SET total=$2,pid=$3,draft_payload=$4::json,updated_at=now() WHERE id=$1',[order.id,String(nextTotal),nextPid,JSON.stringify(payload)]);
   const payment=await readPaymentContext(db,Number(order.id));
-  await settleReturnedItems(db,actor,{...input.settlement,revision:payment.revision},itemIds,results);
+  await settleReturnedItems(db,actor,{...input.settlement,revision:payment.revision},itemIds,results,{recordExistingRefund:Boolean(context.settlement.refund)});
   const saved=(await db.query('SELECT draft_payload FROM himoto.orders WHERE id=$1',[order.id])).rows[0].draft_payload;
   const after=await readPaymentContext(db,Number(order.id));
   const snapshot=saved.management_composer.return_settlements.at(-1);snapshot.note=input.note;

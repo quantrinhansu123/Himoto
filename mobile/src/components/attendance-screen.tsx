@@ -16,7 +16,7 @@ import type {RecordMediaPhoto} from '@/lib/record-media-photo';
 import {supportFormData} from '@/lib/support-form-data';
 import {splitAttendanceShiftHours} from '../../../shared/attendance-shifts';
 import {dutyToday} from '../../../shared/mobile-duty-roster';
-import {canConfigureAttendance} from '../../../shared/access-permissions';
+import {canConfigureAttendance,canReviewAttendance} from '../../../shared/access-permissions';
 import {attendanceLocationLabel,type AttendanceLocation,type AttendanceEntry} from '../../../shared/mobile-support';
 import {AttendanceEdit} from './attendance-edit';
 import {FilteredListExport} from './filtered-list-export';
@@ -49,10 +49,11 @@ export function AttendanceScreen({historyOnly=false}:{historyOnly?:boolean}) {
     });
   }
   useEffect(()=>{currentPhoto.current=photo;},[photo]);
-  const canReview=session!.user.permissions.includes('hr.read');
+  const canReview=canReviewAttendance(session!.user);
+  const historyStore=canReview?store:'all';
   const canConfigure=canConfigureAttendance(session!.user);
   const [editing,setEditing]=useState<AttendanceEntry|null>(null);
-  const query=useQuery({queryKey:['attendance',session!.user.id,session!.user.storeId,session!.user.permissions.join(','),historyOnly,from,to,store,page],queryFn:async({signal})=>historyOnly?api!.attendance(new URLSearchParams({from,to,store,page:String(page)}).toString(),signal):{...await api!.attendanceOverview(signal),rows:[] as AttendanceEntry[],total:0,page:1},enabled:!!api&&(!historyOnly||from<=to)});
+  const query=useQuery({queryKey:['attendance',session!.user.id,session!.user.storeId,canReview,historyOnly,from,to,historyStore,page],queryFn:async({signal})=>historyOnly?api!.attendance(new URLSearchParams({from,to,store:historyStore,page:String(page)}).toString(),signal):{...await api!.attendanceOverview(signal),rows:[] as AttendanceEntry[],total:0,page:1},enabled:!!api&&(!historyOnly||from<=to)});
   const homeStore=String(query.data?.staff?.store_id ?? '');
   const chosenStore=punchStore||homeStore;
   const needsNote=chosenStore!==homeStore&&!note.trim();

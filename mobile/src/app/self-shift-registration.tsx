@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { usePreventRemove } from 'expo-router';
+import { router, usePreventRemove } from 'expo-router';
 import { Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { REGISTRATION_SHIFTS, registrationCredit, type SelfRegistrationWeek } from '../../../shared/mobile-shift-registration';
@@ -54,5 +54,8 @@ function WeekForm({ initial, moveWeek }: { initial: SelfRegistrationWeek; moveWe
 export default function Route() {
   const { api, session } = useSession(), [week, setWeek] = useState(() => dutyWeekStart(dutyToday()));
   const query = useQuery({ queryKey: ['self-shift-registration', session?.user.id, week], queryFn: ({ signal }) => api!.selfRegistration(week, signal), enabled: !!api && !!session, retry: false, refetchOnReconnect: false, refetchOnWindowFocus: false });
-  return <SafeAreaView edges={['bottom', 'left', 'right']} style={{ flex: 1 }}>{query.isPending ? <StateView title="Đang tải đăng ký ca…" loading /> : query.isError ? <StateView title="Chưa mở được đăng ký ca" message={query.error.message} retry={() => void query.refetch()} /> : <WeekForm key={`${api!.origin}:${session!.token}:${week}`} initial={query.data} moveWeek={setWeek} />}</SafeAreaView>;
+  return <SafeAreaView edges={['bottom', 'left', 'right']} style={{ flex: 1 }}>
+    {session && <View style={{ marginHorizontal: 20, marginTop: 12 }}><Button secondary label="Xem lịch trực chung" onPress={() => router.push('/duty-roster')} /></View>}
+    {query.isPending ? <StateView title="Đang tải đăng ký ca…" loading /> : query.isError ? <StateView title="Chưa mở được đăng ký ca" message={query.error.message} retry={() => void query.refetch()} /> : <WeekForm key={`${api!.origin}:${session!.token}:${week}`} initial={query.data} moveWeek={setWeek} />}
+  </SafeAreaView>;
 }

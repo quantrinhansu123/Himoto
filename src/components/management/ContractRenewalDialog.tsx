@@ -159,7 +159,7 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!selected || saving || photosPending) return;
+    if (done || !selected || saving || photosPending) return;
     if(!occurredAt){setError('Hợp đồng chưa có hẹn trả xe hợp lệ để bắt đầu gia hạn.');return;}
     if(!validRenewalTime(occurredAt)){setError('Nhập ngày giờ bắt đầu gia hạn hợp lệ.');return;}
     if (!validReturn) { setError(!Number.isFinite(baseMs) ? 'Chưa có hẹn trả hiện tại để tính gia hạn.' : 'Ngày trả mới phải sau hẹn trả hiện tại.'); return; }
@@ -218,9 +218,9 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
     finally { setSaving(false); }
   }
 
-  function openCashbook(purpose: 'debt' | 'renewal' = 'debt') {
+  function openCashbookDebt() {
     onClose();
-    router.push(cashbookPaymentPath(orderId, purpose));
+    router.push(cashbookPaymentPath(orderId, 'debt'));
   }
 
   function close() {
@@ -235,16 +235,12 @@ export function ContractRenewalDialog({ orderId, contractCode, unitPrice, backfi
         {done ? <div className="mg-cashbook-followup" role="status">
           <p>Đã lưu gia hạn {done.code}{done.fee > 0 ? ` · phí hợp đồng ${formatMoney(done.fee)}` : ''}{done.outside > 0 ? ` · thu ngoài ${formatMoney(done.outside)}` : ''}{done.collected ? ' · đã ghi phiếu Thu vào sổ quỹ.' : '.'}</p>
           {done.mismatch && done.expected != null && <p className="mg-field-error" role="status">Cảnh báo đã ghi: chi phí gia hạn {formatMoney(done.fee)} khác gợi ý theo hợp đồng {formatMoney(done.expected)}.</p>}
-          {!done.collected&&done.fee>0&&<p role="alert">Đã dời hạn trả nhưng chưa ghi nhận thu {formatMoney(done.fee)} phí gia hạn. Khoản này còn trong công nợ và cần thu trước khi hoàn cọc.</p>}
+          {!done.collected&&done.fee>0&&<p role="status">Khi lưu kỳ gia hạn số {done.version}, hệ thống chưa ghi nhận thu {formatMoney(done.fee)}. Khi đã nhận tiền, chọn <strong>Sửa thời gian, phí / thanh toán</strong> ở kỳ này rồi nhập số tiền, ngày thực thu và tài khoản nhận.</p>}
           {!done.collected&&done.outside>0&&<p role="alert">Phí thu thêm {formatMoney(done.outside)} chưa ghi phiếu thu. Khoản này không vào công nợ hợp đồng.</p>}
           {error && <p className="mg-error-message" role="alert">{error}</p>}
-          <ContractTelegramPanel id={orderId} eventKey={`renewal:${orderId}:${done.version}`}/>
-          {done.collected && (done.remaining === null || done.remaining <= 0) ? <p>Đã thu phí gia hạn trong lượt này.</p>
-            : canPayContracts ? <>
-              <p>Bấm nút bên dưới để mở phiếu thu Sổ quỹ đã điền sẵn theo cấu trúc hợp đồng (nội dung, số tiền còn thiếu).</p>
-              {(done.remaining === null || done.remaining > 0 || (!done.collected && done.fee > 0)) && <button type="button" className="mg-button mg-button-primary" onClick={() => openCashbook('debt')}><Wallet size={16} />Điền thu công nợ vào sổ quỹ</button>}
-              {!done.collected && <button type="button" className="mg-button" onClick={() => openCashbook('renewal')}><Wallet size={16} />Điền thu gia hạn vào sổ quỹ</button>}
-            </> : <p>Chưa ghi nhận thu phí gia hạn. Khi đã nhận tiền, cơ sở cần ghi nhận phiếu thu trước khi hoàn cọc.</p>}
+          <ContractTelegramPanel id={orderId} eventKey={`renewal:${orderId}:${done.version}`} onlyEventKey={!done.collected && done.fee > 0}/>
+          {canPayContracts && (done.collected || done.fee === 0) && (done.remaining ?? 0) > 0 &&
+            <button type="button" className="mg-button mg-button-primary" onClick={openCashbookDebt}><Wallet size={16} />Điền thu công nợ vào sổ quỹ</button>}
         </div> : <>
         {loading && <p role="status"><LoaderCircle size={17} className="mg-spin" /> Đang tải xe của hợp đồng…</p>}
         {!loading && !rows.length && !error && <p>Hợp đồng này không còn xe đang thuê để gia hạn.</p>}

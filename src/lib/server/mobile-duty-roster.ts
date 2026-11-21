@@ -1,7 +1,7 @@
 import "server-only";
 import type { NextRequest } from "next/server";
 import type { SessionUser } from "./management-session";
-import { hasPermission } from "@/lib/management/permissions";
+import { canManageDutyRoster, canReviewAttendance } from "@/lib/management/permissions";
 import { withMobileData } from "./mobile-context";
 import { himotoPool } from "./himoto-database";
 import { deleteDuty, DutyError, listDuties, parseDutyInput, saveDuty } from "./duty-roster";
@@ -9,16 +9,15 @@ import { MobileError } from "./mobile-session";
 import { idempotentMobileWrite, mobileBody, mobileRequestKey } from "./mobile-writes";
 import { dutyToday, type MobileDutyResult, type MobileDutySchedule } from "../../../shared/mobile-duty-roster";
 
-function allowed(user: SessionUser, write = false) {
-  if (!hasPermission(user, "hr.read") || write && !hasPermission(user, "hr.write"))
+function requireDutyManager(user: SessionUser) {
+  if (!canManageDutyRoster(user))
     throw new MobileError("Tài khoản không có quyền thực hiện thao tác lịch trực.", 403, "FORBIDDEN");
 }
 export async function readMobileDuties(user: SessionUser, params: URLSearchParams) {
-  allowed(user);
   for (const [key] of params) if (!["week", "store_id"].includes(key) || params.getAll(key).length !== 1) throw new MobileError("Bộ lọc lịch trực không hợp lệ.");
   const store = params.get("store_id");
   if (store !== null && (!/^[1-9]\d{0,14}$/.test(store) || !Number.isSafeInteger(Number(store)))) throw new MobileError("Cơ sở không hợp lệ.");
-  return transaction(user, true, client => listDuties(client, params.get("week") || dutyToday(), store === null ? undefined : Number(store)));
+  return transaction(user, true, client => listDuties(client, params.get("week") || dutyToday(), store === null ? undefined : Number(store), canReviewAttendance(user) || canManageDutyRoster(user)));
 }
 async function transaction<T>(user: SessionUser, read: boolean, run: (client: import("pg").PoolClient) => Promise<T>) {
   // A user with HR access manages schedules for every branch; keep this wider
@@ -40,7 +39,7 @@ async function transaction<T>(user: SessionUser, read: boolean, run: (client: im
   });
 }
 export async function writeMobileDuty(user: SessionUser, request: NextRequest, method: "POST" | "PATCH" | "DELETE", rawId?: string) {
-  allowed(user, true);
+  requireDutyManager(user);
   if (request.nextUrl.searchParams.size) throw new MobileError("Thao tác lịch trực không nhận bộ lọc.");
   if (method !== "POST" && (!rawId || !/^[1-9]\d{0,14}$/.test(rawId))) throw new MobileError("Mã ca trực không hợp lệ.");
   const id = rawId ? Number(rawId) : undefined;
@@ -62,7 +61,7 @@ export async function writeMobileDuty(user: SessionUser, request: NextRequest, m
   }));
 }
 export async function readMobileDutyResult(user: SessionUser, key: string): Promise<MobileDutyResult> {
-  allowed(user);
+  requireDutyManager(user);
   mobileRequestKey(key);
   return transaction(user, true, async client => {
     const result = await client.query(`SELECT r.operation,r.resource_id,r.resource_revision,

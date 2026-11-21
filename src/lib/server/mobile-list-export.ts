@@ -17,7 +17,7 @@ import {NextRequest as AttendanceRequest} from 'next/server';
 import {buildAttendanceWorkbook} from '@/lib/management/attendance-workbook';
 import {vietnamDate} from '@/lib/management/duty-roster';
 import type {AttendanceEntry} from '../../../shared/mobile-support';
-import {hasPermission} from '@/lib/management/permissions';
+import {canManageDutyRoster,hasPermission} from '@/lib/management/permissions';
 import {readMobileDuties} from './mobile-duty-roster';
 import {readMobileReminderExportRows} from './mobile-debt-reminders';
 import {isMobileListExportKind} from '../../../shared/mobile-list-export';
@@ -76,6 +76,7 @@ export async function exportMobileList(user:SessionUser,kind:string,request:Next
     return mobileFilteredWorkbook(reportType==='mid_shift'?'himoto-bao-cao-giua-ca':'himoto-bao-cao-het-ca',SHIFT_EXPORT_HEADERS,shiftExportRows(visible));
   }
   if(kind==='duties'){
+    if(!canManageDutyRoster(user))throw new MobileError('Không có quyền xuất lịch trực.',403,'FORBIDDEN');
     const day=localFilter(params,'day','all');
     if(day!=='all'&&(!/^\d{4}-\d{2}-\d{2}$/.test(day)||!Number.isFinite(Date.parse(day))||new Date(day).toISOString().slice(0,10)!==day))throw new MobileError('Ngày trực không hợp lệ.');
     const data=await readMobileDuties(user,params),visible=data.schedules.filter(row=>day==='all'||(!row.starts_at||!row.ends_at?row.duty_date===day:Date.parse(row.starts_at)<Date.parse(`${dutyAddDays(day,1)}T00:00:00+07:00`)&&Date.parse(row.ends_at)>Date.parse(`${day}T00:00:00+07:00`)));

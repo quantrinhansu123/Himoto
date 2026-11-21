@@ -1,14 +1,13 @@
 import 'server-only';
 import type { PoolClient } from 'pg';
 import type { SessionUser } from './management-session';
-import { hasPermission, isAdminAccount } from '@/lib/management/permissions';
+import { canReviewAttendance, isAdminAccount } from '@/lib/management/permissions';
 import { attendanceShift } from '@/lib/management/attendance-shifts';
 import { REGISTRATION_SHIFTS } from '@/lib/management/shift-registration';
 
 type Database = Pick<PoolClient, 'query'>;
 export const ATTENDANCE_ON_LOCAL_DATE = "(clock_in_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date=($2::timestamptz AT TIME ZONE 'Asia/Ho_Chi_Minh')::date";
 export class AttendanceError extends Error { constructor(message: string, public status = 400) { super(message); } }
-export const canReviewAttendance = (user: SessionUser) => hasPermission(user, 'hr.read');
 export function attendanceScope(user: SessionUser) {
   // These queries use the owner connection, so every read includes this explicit scope.
   return { reviewer: canReviewAttendance(user), all: isAdminAccount(user) || user.scope_all === true, store: user.store_id ?? null };

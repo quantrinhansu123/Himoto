@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { FlatList, RefreshControl, ScrollView, Text, View } from "react-native";
 import { router } from "expo-router";
+import { canManageDutyRoster } from "../../../shared/access-permissions";
 import { dutyAddDays, dutyToday, dutyWeekStart, localDutyTime, type MobileDutyInput, type MobileDutySchedule } from "../../../shared/mobile-duty-roster";
 import { useSession } from "@/providers/session";
 import { useWorkspace } from "@/hooks/use-workspace";
@@ -71,9 +72,8 @@ export function DutyRosterScreen({initialStore}:{initialStore?:string}={}) {
   const [showShifts,setShowShifts]=useState(false);
   const [store, setStore] = useState(initialStore || "all");
   const [day, setDay] = useState("all"), [editor, setEditor] = useState<{ row: MobileDutySchedule | null } | null>(null), [deleting, setDeleting] = useState<MobileDutySchedule | null>(null);
-  const readable = session!.user.permissions.includes("hr.read"), writable = session!.user.permissions.includes("hr.write");
-  const roster = useQuery({ queryKey: ["duty-roster", session!.user.id, week, store], queryFn: ({ signal }) => api!.dutyRoster(new URLSearchParams({ week, ...(store === "all" ? {} : { store_id: store }) }).toString(), signal), enabled: readable });
-  if (!readable) return <StateView title="Không có quyền xem lịch trực" />;
+  const writable = canManageDutyRoster(session!.user);
+  const roster = useQuery({ queryKey: ["duty-roster", session!.user.id, week, store, writable], queryFn: ({ signal }) => api!.dutyRoster(new URLSearchParams({ week, ...(store === "all" ? {} : { store_id: store }) }).toString(), signal) });
   const days = Array.from({ length: 7 }, (_, index) => dutyAddDays(week, index));
   const visible = (roster.data?.schedules || []).filter(row => {
     if (day === "all") return true;
@@ -86,7 +86,7 @@ export function DutyRosterScreen({initialStore}:{initialStore?:string}={}) {
     <FlatList data={visible} keyExtractor={row => String(row.id)} contentContainerStyle={{ padding: 20, gap: 14, maxWidth: 760, width: "100%", alignSelf: "center" }}
       refreshControl={<RefreshControl refreshing={roster.isRefetching} onRefresh={() => { void roster.refetch(); }} tintColor={theme.primary} />}
       ListHeaderComponent={<View style={{ gap: 14 }}>
-        <Button secondary label="Đăng ký ca làm việc" onPress={()=>router.push("/shift-registrations")}/>
+        <Button secondary label="Đăng ký ca làm việc" onPress={()=>router.push(writable ? "/shift-registrations" : "/self-shift-registration")}/>
         <Button secondary label={showShifts?'Ẩn danh mục 7 mã ca':'Xem danh mục 7 mã ca'} onPress={()=>setShowShifts(value=>!value)}/>
         {showShifts&&<View style={{gap:10}}>{ATTENDANCE_SHIFTS.map(shift=><Text key={shift.code} style={{color:theme.text,lineHeight:23}}>{shift.code} · {shift.name}{shift.start?` · ${shift.start}–${shift.end}`:''} · {shiftCreditLabel(shift.credit)} công</Text>)}<Text style={{color:theme.muted,lineHeight:22}}>O: nghỉ, không tạo ca làm việc. Công quy định dùng để đối chiếu, chưa phải công đã duyệt.</Text></View>}
         <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 26, fontWeight: "800" }}>Lịch trực cơ sở</Text>
@@ -94,7 +94,7 @@ export function DutyRosterScreen({initialStore}:{initialStore?:string}={}) {
         <DateField label="Ngày trong tuần cần xem" value={week} onChange={moveWeek} />
         <ChoiceField label="Cơ sở" value={store} choices={[{ value: "all", label: "Tất cả cơ sở" }, ...stores.map(item => ({ value: String(item.id), label: item.name }))]} onChange={setStore} searchable />
         <ChoiceField label="Ngày trực" value={day} choices={[{ value: "all", label: `Cả tuần: ${week} → ${days[6]}` }, ...days.map(value => ({ value, label: value.split("-").reverse().join("/") }))]} onChange={setDay} />
-<FilteredListExport kind="duties" filters={new URLSearchParams({week,day,...store==='all'?{}:{store_id:store}}).toString()} disabled={roster.isFetching||roster.isError||!visible.length}/>
+        {writable&&<FilteredListExport kind="duties" filters={new URLSearchParams({week,day,...store==='all'?{}:{store_id:store}}).toString()} disabled={roster.isFetching||roster.isError||!visible.length}/>}
         <Text style={{ color: theme.muted }}>{visible.length} ca trực trong phạm vi đang xem</Text>
         {writable && <Button label="Tạo ca trực" onPress={() => setEditor({ row: null })} />}
         {roster.isError && <><InlineError message={roster.error.message} /><Button secondary label="Tải lại lịch trực" onPress={() => { void roster.refetch(); }} /></>}

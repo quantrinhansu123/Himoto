@@ -7,7 +7,7 @@ import { AlarmClock, ArrowLeft, BookOpen, BatteryCharging, Bike, Building2, Cale
 import { ManagementProvider, useManagement } from './ManagementProvider';
 import { ReloadButton, requestReload } from './ReloadButton';
 import { lockBodyScroll, trapFocusWithin } from './Dialog';
-import { canRecordContractPayment,canManageShiftRegistration,hasPermission,isAdminAccount,type AccessPermission } from '@/lib/management/permissions';
+import { canRecordContractPayment,canManageDutyRoster,canManageShiftRegistration,canReviewAttendance,canViewStaffDirectory,hasPermission,isAdminAccount,type AccessPermission } from '@/lib/management/permissions';
 import { ContractTypesProvider } from '@/components/contracts/ContractTypesProvider';
 import type { SessionUser } from '@/lib/server/management-session';
 import { SePayNotifications } from './SePayNotifications';
@@ -15,15 +15,16 @@ import { GpsSyncPulse } from './GpsSyncPulse';
 import { TableScrollDock } from './TableScrollDock';
 import { ChangePasswordDialog } from './ChangePasswordDialog';
 
-type NavLink = { href: string; label: string; kind: string; icon: LucideIcon };
+type NavLink = { href: string; label: string; kind: string; icon: LucideIcon; hidden?: boolean };
 type NavGroup = { id: string; label: string; icon: LucideIcon; links: NavLink[] };
 const navigation: (NavLink | NavGroup)[] = [
   { href: '/operations', label: 'Thao tác nhanh', kind: 'operations', icon: House },
-  { id: 'attendance', label: 'Chấm công', icon: AlarmClock, links: [
+  { id: 'personnel', label: 'Nhân sự', icon: UsersRound, links: [
     { href: '/attendance', label: 'Chấm công', kind: 'attendance', icon: AlarmClock },
-    { href: '/attendance/history', label: 'Lịch sử chấm công', kind: 'attendance', icon: History },
+    { href: '/shift-registration', label: 'Đăng ký ca', kind: 'shift-registration', icon: CalendarDays },
+    { href: '/attendance/history', label: 'Lịch sử chấm công', kind: 'attendance', icon: History, hidden: true },
+    { href: '/duty-roster', label: 'Lịch trực cơ sở', kind: 'duty-roster', icon: CalendarDays, hidden: true },
   ] },
-  { href: '/shift-registration', label: 'Đăng ký ca', kind: 'shift-registration', icon: CalendarDays },
   { href: '/dashboard', label: 'Dashboard', kind: 'dashboard', icon: LayoutDashboard },
   { id: 'contracts', label: 'Hợp đồng', icon: Files, links: [
     { href: '/contracts', label: 'Danh sách hợp đồng', kind: 'contracts', icon: Files },
@@ -36,8 +37,11 @@ const navigation: (NavLink | NavGroup)[] = [
     { href: '/contracts/types', label: 'Loại hợp đồng', kind: 'contract-types', icon: Files },
   ] },
   { id: 'hr', label: 'HCNS', icon: UsersRound, links: [
-    { href: '/staff', label: 'Nhân sự', kind: 'staff', icon: UsersRound },
+    { href: '/staff', label: 'Quản lý nhân sự', kind: 'staff', icon: UsersRound },
+    { href: '/shift-registration', label: 'Quản lý đăng ký ca', kind: 'shift-registration', icon: CalendarDays },
     { href: '/duty-roster', label: 'Lịch trực cơ sở', kind: 'duty-roster', icon: CalendarDays },
+    { href: '/attendance/history', label: 'Quản lý chấm công', kind: 'attendance', icon: History },
+    { href: '/attendance', label: 'Chấm công', kind: 'attendance', icon: AlarmClock, hidden: true },
   ] },
   { id: 'finance', label: 'Kế toán', icon: Wallet, links: [
     { href: '/cashbook', label: 'Sổ quỹ / Sổ két', kind: 'cashbook', icon: Wallet },
@@ -61,25 +65,32 @@ const navigation: (NavLink | NavGroup)[] = [
     { href: '/huong-dan', label: 'Hướng dẫn sử dụng', kind: 'help', icon: BookOpen },
   ] },
 ];
-const navLinks = navigation.flatMap(item => 'links' in item ? item.links : [item]);
 // Store reads follow contract access; store mutations still require settings.write.
-const navigationPermission=(kind:string):AccessPermission|null=>(kind==='attendance'||kind==='help'||kind==='shift-registration')?null:kind==='accounts'?'accounts.manage':kind==='staff'||kind==='duty-roster'?'hr.read':kind==='cashbook'?'finance.read':kind==='customers'?'customers.read':kind==='contract-types'||kind==='integrations'?'settings.write':kind==='vehicles'||kind==='vehicle-transfers'||kind==='gps'?'vehicles.read':'contracts.read';
+const navigationPermission=(kind:string):AccessPermission|null=>(kind==='attendance'||kind==='help'||kind==='shift-registration')?null:kind==='duty-roster'?null:kind==='accounts'?'accounts.manage':kind==='cashbook'?'finance.read':kind==='customers'?'customers.read':kind==='contract-types'||kind==='integrations'?'settings.write':kind==='vehicles'||kind==='vehicle-transfers'||kind==='gps'?'vehicles.read':'contracts.read';
 
 function Shell({ children, user }: { children: ReactNode; user: SessionUser | null }) {
   const { dataset, selectedStore, selectStore, source, canSaveContractDrafts, reload, refreshing,notify } = useManagement();
   const pathname = usePathname();
   const router = useRouter();
+  const showHrMenu = canReviewAttendance(user) || canManageShiftRegistration(user);
+  const menu = navigation.filter(item => !('links' in item) || (item.id !== 'hr' || showHrMenu) && (item.id !== 'personnel' || !showHrMenu));
+  const navLinks = menu.flatMap(item => 'links' in item ? item.links : [item]);
   const currentLink = navLinks.find(item => pathname === item.href);
   const active = currentLink ?? navLinks.find(item => item.kind === 'vehicles')!;
-  const activeGroup = navigation.find((item): item is NavGroup =>
+  const activeGroup = menu.find((item): item is NavGroup =>
     'links' in item && item.links.includes(active));
-  const canNavigate=(kind:string)=>kind==='integrations'?isAdminAccount(user):navigationPermission(kind)===null||hasPermission(user,navigationPermission(kind)!);
+  const canNavigate = (kind: string) => {
+    if (kind === 'integrations') return isAdminAccount(user);
+    if (kind === 'staff') return canViewStaffDirectory(user);
+    const permission = navigationPermission(kind);
+    return permission === null || hasPermission(user, permission);
+  };
   const visibleNavigation = navLinks.filter(item => canNavigate(item.kind));
   const homeHref=visibleNavigation.find(item=>item.href==='/operations')?.href||visibleNavigation[0]?.href||'/login';
   const pageAllowed=canNavigate(active.kind);
   const writableCustomers = source === 'api' && active.kind === 'customers';
   const writableStores = source === 'api' && active.kind === 'stores' && hasPermission(user,'settings.write');
-  const writableDuties = source === 'api' && active.kind === 'duty-roster';
+  const writableDuties = source === 'api' && active.kind === 'duty-roster' && canManageDutyRoster(user);
   const writableRegistrations = source === 'api' && active.kind === 'shift-registration' && canManageShiftRegistration(user);
   const writableBattery = source === 'api' && active.kind === 'battery-contracts';
   const writableVehicles = source === 'api' && active.kind === 'vehicles';
@@ -164,11 +175,11 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
     </Link>
     <div className="mg-workspace"><span className="mg-workspace-symbol"><Building2 size={19} /></span><div><strong>HIMOTO Workspace</strong><small>Quản lý vận hành</small></div></div>
     <p className="mg-nav-caption">DANH MỤC QUẢN LÝ</p>
-    <nav aria-label="Điều hướng quản lý">{navigation.map(item => {
+    <nav aria-label="Điều hướng quản lý">{menu.map(item => {
       if (!('links' in item)) return visibleNavigation.includes(item) ? renderNavLink(item, iconsOnly) : null;
-      const links = item.links.filter(link => visibleNavigation.includes(link));
+      const links = item.links.filter(link => !link.hidden && visibleNavigation.includes(link));
       if (!links.length) return null;
-      const containsActive = links.includes(active);
+      const containsActive = item.links.includes(active);
       const groups = groupExpansion?.pathname === pathname ? groupExpansion.groups : {};
       const expanded = !iconsOnly && (groups[item.id] ?? containsActive);
       const listId = `management-nav-${surface}-${item.id}`;

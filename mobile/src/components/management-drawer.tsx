@@ -37,7 +37,7 @@ import { useSession } from "@/providers/session";
 import { useWorkspace } from "@/hooks/use-workspace";
 import { roles, useTheme } from "@/theme";
 import { canManageAccounts } from "../../../shared/mobile-managed-accounts";
-import { isAdminAccount } from "../../../shared/access-permissions";
+import { canManageShiftRegistration, canReviewAttendance, canViewStaffDirectory, isAdminAccount } from "../../../shared/access-permissions";
 import { Brand } from "./ui";
 
 interface DrawerItem {
@@ -77,13 +77,20 @@ export function ManagementDrawer({
     return session?.user.allStoresRead ? `${homeName} · Xem toàn hệ thống` : homeName;
   }, [session, workspace.data?.stores]);
 
+  const showHrMenu = canReviewAttendance(session?.user) || canManageShiftRegistration(session?.user);
   const sections: DrawerSection[] = useMemo(() => [
+    showHrMenu ? { title: "HCNS", items: [
+      { id: "staff", label: "Quản lý nhân sự", route: "/directory/staff", icon: UsersRound },
+      { id: "shift-registrations", label: "Quản lý đăng ký ca", route: "/shift-registrations", icon: CalendarDays },
+      { id: "duty-roster", label: "Lịch trực cơ sở", route: "/duty-roster", icon: CalendarDays },
+      { id: "attendance-history", label: "Quản lý chấm công", route: "/attendance-history", icon: History },
+    ] } : { title: "Nhân sự", items: [
+      { id: "attendance", label: "Chấm công", route: "/attendance", icon: AlarmClock },
+      { id: "self-shift-registration", label: "Đăng ký ca", route: "/self-shift-registration", icon: CalendarDays },
+    ] },
     {
       title: "VẬN HÀNH & QUẦY",
       items: [
-        { id: "self-shift-registration", label: "Đăng ký ca của tôi", route: "/self-shift-registration", icon: CalendarDays },
-        { id: "shift-registrations", label: "Bảng đăng ký ca", route: "/shift-registrations", icon: CalendarDays },
-        { id: "attendance", label: "Chấm công", route: "/attendance", icon: AlarmClock, permission: null },
         { id: "mid-shift-reports", label: "Báo cáo giữa ca", route: "/mid-shift-reports", icon: ReceiptText, permission: "contracts.read" },
         { id: "shift-reports", label: "Báo cáo Hết ca", route: "/shift-reports", icon: ReceiptText, permission: "contracts.read" },
         { id: "operations", label: "Thao tác nhanh", route: "/(tabs)", icon: House, permission: null },
@@ -117,11 +124,8 @@ export function ManagementDrawer({
       ],
     },
     {
-      title: "NHÂN SỰ & CƠ SỞ",
+      title: "CƠ SỞ",
       items: [
-        { id: "attendance-history", label: "Lịch sử chấm công", route: "/attendance-history", icon: History },
-        { id: "staff", label: "Nhân sự", route: "/directory/staff", icon: UsersRound, permission: "hr.read" },
-        { id: "duty-roster", label: "Lịch trực cơ sở", route: "/duty-roster", icon: CalendarDays, permission: "hr.read" },
         { id: "stores", label: "Cơ sở", route: "/directory/stores", icon: Building2, permission: "contracts.read" },
       ],
     },
@@ -134,10 +138,11 @@ export function ManagementDrawer({
         { id: "guide", label: "Hướng dẫn sử dụng", route: "/guide", icon: BookOpen, permission: null },
       ],
     },
-  ], []);
+  ], [showHrMenu]);
 
   const hasAccess = (item: DrawerItem) => {
     if (item.id === "integrations") return isAdminAccount(session?.user);
+    if (item.id === "staff") return canViewStaffDirectory(session?.user);
     if (item.permission === null) return true;
     if (item.id === "accounts") return canManageAccounts(session?.user);
     if (!item.permission) return true;

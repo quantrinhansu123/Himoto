@@ -13,7 +13,8 @@ assert.match(shell, /href:\s*'\/shift-registration',\s*label:\s*'Đăng ký ca',
 assert.match(shell, /\(kind==='attendance'\|\|kind==='help'\|\|kind==='shift-registration'\)\?null/);
 assert.match(shell, /active\.kind === 'shift-registration' && canManageShiftRegistration\(user\)/);
 assert.deepEqual(loader.managementKindsForPath('/shift-registration'), ['stores']);
-assert.match(board, /<h1>Đăng ký ca<\/h1>/);
+assert.match(board, /writable \? "Quản lý đăng ký ca" : "Đăng ký ca"/);
+assert.match(board, /href="\/duty-roster">Xem lịch trực chung/);
 assert.match(board, /\/api\/auth\/duty-roster\/registrations\?\$\{new URLSearchParams\(range\)\}/);
 assert.match(board, /Từ ngày/);assert.match(board, /Đến ngày/);assert.match(board, /Thêm ngày theo bộ lọc/);
 assert.match(board, /full-time/);assert.match(board, /part-time/);assert.match(board, /7h30/);

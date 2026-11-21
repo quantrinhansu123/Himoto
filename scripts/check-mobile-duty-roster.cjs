@@ -13,12 +13,14 @@ async function main() {
   const { resolveMobileWrite } = load(path.join(root, 'lib/server/mobile-write-recovery'));
   const { dataAccess } = load(path.join(root, 'lib/server/access-context'));
   const shared = load(path.resolve('shared/mobile-duty-roster'));
-  const actor = { id: 7, name: 'QA Manager', role: 'staff', access_role: 'branch_manager', store_id: 23, scope_all: false, permissions: ['hr.read', 'hr.write'] };
+  const actor = { id: 7, name: 'QA HCNS', role: 'staff', access_role: 'hr', store_id: 23, scope_all: false, permissions: ['hr.read', 'hr.write'] };
   const descriptor = Object.getOwnPropertyDescriptor(db.himotoPool, 'connect');
   const checks = [];
   const query = async (text, values) => { const result = await sql.query(text, values); return { rows: result.rows, rowCount: result.rows.length || result.affectedRows || 0 }; };
   Object.defineProperty(db.himotoPool, 'connect', { configurable: true, value: async () => {
-    const scope = dataAccess.getStore(); assert.equal(scope.id, 7); assert.equal(scope.store_id, 23); assert.equal(scope.scope_all, false);
+    const scope = dataAccess.getStore(); assert.equal(scope.id, 7);
+    assert.equal(scope.store_id, scope.operation === 'duty_roster' ? null : 23);
+    assert.equal(scope.scope_all, scope.operation === 'duty_roster');
     return { query, release() {} };
   } });
   const request = (method, key, body) => new NextRequest('https://qa.invalid/api/mobile/v1/duty-roster', { method, headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify(body) });
@@ -44,8 +46,13 @@ async function main() {
     await assert.rejects(duty.writeMobileDuty(actor, request('POST', randomUUID(), { ...input, store_id: 24 }), 'POST'), error => error.status === 409);
     await assert.rejects(duty.writeMobileDuty(actor, request('POST', createKey, { ...input, notes: 'changed' }), 'POST'), error => error.code === 'REQUEST_KEY_REUSED');
     await assert.rejects(duty.writeMobileDuty({ ...actor, permissions: ['hr.read'] }, request('POST', randomUUID(), input), 'POST'), error => error.status === 403);
-    await assert.rejects(duty.readMobileDuties({ ...actor, permissions: [] }, new URLSearchParams()), error => error.status === 403);
-    checks.push('Overlapping shifts across stores, changed UUID payloads and missing HR grants reject without another business row');
+    const employee = { ...actor, access_role: 'branch_staff', permissions: [] };
+    const common = await duty.readMobileDuties(employee, new URLSearchParams('week=2026-11-03'));
+    assert.equal(common.schedules[0].staff_name, 'QA Staff');
+    assert.equal(common.schedules[0].staff_phone, '');
+    assert.equal(common.schedules[0].notes, '');
+    await assert.rejects(duty.writeMobileDuty(employee, request('POST', randomUUID(), input), 'POST'), error => error.status === 403);
+    checks.push('Employees can view the common roster without private details; only authorized managers can change schedules');
     const updateKey = randomUUID();
     const updated = await duty.writeMobileDuty(actor, request('PATCH', updateKey, { ...input, notes: 'Updated QA', revision: created.revision }), 'PATCH', '1');
     assert.notEqual(updated.revision, created.revision);

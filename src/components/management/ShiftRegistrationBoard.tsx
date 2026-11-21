@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { ChevronLeft, ChevronRight, Plus, RotateCcw } from 'lucide-react';
 import { addDays, dutyRequest, vietnamDate, weekStart } from '@/lib/management/duty-roster';
 import { canManageShiftRegistration } from '@/lib/management/permissions';
@@ -118,8 +119,9 @@ export function ShiftRegistrationBoard({ focusDate, focusStaff }: { focusDate?: 
   }
   return <section className="mg-page mg-shift-registration-page" aria-label="Đăng ký ca làm việc"><div className="mg-page-content">
     {selfOpen && <WeeklyShiftRegistrationDialog onClose={() => setSelfOpen(false)} onSaved={() => { refresh(); notify('Đã lưu đăng ký ca.'); }} />}
-    <div className="mg-page-heading"><div><div className="mg-eyebrow">QUẢN LÝ NHÂN SỰ</div><h1>Đăng ký ca</h1><p>Bảng ca làm theo tháng, nhóm nhân viên theo cơ sở. Dùng chung dữ liệu nhân viên đăng ký trong tuần.</p></div><div className="mg-heading-actions">
+    <div className="mg-page-heading"><div><div className="mg-eyebrow">QUẢN LÝ NHÂN SỰ</div><h1>{writable ? "Quản lý đăng ký ca" : "Đăng ký ca"}</h1><p>{writable ? "Bảng ca theo tháng, nhóm nhân viên theo cơ sở." : "Xem và đăng ký ca làm của mình theo tuần."}</p></div><div className="mg-heading-actions">
       <button type="button" className="mg-button mg-button-primary" onClick={() => setSelfOpen(true)}>Đăng ký ca của tôi</button>
+      {!writable&&<Link className="mg-button" href="/duty-roster">Xem lịch trực chung</Link>}
       {writable && <FilteredExcelButton filename={`himoto-dang-ky-ca-${range.from}-${range.to}`} disabled={unavailable || !people.length || Boolean(pending)} headers={excel.headers} getRows={()=>excel.rows} />}
       <button type="button" className="mg-button" disabled={loading || Boolean(pending)} onClick={refresh}><RotateCcw size={16} />Làm mới</button>
     </div></div>

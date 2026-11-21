@@ -78,6 +78,19 @@ export function isAdminAccount(account: PermissionAccount | null | undefined) {
   return account.access_role === 'admin' || (!account.access_role && (Number(account.role_id) === 1 || account.role === 'admin' || account.role_slug === 'quan-tri-vien'));
 }
 
+export function canViewStaffDirectory(account: PermissionAccount | null | undefined) {
+  const role = account?.access_role ?? account?.role;
+  return role !== 'branch_staff' && role !== 'ownership_staff' && hasPermission(account, 'hr.read');
+}
+
+export function canReviewAttendance(account: PermissionAccount | null | undefined) {
+  return isAdminAccount(account) || ((account?.access_role ?? account?.role) === 'hr' && hasPermission(account, 'hr.read'));
+}
+
+export function canManageDutyRoster(account: PermissionAccount | null | undefined) {
+  return isAdminAccount(account) || hasHrWriteRole(account);
+}
+
 /** Sổ quỹ / thanh toán hợp đồng: chỉ kế toán và quản trị viên. */
 export function canRecordContractPayment(account: PermissionAccount | null | undefined) {
   if (!account) return false;

@@ -11,21 +11,19 @@ import { FilteredExcelButton } from './FilteredExcelButton';
 import { useManagement } from './ManagementProvider';
 import { useReloadAction } from './ReloadButton';
 import { Dialog } from './Dialog';
-import { ShiftRegistrationBoard } from './ShiftRegistrationBoard';
+import { canManageDutyRoster } from '@/lib/management/permissions';
 
 const dateLabel=(date:string)=>new Date(`${date}T00:00:00+07:00`).toLocaleDateString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',weekday:'long',day:'2-digit',month:'2-digit'});
 const timeLabel=(date:string)=>formatTime24(date);
 
 export function DutyRosterPage() {
-  const [view, setView] = useState<'month' | 'week'>('month');
-  return <><div className="mg-heading-actions" style={{ padding: '16px 24px 0' }} role="group" aria-label="Chế độ lịch làm việc">
-    <button type="button" className={`mg-button ${view === 'month' ? 'mg-button-primary' : ''}`} aria-pressed={view === 'month'} onClick={() => setView('month')}>Bảng đăng ký ca tháng</button>
-    <button type="button" className={`mg-button ${view === 'week' ? 'mg-button-primary' : ''}`} aria-pressed={view === 'week'} onClick={() => setView('week')}>Lịch trực theo tuần</button>
-  </div>{view === 'month' ? <ShiftRegistrationBoard /> : <WeeklyDutyRosterPage />}</>;
-}
-
-function WeeklyDutyRosterPage() {
-  const {dataset,selectedStore,selectStore,loading:datasetLoading,error:datasetError,notify}=useManagement();
+  const {dataset,selectedStore,selectStore,ensureData,resources,notify,accessUser}=useManagement();
+  const writable=canManageDutyRoster(accessUser);
+  const [publicStore,setPublicStore]=useState('all');
+  const store=writable?selectedStore:publicStore;
+  const datasetLoading=writable&&(!resources.staff.loaded&&!resources.staff.error||!resources.stores.loaded&&!resources.stores.error);
+  const datasetError=writable?(resources.staff.error||resources.stores.error):'';
+  useEffect(()=>{if(writable)void ensureData(['staff']).catch(()=>{});},[ensureData,writable]);
   const [week,setWeek]=useState(()=>weekStart(vietnamDate()));
   const [staffFilter,setStaffFilter]=useState('');
   const [rows,setRows]=useState<DutySchedule[]>([]);
@@ -40,15 +38,15 @@ function WeeklyDutyRosterPage() {
   useEffect(()=>{
     const controller=new AbortController();let current=true;
     setLoading(true);setError('');setRows([]);
-    const params=new URLSearchParams({week});if(selectedStore!=='all')params.set('store_id',selectedStore);
+    const params=new URLSearchParams({week});if(store!=='all')params.set('store_id',store);
     dutyRequest<{week:string;schedules:DutySchedule[]}>(`/api/auth/duty-roster?${params}`, 'GET',undefined,controller.signal).then(data=>{
       if(data.week!==week||!Array.isArray(data.schedules)||data.schedules.some(row=>!Number.isSafeInteger(row.id)||typeof row.revision!=='string'))throw new Error('Kết quả lịch trực chưa hợp lệ.');
       if(current)setRows(data.schedules);
     }).catch(cause=>{if(current&&!controller.signal.aborted)setError(cause instanceof Error?cause.message:'Không tải được lịch trực.');}).finally(()=>{if(current)setLoading(false);});
     return()=>{current=false;controller.abort();};
-  },[week,selectedStore,reload]);
+  },[week,store,reload]);
   const visible=rows.filter(row=>!staffFilter||String(row.staff_id)===staffFilter);
-  const staff=dataset?.staff.filter(row=>row.status==='active')||[];
+  const staff=writable?dataset?.staff.filter(row=>row.status==='active')||[]:[];
   const unavailable=loading||datasetLoading||Boolean(error||datasetError);
   const refresh=()=>setReload(value=>value+1);
   useReloadAction(useCallback(()=>setReload(value=>value+1),[]));
@@ -60,10 +58,10 @@ function WeeklyDutyRosterPage() {
     finally{deleteLock.current=false;setDeleteBusy(false);}
   }
   return <section className="mg-page mg-duty-page" aria-label="Lịch trực cơ sở"><div className="mg-page-content">
-    <div className="mg-page-heading"><div><div className="mg-eyebrow">QUẢN LÝ NHÂN SỰ</div><h1>Lịch trực cơ sở <span className="mg-title-count">{unavailable?'—':visible.length}</span></h1><p>Phân ca theo tuần, kiểm tra nhân viên và giờ trực tại từng cơ sở.</p></div><div className="mg-heading-actions"><FilteredExcelButton disabled={unavailable || !visible.length} filename="himoto-lich-truc" headers={DUTY_EXPORT_HEADERS} getRows={() => dutyExportRows(visible)}/><button type="button" className="mg-button" onClick={refresh} disabled={loading}><RotateCcw size={16}/>Làm mới</button><button type="button" className="mg-button mg-button-primary" disabled={unavailable} onClick={()=>setEditing(null)}><Plus size={16}/>Thêm ca trực</button></div></div>
+    <div className="mg-page-heading"><div><div className="mg-eyebrow">{writable?"HCNS":"NHÂN SỰ"}</div><h1>Lịch trực cơ sở <span className="mg-title-count">{unavailable?'—':visible.length}</span></h1><p>Xem nhân viên và giờ trực theo tuần tại từng cơ sở.</p></div><div className="mg-heading-actions">{writable&&<FilteredExcelButton disabled={unavailable || !visible.length} filename="himoto-lich-truc" headers={DUTY_EXPORT_HEADERS} getRows={() => dutyExportRows(visible)}/>}<button type="button" className="mg-button" onClick={refresh} disabled={loading}><RotateCcw size={16}/>Làm mới</button>{writable&&<button type="button" className="mg-button mg-button-primary" disabled={unavailable} onClick={()=>setEditing(null)}><Plus size={16}/>Thêm ca trực</button>}</div></div>
     <div className="mg-data-panel mg-duty-toolbar"><div className="mg-duty-week"><button type="button" className="mg-button" aria-label="Tuần trước" onClick={()=>setWeek(addDays(week,-7))}><ChevronLeft size={18}/></button><label>Ngày trong tuần<input aria-label="Ngày trong tuần" type="date" required value={week} onChange={event=>{if(event.target.value)setWeek(weekStart(event.target.value));}}/></label><button type="button" className="mg-button" aria-label="Tuần sau" onClick={()=>setWeek(addDays(week,7))}><ChevronRight size={18}/></button><button type="button" className="mg-button" onClick={()=>setWeek(weekStart(vietnamDate()))}>Tuần này</button></div>
-      <label>Cơ sở<select aria-label="Cơ sở lịch trực" value={selectedStore} onChange={event=>selectStore(event.target.value)}><option value="all">Tất cả cơ sở</option>{dataset?.stores.map(store=><option key={store.id} value={store.id}>{store.name}</option>)}</select></label>
-      <label>Nhân viên<select aria-label="Lọc nhân viên trực" value={staffFilter} onChange={event=>setStaffFilter(event.target.value)}><option value="">Tất cả nhân viên</option>{staff.map(person=><option key={person.id} value={person.id}>{person.name}</option>)}</select></label>
+      <label>Cơ sở<select aria-label="Cơ sở lịch trực" value={store} onChange={event=>writable?selectStore(event.target.value):setPublicStore(event.target.value)}><option value="all">Tất cả cơ sở</option>{dataset?.stores.map(store=><option key={store.id} value={store.id}>{store.name}</option>)}</select></label>
+      {writable&&<label>Nhân viên<select aria-label="Lọc nhân viên trực" value={staffFilter} onChange={event=>setStaffFilter(event.target.value)}><option value="">Tất cả nhân viên</option>{staff.map(person=><option key={person.id} value={person.id}>{person.name}</option>)}</select></label>}
     </div>
     <div className="mg-data-panel"><details><summary style={{padding:12,cursor:'pointer'}}>Cài đặt ca chấm công · 7 mã ca</summary><div className="mg-table-scroll"><table className="mg-table"><thead><tr><th>Ký hiệu</th><th>Chú thích</th><th>Tính công</th></tr></thead><tbody>{ATTENDANCE_SHIFTS.map(shift=><tr key={shift.code}><td><strong>{shift.code}</strong></td><td>{shift.name} {shift.start} {shift.end}</td><td>{shiftCreditLabel(shift.credit)}</td></tr>)}</tbody></table></div><p className="mg-attendance-hint" style={{padding:12}}>O: nghỉ, không tạo ca làm việc. Công quy định dùng để đối chiếu, chưa phải công đã duyệt.</p></details></div>
     <p className="mg-duty-range">Tuần {dateLabel(week)} – {dateLabel(addDays(week,6))}</p>
@@ -73,11 +71,11 @@ function WeeklyDutyRosterPage() {
       const dayRows=visible.filter(row=>row.starts_at&&row.ends_at?Date.parse(row.starts_at)<Date.parse(`${addDays(date,1)}T00:00:00+07:00`)&&Date.parse(row.ends_at)>Date.parse(`${date}T00:00:00+07:00`):row.duty_date===date);
       return <section className={`mg-duty-day ${date===vietnamDate()?'is-today':''}`} key={date} aria-label={dateLabel(date)}><h2>{dateLabel(date)}</h2>{dayRows.length===0?<p className="mg-duty-empty">Chưa có ca trực</p>:dayRows.map(row=><article className="mg-duty-card" key={row.id}>
         <strong>{row.staff_name}</strong><span>{row.store_name||`Cơ sở #${row.store_id}`}</span><b>{row.starts_at&&row.ends_at?`${timeLabel(row.starts_at)} – ${timeLabel(row.ends_at)}${localDutyTime(row.starts_at).slice(0,10)!==localDutyTime(row.ends_at).slice(0,10)?' (qua đêm)':''}`:'Chưa có giờ cụ thể'}</b><span>{row.shift_name} · {row.role_in_shift}</span>{row.notes&&<p>{row.notes}</p>}
-        <div><button type="button" className="mg-button" aria-label={`Sửa ca trực #${row.id}`} onClick={()=>setEditing(row)}><Pencil size={14}/>Sửa</button><button type="button" className="mg-button" aria-label={`Xóa ca trực #${row.id}`} onClick={()=>{setRemoving(row);setDeleteError('');}}><Trash2 size={14}/>Xóa</button></div>
+        {writable&&<div><button type="button" className="mg-button" aria-label={`Sửa ca trực #${row.id}`} onClick={()=>setEditing(row)}><Pencil size={14}/>Sửa</button><button type="button" className="mg-button" aria-label={`Xóa ca trực #${row.id}`} onClick={()=>{setRemoving(row);setDeleteError('');}}><Trash2 size={14}/>Xóa</button></div>}
       </article>)}</section>;
     })}</div>}
-    {editing!==undefined&&dataset&&<DutyForm key={editing?.id||'new'} row={editing} week={week} storeId={selectedStore} onClose={()=>setEditing(undefined)} onRefresh={()=>{setEditing(undefined);refresh();}} onSaved={()=>{setEditing(undefined);refresh();notify('Đã lưu ca trực.');}}/>}
-    {removing&&<Dialog title="Xóa ca trực" onClose={()=>{if(!deleteLock.current)setRemoving(null);}}><div className="mg-dialog-body"><p>Xóa ca <strong>{removing.shift_name}</strong> của <strong>{removing.staff_name}</strong> tại {removing.store_name}, ngày {dateLabel(removing.duty_date)}?</p>{deleteError&&<p role="alert" className="mg-field-error">{deleteError}</p>}</div><div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={deleteBusy} onClick={()=>setRemoving(null)}>Đóng</button><button type="button" className="mg-button mg-button-primary" disabled={deleteBusy||Boolean(deleteError)} onClick={()=>void remove()}>{deleteBusy?'Đang xóa…':'Xác nhận xóa'}</button></div></Dialog>}
+    {writable&&editing!==undefined&&dataset&&<DutyForm key={editing?.id||'new'} row={editing} week={week} storeId={selectedStore} onClose={()=>setEditing(undefined)} onRefresh={()=>{setEditing(undefined);refresh();}} onSaved={()=>{setEditing(undefined);refresh();notify('Đã lưu ca trực.');}}/>}
+    {writable&&removing&&<Dialog title="Xóa ca trực" onClose={()=>{if(!deleteLock.current)setRemoving(null);}}><div className="mg-dialog-body"><p>Xóa ca <strong>{removing.shift_name}</strong> của <strong>{removing.staff_name}</strong> tại {removing.store_name}, ngày {dateLabel(removing.duty_date)}?</p>{deleteError&&<p role="alert" className="mg-field-error">{deleteError}</p>}</div><div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={deleteBusy} onClick={()=>setRemoving(null)}>Đóng</button><button type="button" className="mg-button mg-button-primary" disabled={deleteBusy||Boolean(deleteError)} onClick={()=>void remove()}>{deleteBusy?'Đang xóa…':'Xác nhận xóa'}</button></div></Dialog>}
   </div></section>;
 }
 
