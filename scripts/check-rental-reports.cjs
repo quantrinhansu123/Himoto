@@ -74,7 +74,7 @@ async function main(){
       assert.equal(stores.rows.length,1);assert.equal(stores.total.revenue,170);assert.equal(stores.total.income,1190);assert.equal(stores.total.expense,320);
       const {readDashboardSummary}=load(path.join(root,'lib/server/dashboard'));
       const dashboard=await readDashboardSummary(db,new URLSearchParams({from:'2026-10-23',to:'2026-10-23',store_id:'1'}));
-      assert.equal(dashboard.total.revenue,170);assert.equal(dashboard.total.repair,7);
+      assert.equal(dashboard.total.revenue,211);assert.equal(dashboard.total.repair,7);
       assert.deepEqual(stores.total,days.total);assert.equal(days.rows[0].key,'2026-10-23');assert.equal(stores.total.breakdown.other_income,5);
       assert(validRentalReport('rental-overview',stores,params()));assert(validRentalReport('rental-overview',days,params('view=days')));
       assert(!validRentalReport('rental-overview',{...stores,rows:[]},params()));

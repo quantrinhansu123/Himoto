@@ -51,7 +51,6 @@ export async function readDashboardSummary(db: Database, params: URLSearchParams
       COALESCE(sum(total),0)::bigint AS sales
     FROM scoped GROUP BY store_id ORDER BY name,key`, [from, to, store]);
   const cashReport = await rentalOverview(db,new URLSearchParams({from,to,view:'stores',...(store===null?{}:{store_id:String(store)})}));
-  const cash = {rows:cashReport.rows.map(row=>({key:row.key,name:row.name,revenue:row.revenue,repair:row.breakdown.repair_income}))};
 
   const rows = new Map<string, DashboardStoreRow>();
   for (const row of contracts.rows) {
@@ -68,12 +67,14 @@ export async function readDashboardSummary(db: Database, params: URLSearchParams
       repair: 0,
     });
   }
-  for (const row of cash.rows) {
+  for (const row of cashReport.rows) {
     const key = String(row.key);
     const current = rows.get(key) || { key, name: String(row.name || 'Chưa có cơ sở'), ...emptyMetrics() };
     current.name = String(row.name || current.name);
-    current.revenue = amount(row.revenue);
-    current.repair = amount(row.repair);
+    const receipts = row.breakdown;
+    current.revenue = amount(receipts.rental_income + receipts.renewal_income + receipts.late_fee_income
+      + receipts.repair_income + receipts.extra_income + receipts.other_income);
+    current.repair = amount(receipts.repair_income);
     rows.set(key, current);
   }
 

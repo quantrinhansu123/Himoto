@@ -95,7 +95,7 @@ export function canSendDebtReminder(account:PermissionAccount|null|undefined) {
 export function canViewOwnedFleetRevenue(account:PermissionAccount|null|undefined) {
   return isAdminAccount(account)&&(account?.id===145||account?.id===160);
 }
-function hasHrWriteRole(account: { access_role?: string; role?: string; permissions?: readonly string[] } | null | undefined) {
+function hasHrWriteRole(account: Pick<PermissionAccount, 'access_role' | 'role' | 'permissions'> | null | undefined) {
   return (account?.access_role ?? account?.role) === 'hr' && account?.permissions?.includes('hr.write') === true;
 }
 export { hasHrWriteRole as canManageShiftRegistration, hasHrWriteRole as canConfigureAttendance };

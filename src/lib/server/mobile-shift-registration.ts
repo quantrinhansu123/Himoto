@@ -38,8 +38,11 @@ export async function mobileShiftRegistration(user: SessionUser, request: NextRe
   const allowed = self ? ['week'] : ['month','from','to'];
   if ([...params.keys()].some(k => write || !allowed.includes(k) || params.getAll(k).length !== 1)||!self&&(params.has('month')&&(params.has('from')||params.has('to'))||params.has('from')!==params.has('to'))) throw new MobileError('Bộ lọc đăng ký ca không hợp lệ.');
   const body = write ? await mobileBody(request, 8192) : null;
+  const ownUserId = canManageShiftRegistration(user) ? undefined : user.id;
   return transaction(user, self, write, async db => self
     ? write ? saveSelfRegistrationWeek(db, user, body) : readSelfRegistrationWeek(db, user, params.get('week') || dutyWeekStart(dutyToday()))
-    : write ? saveRegistration(db, user.id, body) : params.has('from')?readRegistrationRange(db,params.get('from')!,params.get('to')!):readRegistrationMonth(db, params.get('month') || dutyToday().slice(0, 7)));
+    : write ? saveRegistration(db, user.id, body) : params.has('from')?readRegistrationRange(db,params.get('from')!,params.get('to')!,ownUserId):readRegistrationMonth(db, params.get('month') || dutyToday().slice(0, 7),ownUserId));
 }
-export function readMobileRegistrationRange(user:SessionUser,from:string,to:string){return transaction(user,false,false,db=>readRegistrationRange(db,from,to));}
+export function readMobileRegistrationRange(user:SessionUser,from:string,to:string){
+  return transaction(user,false,false,db=>readRegistrationRange(db,from,to,canManageShiftRegistration(user)?undefined:user.id));
+}

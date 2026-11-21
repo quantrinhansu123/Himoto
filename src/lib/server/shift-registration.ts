@@ -42,22 +42,27 @@ const columns = 'staff_id,store_id,work_date::text,shift_code,revision::text';
 function map(row: Record<string, unknown>): ShiftRegistration {
   return { staff_id: Number(row.staff_id), store_id: Number(row.store_id), work_date: String(row.work_date), shift_code: row.shift_code == null ? null : String(row.shift_code), revision: String(row.revision) };
 }
-export async function readRegistrationMonth(db: Database, month: string): Promise<RegistrationMonth> {
+export async function readRegistrationMonth(db: Database, month: string, ownUserId?: number): Promise<RegistrationMonth> {
   let dates: string[];
   try { dates = monthDates(month); } catch { throw new DutyError('Tháng không hợp lệ (2000–2100).'); }
-  const { from: _from, to: _to, ...data } = await readRegistrationRange(db, dates[0], dates[dates.length - 1]);
+  const { from: _from, to: _to, ...data } = await readRegistrationRange(db, dates[0], dates[dates.length - 1], ownUserId);
   void _from; void _to;
   return { month, ...data };
 }
-export async function readRegistrationRange(db: Database, from: string, to: string): Promise<RegistrationRange> {
+export async function readRegistrationRange(db: Database, from: string, to: string, ownUserId?: number): Promise<RegistrationRange> {
   try { registrationDates(from, to); } catch (cause) { throw new DutyError(cause instanceof Error ? cause.message : 'Khoảng ngày không hợp lệ.'); }
-  const args = [from, to];
+  const ownOnly = ownUserId !== undefined;
+  const own = ownOnly ? (await db.query(
+    "SELECT CASE WHEN count(*)=1 THEN min(id) END AS id, CASE WHEN count(*)=1 THEN min(store_id) END AS store_id FROM himoto.staff_profiles WHERE user_id=$1 AND status='active'", [ownUserId]
+  )).rows[0] : undefined;
+  const args = ownOnly ? [from, to, own?.id ?? null] : [from, to];
   const staff = await db.query(`SELECT p.id,p.full_name,p.position,p.store_id,s.store_name,p.status
     FROM himoto.staff_profiles p LEFT JOIN himoto.stores s ON s.id=p.store_id
-    WHERE p.status='active' OR EXISTS (SELECT 1 FROM himoto.staff_shift_registrations r WHERE r.staff_id=p.id AND r.work_date BETWEEN $1::date AND $2::date)
+    WHERE (p.status='active' OR EXISTS (SELECT 1 FROM himoto.staff_shift_registrations r WHERE r.staff_id=p.id AND r.work_date BETWEEN $1::date AND $2::date))
+      ${ownOnly ? 'AND p.id=$3' : ''}
     ORDER BY s.store_name NULLS LAST,p.full_name,p.id`, args);
-  const registrations = await db.query(`SELECT ${columns} FROM himoto.staff_shift_registrations WHERE work_date BETWEEN $1::date AND $2::date`, args);
-  const stores = await db.query('SELECT id,store_name FROM himoto.stores ORDER BY store_name,id');
+  const registrations = await db.query(`SELECT ${columns} FROM himoto.staff_shift_registrations WHERE work_date BETWEEN $1::date AND $2::date ${ownOnly ? 'AND staff_id=$3' : ''}`, args);
+  const stores = await db.query(`SELECT id,store_name FROM himoto.stores ${ownOnly ? 'WHERE id=$1' : ''} ORDER BY store_name,id`, ownOnly ? [own?.store_id ?? null] : []);
   const locked_weeks = await lockedRegistrationWeeks(db, from, to);
   return { from, to, locked_weeks, staff: staff.rows.map(p => ({ id: Number(p.id), name: String(p.full_name), position: String(p.position || ''), store_id: p.store_id == null ? null : Number(p.store_id), store_name: String(p.store_name || 'Chưa có cơ sở'), status: String(p.status) })), registrations: registrations.rows.map(map), stores: stores.rows.map(s => ({ id: Number(s.id), name: String(s.store_name) })) };
 }

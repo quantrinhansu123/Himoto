@@ -130,8 +130,8 @@ export function DashboardPage() {
               { key: 'rental', label: 'Hợp đồng thuê', value: total ? number(total.rental_contracts) : '—', hint: 'Thuê ngày / tháng / thường' },
               { key: 'ownership', label: 'Sở hữu', value: total ? number(total.ownership_contracts) : '—', hint: 'Thuê sở hữu trong kỳ' },
               { key: 'overdue', label: 'Hợp đồng quá hạn', value: total ? number(total.overdue_contracts) : '—', hint: 'Trong các HĐ bắt đầu kỳ' },
-              { key: 'sales', label: 'Doanh số', value: total ? money(total.sales) : '—', hint: 'Tiền thuê trên HĐ, không gồm VAT và phí khác' },
-              { key: 'revenue', label: 'Doanh thu', value: total ? money(total.revenue) : '—', hint: 'Thuê + gia hạn − hoàn' },
+              { key: 'sales', label: 'Doanh số', value: total ? money(total.sales) : '—', hint: 'Tổng tiền hợp đồng, không gồm cọc' },
+              { key: 'revenue', label: 'Doanh thu', value: total ? money(total.revenue) : '—', hint: 'Phiếu thu đã duyệt, không gồm cọc' },
               { key: 'repair', label: 'Chi phí sửa', value: total ? money(total.repair) : '—', hint: 'Phí sửa chữa đã thu' },
             ].map(card => (
               <div key={card.key} className={`mg-sales-kpi is-${card.key === 'overdue' ? 'overdue' : card.key === 'revenue' || card.key === 'sales' ? 'revenue' : 'paid'}`}>
@@ -142,7 +142,7 @@ export function DashboardPage() {
             ))}
           </dl>
           <p className="mg-sales-kpi-note">
-            Số HĐ / thuê / sở hữu / quá hạn / doanh số theo ngày bắt đầu thuê. Doanh thu và chi phí sửa theo ngày thu/chi thực tế trên sổ quỹ; doanh thu không gồm cọc và phí sửa chữa.
+            Số hợp đồng và doanh số theo ngày bắt đầu thuê. Doanh số là tổng tiền hợp đồng không gồm cọc. Doanh thu là số tiền trên phiếu thu đã duyệt không gồm cọc, tính theo ngày thu.
           </p>
 
           <div className="mg-source-sales">

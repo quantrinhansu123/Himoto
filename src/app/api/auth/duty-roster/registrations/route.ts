@@ -7,6 +7,7 @@ import { readRegistrationMonth, readRegistrationRange, saveRegistration, setRegi
 import { canManageShiftRegistration } from '@/lib/management/permissions';
 import { vietnamDate } from '@/lib/management/duty-roster';
 import { failureResponse } from '@/lib/server/public-failure';
+import { dataAccess } from '@/lib/server/access-context';
 
 export const runtime = 'nodejs';
 async function handle(request: NextRequest) {
@@ -14,17 +15,18 @@ async function handle(request: NextRequest) {
   let client;
   try {
     const writing = request.method !== 'GET';
-    const user = writing ? await userFromSession(request.cookies.get(SESSION_COOKIE)?.value) : null;
-    if (writing && !user) return NextResponse.json({ status: 'error', message: 'Phiên đăng nhập đã hết hạn.' }, { status: 401 });
+    const user = writing ? await userFromSession(request.cookies.get(SESSION_COOKIE)?.value) : dataAccess.getStore();
+    if (!user) return NextResponse.json({ status: 'error', message: 'Phiên đăng nhập đã hết hạn.' }, { status: 401 });
     if (writing && !canManageShiftRegistration(user)) throw new DutyError('Chỉ HCNS được chỉnh sửa hoặc khóa bảng đăng ký ca.', 403);
+    const ownUserId = canManageShiftRegistration(user) ? undefined : user.id;
     const raw = writing ? await request.json() : null;
     client = await (request.method === 'PATCH' ? ownerDatabase : himotoPool).connect();
     await client.query(writing ? 'BEGIN' : 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
     const params = request.nextUrl.searchParams;
     const data = request.method === 'PATCH' ? await setRegistrationWeekLock(client, user!.id, raw)
       : writing ? await saveRegistration(client, user!.id, raw)
-      : params.has('from') || params.has('to') ? await readRegistrationRange(client, params.get('from') || '', params.get('to') || '')
-      : await readRegistrationMonth(client, params.get('month') || vietnamDate().slice(0, 7));
+      : params.has('from') || params.has('to') ? await readRegistrationRange(client, params.get('from') || '', params.get('to') || '', ownUserId)
+      : await readRegistrationMonth(client, params.get('month') || vietnamDate().slice(0, 7), ownUserId);
     await client.query('COMMIT');
     return NextResponse.json({ status: 'success', data }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {

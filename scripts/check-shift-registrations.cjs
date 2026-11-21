@@ -23,6 +23,12 @@ async function main() {
   const access = load(path.resolve('src/lib/server/access-request'));
   assert.equal(access.requestPermission('/api/auth/duty-roster/registrations','GET'),null);
   assert.equal(access.requestPermission('/api/auth/duty-roster/registrations','PUT'),'hr.write');
+  assert.equal(access.requestPermission('/api/auth/duty-roster/registrations','PATCH'),'hr.write');
+  const { canManageShiftRegistration } = load(path.resolve('src/lib/management/permissions'));
+  assert.equal(canManageShiftRegistration({access_role:'hr', permissions:['hr.write']}), true);
+  for (const account of [{access_role:'hr', permissions:['hr.read']}, {access_role:'custom', permissions:['hr.write']}, {access_role:'admin'}]) {
+    assert.equal(canManageShiftRegistration(account), false);
+  }
   assert.equal(access.requestPermission('/api/auth/attendance/shift-registration','GET'),null);
   assert.equal(access.requestPermission('/api/auth/attendance/shift-registration','PUT'),null);
   assert.deepEqual(self.selfRegistrationDates('2026-11-02','2026-11-03'),['2026-11-02','2026-11-03','2026-11-04','2026-11-05','2026-11-06','2026-11-07','2026-11-08']);
@@ -37,6 +43,7 @@ async function main() {
       await c.query("SELECT set_config('himoto.scope_all','true',true),set_config('himoto.operation','duty_roster',true)");
       await c.query('SET LOCAL ROLE himoto_scoped');
       const installed = await server.readRegistrationMonth(c, '2026-11');
+      assert.deepEqual((await server.readRegistrationMonth(c, '2026-11', -1)).staff, []);
       console.log(JSON.stringify({ installedSchema: 'PASS', scopedMonthlyRead: 'PASS', staffCount: installed.staff.length, storeCount: installed.stores.length, registrationCount: installed.registrations.length }));
       await c.query("SELECT set_config('himoto.operation','',true)");
       assert.equal((await c.query('SELECT count(*)::int n FROM himoto.staff_shift_registrations')).rows[0].n,0);
@@ -101,6 +108,20 @@ async function main() {
     await assert.rejects(atomic(()=>self.saveSelfRegistrationWeek(db,employee,{week,days:[{work_date:'2026-11-05',shift_code:'F',revision:null},{work_date:'2026-11-06',shift_code:'S',revision:'9'}]},today)),e=>e.status===409);
     assert.equal((await self.readSelfRegistrationWeek(db,employee,week,today)).registrations.length,beforePartial);
     const managerMonth=await server.readRegistrationMonth(db,'2026-11');assert(managerMonth.registrations.some(row=>row.work_date===today&&row.shift_code==='G1'));
+    assert.deepEqual(managerMonth.staff.map(row=>row.id).sort(), [1,3]);
+    const employeeMonth = await server.readRegistrationMonth(db, '2026-11', employee.id);
+    assert.deepEqual(employeeMonth.staff.map(row=>row.id), [1]);
+    assert.deepEqual(employeeMonth.stores.map(row=>row.id), [23]);
+    assert(employeeMonth.registrations.length > 0 && employeeMonth.registrations.every(row=>row.staff_id===1));
+    const unlinked = await server.readRegistrationMonth(db, '2026-11', 999);
+    assert.deepEqual([unlinked.staff, unlinked.stores, unlinked.registrations], [[], [], []]);
+    await server.setRegistrationWeekLock(db, 143, {week, locked:true});
+    assert.equal((await self.readSelfRegistrationWeek(db, employee, week, today)).locked, true);
+    await assert.rejects(atomic(()=>self.saveSelfRegistrationWeek(db, employee, input, today)), e=>e.status===409 && e.message.includes('đã khóa'));
+    const changedAfterLock = await save({work_date:today, shift_code:'G2', revision:'1'});
+    assert.equal(changedAfterLock.shift_code, 'G2');
+    assert.equal((await self.readSelfRegistrationWeek(db, employee, week, today)).locked, true);
+    console.log('PASS: isolated schedule visibility, missing profile fails closed, weekly lock blocks self-service while the HR edit path remains available');
     console.log('PASS: self-service staff needs no HR permission; actor-bound profile/store; weekly choices appear in manager month; forged identity, missing/inactive staff, past/outside/duplicate days rejected; multi-day conflict rolls back all days');
   } finally { await c.query('ROLLBACK'); c.release(); }
 }
