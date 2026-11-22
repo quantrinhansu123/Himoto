@@ -100,7 +100,7 @@ function eligibility(context: PaymentContext) {
 async function todayAndClosed(db: Database, storeId: number, day?: string) {
   const { rows } = await db.query(`SELECT t.today,EXISTS(
     SELECT 1 FROM himoto.management_shift_reports r
-    WHERE r.store_id=$1 AND r.report_date=COALESCE($2,t.today)::date AND r.status='submitted'
+    WHERE r.store_id=$1 AND r.report_date=COALESCE($2,t.today)::date AND (r.status='submitted' OR r.submitted_at IS NOT NULL)
       AND COALESCE(r.payload->>'report_type','end_shift')='end_shift'
     ) AS closed FROM (SELECT to_char(clock_timestamp() AT TIME ZONE 'Asia/Ho_Chi_Minh','YYYY-MM-DD') AS today) t`,
     [storeId, day ?? null]);

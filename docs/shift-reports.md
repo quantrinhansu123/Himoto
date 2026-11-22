@@ -12,7 +12,13 @@ Xe giữ bên ngoài được ghi từng biển số và lý do; tách khỏi xe
 
 Mỗi mục cho chọn nhiều ảnh / video. Mỗi phần PGD hoặc KTNB tối đa 60 ảnh và 3 video. Ảnh JPEG/PNG/WebP được xử lý xuống tối đa 2 MB; ảnh gốc tối đa 30 MB. Video MP4/MOV/WebM tối đa 45 MB, 3 phút; tải trực tiếp vào Cloudinary dạng authenticated, xác minh chữ ký, kích thước, định dạng và thời lượng trên máy chủ. Tệp chỉ đọc qua phiên đăng nhập trong phạm vi PGD. Ảnh cũ vẫn giữ nguyên và xem được trong báo cáo.
 
-Lưu nháp giữ dữ liệu và tệp trên hệ thống. Chốt cần xác nhận tắt điện và thông tin báo cáo hợp lệ; ảnh/video minh chứng không bắt buộc. Video là minh chứng bổ sung. Sau chốt, dữ liệu và minh chứng PGD chỉ được xem.
+Lưu nháp giữ số liệu, tệp và các mục còn trống. Khi bấm **Chốt báo cáo** trên web, danh sách **Mục cần bổ sung trước khi chốt** dẫn đến đúng ô cần điền. Kiểm kê Hết ca hôm nay yêu cầu một ảnh cận biển số khớp từng xe Lưu kho và xác nhận đã tắt thiết bị điện. Các ảnh hoặc video ở mục minh chứng khác có thể đính kèm thêm.
+
+### Sửa báo cáo Hết ca đã chốt
+
+Mở báo cáo của PGD, chọn **Thu hồi Telegram và mở lại báo cáo**, nhập lý do và xác nhận. Sau khi kết quả thu hồi được xác nhận, báo cáo trở về bản nháp. Sửa nội dung, kiểm tra rồi **Chốt báo cáo** để gửi bản mới. Hệ thống giữ lịch sử bản chốt, lượt gửi và đối soát trước khi mở lại. Báo cáo đã được KTNB xác nhận cần tài khoản có quyền phù hợp mở lại, sau đó KTNB đối soát bản mới.
+
+Nếu bot không còn xác minh được nhóm cũ hoặc hết thời hạn thu hồi, quản trị nhóm xử lý tin và tệp trong Telegram. Kế toán hoặc quản trị viên dùng tùy chọn xác nhận đã xử lý trong nhóm để mở lại. Mở lại báo cáo cũng giữ mốc đã chốt của ca khi phân luồng hoàn cọc.
 
 Khi chốt, hệ thống thử lưu ảnh chụp số kho app tại thời điểm đó, độc lập với truy vấn tài chính. Lỗi chụp kho không làm mất / hoàn tác bản kiểm kê và minh chứng đã xác nhận; KTNB sẽ thấy thiếu nguồn kho nếu không có bản chụp. Không lấy tồn kho hiện tại làm số tồn quá khứ.
 

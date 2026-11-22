@@ -25,6 +25,10 @@ export const SHIFT_REPORT_TYPE_LABELS = { mid_shift: 'Giữa ca', end_shift: 'Cu
 export type ShiftReportType = keyof typeof SHIFT_REPORT_TYPE_LABELS;
 export const shiftReportTypeLabel = (type?: ShiftReportType) => SHIFT_REPORT_TYPE_LABELS[type ?? 'end_shift'];
 export const emptyShiftSummary = (): ShiftSummary => Object.fromEntries(SHIFT_SUMMARY_FIELDS.map(([key]) => [key, 0])) as ShiftSummary;
+export const SHIFT_DRAFT_NUMBERS = ['vehicles','daily_vehicles','monthly_vehicles','other_vehicles','batteries','charged',
+  'rented_batteries','transfers','cash','personal','company'] as const;
+export type ShiftDraftField = 'staff' | 'external_vehicles' | typeof SHIFT_DRAFT_NUMBERS[number] | `summary.${keyof ShiftSummary}`;
+const draftFields = new Set<string>(['staff','external_vehicles',...SHIFT_DRAFT_NUMBERS,...SHIFT_SUMMARY_FIELDS.map(([key])=>`summary.${key}`)]);
 export interface ShiftInput {
   report_type?: ShiftReportType;
   ownership_report?:OwnershipReport;
@@ -38,6 +42,9 @@ export interface ShiftInput {
   monthly_vehicles?: number;
   external_vehicles?: ExternalVehicle[];
   other_vehicles?:number;
+  draft_missing?:ShiftDraftField[];
+  draft_charged?:number;
+  draft_external?:ExternalVehicle[];
 }
 export interface ShiftReport {
   telegram?:{status:string;message_id:number|null;error_code:string|null}|null;
@@ -61,6 +68,15 @@ export function parseShiftInput(raw: unknown): ShiftInput {
   if (typeof b.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(b.date) || !Number.isFinite(Date.parse(b.date)) || new Date(b.date).toISOString().slice(0, 10) !== b.date) throw new Error('Ngày báo cáo không hợp lệ.');
   if (typeof b.staff !== 'string' || !b.staff.trim() || b.staff.length > 1000) throw new Error('Nhập nhân sự trực ca (tối đa 1.000 ký tự).');
   if (typeof b.notes !== 'string' || b.notes.length > 5000 || typeof b.electricity_off !== 'boolean') throw new Error('Kiểm tra ghi chú và xác nhận an toàn.');
+  if (b.draft_missing!==undefined&&(!Array.isArray(b.draft_missing)||b.draft_missing.length>draftFields.size||
+      b.draft_missing.some(key=>typeof key!=='string'||!draftFields.has(key)))) throw new Error('Các mục chưa điền trong bản nháp không hợp lệ.');
+  const missing=Array.isArray(b.draft_missing)?b.draft_missing:[];
+  if(b.draft_charged!==undefined&&(!missing.includes('batteries')||!Number.isSafeInteger(b.draft_charged)||
+     Number(b.draft_charged)<0||Number(b.draft_charged)>100000))throw Error('Số pin đầy trong bản nháp không hợp lệ.');
+  if(b.draft_external!==undefined&&(!missing.includes('external_vehicles')||!Array.isArray(b.draft_external)||b.draft_external.length>100||
+     b.draft_external.some(row=>!row||typeof row.plate!=='string'||row.plate.length>30||typeof row.reason!=='string'||row.reason.length>500))){
+    throw Error('Dòng xe bên ngoài trong bản nháp không hợp lệ.');
+  }
   if (b.electrical_devices !== undefined && (typeof b.electrical_devices !== 'string' || b.electrical_devices.length > 1000)) throw new Error('Danh sách thiết bị điện tối đa 1.000 ký tự.');
   const numbers = ['vehicles', 'batteries', 'charged', 'transfers', 'cash', 'personal', 'company'] as const;
   for (const key of numbers) if (!Number.isSafeInteger(b[key]) || Number(b[key]) < 0 || Number(b[key]) > (['cash', 'personal', 'company'].includes(key) ? 1e12 : 100000)) throw new Error('Số lượng và số tiền phải là số nguyên không âm hợp lệ.');
@@ -83,6 +99,9 @@ export function parseShiftInput(raw: unknown): ShiftInput {
     summary = Object.fromEntries(SHIFT_SUMMARY_FIELDS.map(([key]) => [key, values[key]])) as ShiftSummary;
   }
   return { store_id: Number(b.store_id), date: b.date, staff: b.staff.trim(), notes: b.notes.trim(), electricity_off: b.electricity_off,
+    ...(missing.length?{draft_missing:[...new Set(missing)] as ShiftDraftField[]}:{}),
+    ...(b.draft_charged!==undefined?{draft_charged:Number(b.draft_charged)}:{}),
+    ...(Array.isArray(b.draft_external)?{draft_external:b.draft_external.map(row=>({plate:row.plate,reason:row.reason}))}:{}),
     ...(b.report_type !== undefined ? { report_type: b.report_type } : {}),
     ...(b.ownership_report!==undefined?{ownership_report:parseOwnershipReport(b.ownership_report)}:{}),
     ...(typeof b.electrical_devices === 'string' ? { electrical_devices: b.electrical_devices.trim() } : {}),

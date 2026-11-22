@@ -5,7 +5,7 @@ import type { NextRequest } from 'next/server';
 import { hasPermission } from '@/lib/management/permissions';
 import {
   isShiftStockCapture, isShiftStockDay, matchShiftStockPlate, SHIFT_STOCK_CATEGORY,
-  SHIFT_STOCK_MAX_ACCURACY_METERS, SHIFT_STOCK_RADIUS_METERS, type ShiftStockCapture, type ShiftStockCheck,
+  SHIFT_STOCK_MAX_ACCURACY_METERS, SHIFT_STOCK_RADIUS_METERS, type ShiftStockCapture, type ShiftStockCheck, type ShiftStockVehicle,
 } from '../../../shared/shift-stock-check';
 import { AttendanceError, attendanceDistanceMeters, parseAttendanceLocation } from './attendance';
 import { himotoPool } from './himoto-database';
@@ -28,6 +28,15 @@ export function storedShiftStock(payload: Record<string, unknown>): ShiftStockCa
     throw new ShiftRequestError('Dữ liệu kiểm kê đã lưu cần được kiểm tra.', 409);
   }
   return value;
+}
+
+export async function expectedShiftStock(client:Pick<PoolClient,'query'>,store:number,payload:Record<string,unknown>):Promise<ShiftStockVehicle[]> {
+  const frozen=payload.stock_expected;
+  if(frozen===undefined)return readShiftStock(client,store);
+  if(!Array.isArray(frozen)||!frozen.every(v=>v&&Number.isSafeInteger(v.id)&&v.id>0&&typeof v.license==='string'&&typeof v.name==='string')){
+    throw new ShiftRequestError('Danh sách xe tại lần chốt trước cần được đối chiếu.',409);
+  }
+  return frozen;
 }
 
 async function branchCoordinates(client: Pick<PoolClient,'query'>, store: number) {
@@ -106,7 +115,7 @@ async function draft(client: Pick<PoolClient,'query'>, id: number, branchId: num
 export async function readShiftStockCheck(client:Pick<PoolClient,'query'>, id:number, branchId?:number|null):Promise<ShiftStockCheck> {
   const report = await draft(client, id, branchId);
   const store = Number(report.store_id);
-  const expected = await readShiftStock(client, store);
+  const expected = await expectedShiftStock(client, store, report.payload);
   const captures = storedShiftStock(report.payload);
   const gpsConfigured = !!await branchCoordinates(client, store);
   return {revision:report.revision, expected, captures, gps_configured:gpsConfigured};
@@ -197,7 +206,7 @@ export async function mobileShiftStockPhotos(request: NextRequest, user: Session
         const captures = storedShiftStock(report.payload);
         let response;
         if (photos) {
-          const matches = matchShiftStockPlate(plate, await readShiftStock(client, store));
+          const matches = matchShiftStockPlate(plate, await expectedShiftStock(client, store, report.payload));
           if (matches.length !== 1) throw new ShiftRequestError(matches.length
             ? `Biển ${plate} trùng nhiều hồ sơ trong kho. Kiểm tra danh sách xe trước khi chụp lại.`
             : `Biển ${plate} không khớp xe Lưu kho của cơ sở này. Kiểm tra biển hoặc danh sách xe.`, 422);

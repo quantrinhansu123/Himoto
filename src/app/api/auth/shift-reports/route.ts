@@ -26,9 +26,9 @@ export const POST=withAccessRequest(async(request:NextRequest)=>{
     return NextResponse.json({data:saved});
   }catch(error){
     if(client)await client.query('ROLLBACK').catch(()=>{});
-    if(error instanceof ShiftRequestError)return NextResponse.json({message:error.message},{status:error.status});
+    if(error instanceof ShiftRequestError)return NextResponse.json({message:error.message,code:error.code},{status:error.status});
     const code=(error as {code?:string}).code;
-    if(code==='23505')return failureResponse('PGD đã có báo cáo cùng loại trong ngày này. Mở báo cáo trong danh sách.',error);
+    if(code==='23505')return NextResponse.json({message:'PGD đã có báo cáo cùng loại trong ngày. Mở báo cáo đã có trong danh sách.',code:'SHIFT_REPORT_EXISTS'},{status:409});
     if(code)return failureResponse('Chưa lưu được báo cáo.',error);
     return NextResponse.json({message:error instanceof Error&&error.message?error.message:'Thông tin không hợp lệ.'},{status:400});
   }finally{client?.release();}

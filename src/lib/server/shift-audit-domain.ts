@@ -18,8 +18,9 @@ export async function saveShiftAudit(client:Database,actor:Omit<DataAccess,'oper
   if(!Number.isSafeInteger(raw.revision)||raw.revision<0||!Number.isSafeInteger(raw.report_revision)||raw.report_revision<1||!['draft','confirmed'].includes(raw.status)||typeof raw.fingerprint!=='string')throw new ShiftRequestError('Phiên bản đối soát không hợp lệ.');
   const hash=shiftRequestHash(JSON.stringify({kind:'audit',actor:actor.id,id,revision:raw.revision,report_revision:raw.report_revision,input,status:raw.status,fingerprint:raw.fingerprint}));
   const receipt=await readShiftReceipt(client,key,actor.id,hash);if(receipt)return receipt;
-    const report=(await client.query('SELECT store_id,payload,status,revision,app_snapshot FROM himoto.management_shift_reports WHERE id=$1 FOR UPDATE',[id])).rows[0];
+    const report=(await client.query('SELECT store_id,payload,status,revision,app_snapshot,reopen_request FROM himoto.management_shift_reports WHERE id=$1 FOR UPDATE',[id])).rows[0];
     if(!report||report.status!=='submitted')throw new ShiftRequestError('PGD chưa chốt hoặc báo cáo ngoài phạm vi.',409);
+    if(report.reopen_request)throw new ShiftRequestError('Báo cáo đang thu hồi để mở lại. Chờ PGD chốt lại trước khi đối soát.',409);
     if(report.revision!==raw.report_revision)throw new ShiftRequestError('Minh chứng đã thay đổi. Mở lại báo cáo trước khi đối soát.',409);
     const existing=(await client.query('SELECT revision,status FROM himoto.management_shift_audits WHERE report_id=$1',[id])).rows[0];
     if((existing?.revision??0)!==raw.revision||existing?.status==='confirmed')throw new ShiftRequestError('Đối soát đã thay đổi hoặc đã xác nhận. Tải lại trước khi thao tác.',409);

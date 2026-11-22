@@ -5,6 +5,7 @@ import { openIntegrationSecret } from './integration-secrets';
 import { telegramCall,telegramMediaBatches,canUploadRejectedTelegramMedia,TelegramContinuation,TelegramDeliveryError,type Media } from './telegram-delivery';
 import type {Attachment} from './contract-notification-content';
 import {SHIFT_STOCK_CATEGORY} from '../../../shared/shift-stock-check';
+import {telegramBotIdentity,type DeliveryTarget} from './telegram-retractions';
 
 type Database=Pick<PoolClient,'query'>;
 export async function queueReportTelegram(db:Database,key:string,store:number,text:string,route:'store'|'ownership_new',attachments:Attachment[]=[]) {
@@ -19,23 +20,44 @@ export async function shiftTelegramAttachments(db:Database,id:number,stage:'pgd'
     UNION ALL SELECT 'shift-legacy-'||slot,mime_type,encode(data,'base64'),NULL::text,NULL::text,NULL::integer,object_bucket,object_key,object_etag
     FROM himoto.management_shift_photos WHERE report_id=$1 AND $2='pgd' ORDER BY slot`,[id,stage])).rows;
 }
+export async function reportTelegramSettings(db:Database,route:string,store:number) {
+  const settings=(await db.query('SELECT bot_cipher,updated_at FROM himoto.management_telegram_settings WHERE singleton=true')).rows[0];
+  const target=(await db.query(route==='ownership_new'
+    ?"SELECT chat_id,thread_id,enabled,updated_at FROM himoto.management_ownership_telegram WHERE route='ownership_new'"
+    :'SELECT chat_id,thread_id,enabled,updated_at FROM himoto.management_store_telegram WHERE store_id=$1',
+    route==='ownership_new'?[]:[store])).rows[0];
+  return {settings,target};
+}
 /** A committed outbox entry is claimed once. Ambiguous sends never retry. */
 export async function deliverReportTelegram(key:string,db:Database=ownerDatabase,send:typeof fetch=fetch) {
   await db.query(`UPDATE himoto.management_report_deliveries SET status='unknown',error_code='INTERRUPTED',updated_at=now()
-    WHERE delivery_key=$1 AND status='sending' AND updated_at<now()-interval '3 minutes'`,[key]);
+    WHERE delivery_key=$1 AND suppressed_at IS NULL AND status='sending' AND updated_at<now()-interval '3 minutes'`,[key]);
   const row=(await db.query(`UPDATE himoto.management_report_deliveries SET status='sending',updated_at=now(),error_code=NULL
-    WHERE delivery_key=$1 AND status IN ('pending','failed','awaiting_config') RETURNING *`,[key])).rows[0];
+    WHERE delivery_key=$1 AND suppressed_at IS NULL AND status IN ('pending','failed','awaiting_config') RETURNING *`,[key])).rows[0];
   if(!row)return;
   let attempted=false;
   try {
-    const settings=(await db.query('SELECT bot_cipher FROM himoto.management_telegram_settings WHERE singleton=true')).rows[0];
-    const target=(await db.query(row.route==='ownership_new'
-      ?"SELECT chat_id,thread_id FROM himoto.management_ownership_telegram WHERE route='ownership_new' AND enabled=true"
-      :'SELECT chat_id,thread_id FROM himoto.management_store_telegram WHERE store_id=$1 AND enabled=true',row.route==='ownership_new'?[]:[row.store_id])).rows[0];
-    if(!settings?.bot_cipher||!target?.chat_id){await db.query("UPDATE himoto.management_report_deliveries SET status='awaiting_config',updated_at=now() WHERE delivery_key=$1",[key]);return;}
+    const {settings,target:configured}=await reportTelegramSettings(db,row.route,Number(row.store_id));
+    if(!settings?.bot_cipher||!configured?.chat_id||configured.enabled===false){
+      await db.query("UPDATE himoto.management_report_deliveries SET status='awaiting_config',updated_at=now() WHERE delivery_key=$1",[key]);return;
+    }
     const {token}=openIntegrationSecret<{token:string}>(settings.bot_cipher);
     const ids:number[]=Array.isArray(row.media_ids)?[...row.media_ids]:[],photos:Attachment[]=Array.isArray(row.attachments)?row.attachments:[];
     if(ids.length>photos.length||ids.some(id=>!Number.isSafeInteger(id)||id<1))throw new TelegramDeliveryError('INVALID_REPORT_RECEIPT');
+    const botId=telegramBotIdentity(token);
+    const target:DeliveryTarget=row.delivery_target||{chat_id:configured.chat_id,thread_id:configured.thread_id,
+      bot_id:botId,started_at:new Date().toISOString()};
+    if(target.bot_id!==botId)throw new TelegramDeliveryError('BOT_CHANGED');
+    if(target.chat_id!==configured.chat_id||String(target.thread_id??'')!==String(configured.thread_id??'')){
+      throw new TelegramDeliveryError('REPORT_TARGET_CHANGED');
+    }
+    if(!row.delivery_target){
+      if((ids.length||row.text_sent)&&[settings.updated_at,configured.updated_at].some(at=>Date.parse(at)>Date.parse(row.created_at))){
+        throw new TelegramDeliveryError('REPORT_TARGET_UNCERTAIN');
+      }
+      if(ids.length||row.text_sent)target.started_at=new Date(row.created_at).toISOString();
+      await db.query('UPDATE himoto.management_report_deliveries SET delivery_target=$2::jsonb WHERE delivery_key=$1',[key,JSON.stringify(target)]);
+    }
     const sendBatch=async(batch:Media[])=>{
       const form=new FormData();form.append('chat_id',target.chat_id);if(target.thread_id)form.append('message_thread_id',String(target.thread_id));
       const video=batch.length===1&&batch[0].type==='video/mp4';

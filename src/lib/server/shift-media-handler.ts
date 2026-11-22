@@ -40,7 +40,7 @@ export async function handleShiftMedia(request:NextRequest,context:Context,mobil
     client=await himotoPool.connect();await client.query('BEGIN');
     if(mobile&&writing)await reserveShiftMobileReceipt(client,actor.id,key!,`shift.media:${id}`,hash);
     const receipt=await readShiftReceipt(client,key,actor.id,hash);if(receipt){await client.query('COMMIT');client.release();client=undefined;if(cloud&&!isBrowserVideoReceipt(cloud))await cleanupConvertedVideo(cloud);return NextResponse.json({data:receipt});}
-    const report=(await client.query(`SELECT store_id,status,revision FROM himoto.management_shift_reports WHERE id=$1${writing?' FOR UPDATE':''}`,[id])).rows[0];
+    const report=(await client.query(`SELECT store_id,status,revision,reopen_request FROM himoto.management_shift_reports WHERE id=$1${writing?' FOR UPDATE':''}`,[id])).rows[0];
     if(!report)throw new RecordPhotoError('Không tìm thấy báo cáo.',404);
     const existing=(await client.query('SELECT * FROM himoto.management_shift_media WHERE id=$1 AND report_id=$2',[mediaId,id])).rows[0];
     if(!writing){
@@ -63,7 +63,7 @@ export async function handleShiftMedia(request:NextRequest,context:Context,mobil
     if(stage==='pgd'&&report.status!=='draft')throw new RecordPhotoError('PGD đã chốt, minh chứng kiểm kê được giữ nguyên.',409);
     if(stage==='audit'){
       const audit=(await client.query('SELECT status FROM himoto.management_shift_audits WHERE report_id=$1',[id])).rows[0];
-      if(report.status!=='submitted'||audit?.status==='confirmed')throw new RecordPhotoError('PGD chưa chốt hoặc KTNB đã xác nhận, không thể sửa minh chứng.',409);
+      if(report.status!=='submitted'||audit?.status==='confirmed'||report.reopen_request)throw new RecordPhotoError('Cần báo cáo PGD đã chốt, chưa mở lại và chưa được KTNB xác nhận để sửa minh chứng.',409);
     }
     if(report.revision!==revision)throw new RecordPhotoError('Báo cáo đã thay đổi. Tải lại trước khi sửa minh chứng.',409);
     if(request.method==='DELETE'){

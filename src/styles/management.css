@@ -4308,6 +4308,9 @@
 .shift-reports { max-width: 1400px; }
 .shift-form,.shift-history { padding: 24px; margin-bottom: 24px; }
 .shift-form-title { display:flex; align-items:center; gap:12px; margin-bottom:24px; }
+.shift-missing-fields { display: block; }
+.shift-missing-fields ul { padding-inline-start: 1.25rem; display: grid; gap: 6px; }
+.shift-missing-fields .mg-button { max-width: 100%; text-align: start; white-space: normal; }
 .shift-form h2,.shift-history h2 { font-size:19px; margin:0 0 8px; }
 .shift-form p,.shift-history > p { color:var(--mg-text-secondary, #64748b); font-size:13px; }
 .shift-form fieldset { border:0; padding:0; margin:0; min-width:0; }

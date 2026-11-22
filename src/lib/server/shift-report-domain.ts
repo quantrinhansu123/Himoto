@@ -9,15 +9,14 @@ import { readOwnershipReport } from './ownership-report';
 import { ownershipReportText,validateOwnershipSubmission } from '@/lib/management/ownership-report';
 import { queueReportTelegram,shiftTelegramAttachments } from './report-telegram';
 import { compareShiftStock,isShiftStockDay,SHIFT_STOCK_CATEGORY } from '../../../shared/shift-stock-check';
-import { readShiftStock } from './shift-inventory';
-import { storedShiftStock } from './shift-stock-photos';
+import { expectedShiftStock,storedShiftStock } from './shift-stock-photos';
 import { lockShiftClose } from './shift-close-lock';
 type Database=Pick<PoolClient,'query'>;
 export async function listShiftReports(client:Database,store:string|null,date:string|null,id?:number,all=false,reportType:string|null=null):Promise<ShiftReport[]> {
   if(date&&(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!Number.isFinite(Date.parse(date))||new Date(date).toISOString().slice(0,10)!==date))throw new ShiftRequestError('Ngày báo cáo không hợp lệ.');
   if(store&&!/^[1-9]\d*$/.test(store))throw new ShiftRequestError('PGD không hợp lệ.');
   if(reportType!==null&&reportType!=='mid_shift'&&reportType!=='end_shift')throw new ShiftRequestError('Loại báo cáo không hợp lệ.');
-    const result = await client.query(`SELECT r.id,r.payload-'stock_captures' AS payload,r.status,r.revision,r.updated_at,r.app_snapshot,s.store_name,COALESCE(u.name,'Nhân sự') AS created_by_name,
+    const result = await client.query(`SELECT r.id,r.payload-'stock_captures'-'stock_expected' AS payload,r.status,r.revision,r.updated_at,r.app_snapshot,s.store_name,COALESCE(u.name,'Nhân sự') AS created_by_name,
       CASE WHEN NOT $5::boolean THEN r.payload->'stock_captures' END AS stock_captures,
       (SELECT jsonb_build_object('status',n.status,'message_id',n.message_id,'error_code',n.error_code) FROM himoto.management_report_deliveries n WHERE n.delivery_key='shift:'||r.id::text) AS telegram,
       ARRAY(SELECT p.slot FROM himoto.management_shift_photos p WHERE p.report_id=r.id) AS legacy_photos,
@@ -38,6 +37,7 @@ export async function saveShiftReport(client:Database,actor:Omit<DataAccess,'ope
   if(!hasPermission(actor,'contracts.draft')&&!hasPermission(actor,'finance.write'))throw new ShiftRequestError('Không có quyền lập báo cáo.',403);
   const input=parseShiftInput(raw.payload);
   if(!['draft','submitted'].includes(raw.status)||(raw.id!=null&&(!Number.isSafeInteger(raw.id)||raw.id<=0||!Number.isSafeInteger(raw.revision))))throw new ShiftRequestError('Báo cáo không hợp lệ.');
+  if(raw.status==='submitted'&&input.draft_missing?.length)throw new ShiftRequestError('Bổ sung các mục còn thiếu trong bản nháp trước khi chốt.',422,'SHIFT_FIELDS_MISSING');
   if(!actor.scope_all&&input.store_id!==actor.store_id)throw new ShiftRequestError('PGD nằm ngoài phạm vi được phân công.',403);
   const hash=shiftRequestHash(JSON.stringify({actor:actor.id,id:raw.id??null,revision:raw.revision??null,input,status:raw.status}));
   const receipt=await readShiftReceipt(client,requestId,actor.id,hash);if(receipt)return receipt;
@@ -47,6 +47,8 @@ export async function saveShiftReport(client:Database,actor:Omit<DataAccess,'ope
     if (!(await client.query('SELECT id FROM himoto.stores WHERE id=$1', [input.store_id])).rowCount) throw new ShiftRequestError('PGD không tồn tại.');
     let stockCaptures = storedShiftStock({});
     let hasStockEvidence = false;
+    let savedPayload:Record<string,unknown>={};
+    let priorSnapshot;
     if (raw.id != null) {
       const existing = (await client.query('SELECT * FROM himoto.management_shift_reports WHERE id=$1 FOR UPDATE', [raw.id])).rows[0];
       if (!existing || existing.status !== 'draft' || existing.revision !== raw.revision || Number(existing.store_id) !== input.store_id || existing.payload.date !== input.date) {
@@ -57,6 +59,8 @@ export async function saveShiftReport(client:Database,actor:Omit<DataAccess,'ope
       }
       stockCaptures = storedShiftStock(existing.payload);
       hasStockEvidence = existing.payload.stock_captures !== undefined;
+      savedPayload=existing.payload;
+      priorSnapshot=existing.app_snapshot;
     }
     if (raw.status === 'submitted' && !input.electricity_off) throw new ShiftRequestError('Xác nhận đã tắt thiết bị điện trước khi chốt.');
     const stockApplies = (input.report_type ?? 'end_shift') === 'end_shift' &&
@@ -64,10 +68,10 @@ export async function saveShiftReport(client:Database,actor:Omit<DataAccess,'ope
     const verifyStock = raw.status === 'submitted' && stockApplies;
     if (stockApplies) input.vehicles = stockCaptures.length;
     if (verifyStock) {
-      const expected = await readShiftStock(client, input.store_id);
+      const expected = await expectedShiftStock(client, input.store_id, savedPayload);
       const {missing,unexpected} = compareShiftStock(expected, stockCaptures);
       if (missing.length || unexpected.length) {
-        throw new ShiftRequestError(`Chưa thể chốt kiểm kê xe: còn ${missing.length} xe thiếu ảnh, ${unexpected.length} xe đã chụp lệch kho. Mở Kiểm kê xe bằng ảnh trong app để xử lý.`, 422, 'SHIFT_STOCK_INCOMPLETE');
+        throw new ShiftRequestError(`Còn ${missing.length} xe thiếu ảnh, ${unexpected.length} xe đã chụp lệch kho. Mở Kiểm kê xe bằng ảnh để xử lý.`, 422, 'SHIFT_STOCK_INCOMPLETE');
       }
       input.vehicles = expected.length;
     }
@@ -77,7 +81,8 @@ export async function saveShiftReport(client:Database,actor:Omit<DataAccess,'ope
       input.ownership_report={...fresh,values:input.ownership_report.values,manual:input.ownership_report.manual};
     }
 
-    const payload = stockApplies ? {...input,stock_captures:stockCaptures} : input;
+    const payload = stockApplies ? {...input,stock_captures:stockCaptures,
+      ...(savedPayload.stock_expected!==undefined?{stock_expected:savedPayload.stock_expected}:{})} : input;
     const result = raw.id != null
       ? await client.query('UPDATE himoto.management_shift_reports SET payload=$1,status=$2,revision=revision+1,updated_at=now() WHERE id=$3 RETURNING id,revision', [payload, raw.status, raw.id])
       : await client.query('INSERT INTO himoto.management_shift_reports(store_id,report_date,payload,created_by,status) VALUES($1,$2,$3,$4,$5) RETURNING id,revision', [input.store_id,input.date,payload,actor.id,raw.status]);
@@ -87,13 +92,14 @@ export async function saveShiftReport(client:Database,actor:Omit<DataAccess,'ope
     if(raw.status==='submitted'){
       await client.query('SAVEPOINT shift_snapshot');
       try{
-        const snapshot=await readShiftSnapshot(client,{payload:input},true);
+        const snapshot=(savedPayload.stock_expected!==undefined||!isShiftStockDay(input.date))&&priorSnapshot
+          ? priorSnapshot : await readShiftSnapshot(client,{payload:input},true);
         await client.query('UPDATE himoto.management_shift_reports SET app_snapshot=$2,submitted_at=now() WHERE id=$1',[saved.id,snapshot]);
       }catch{
         // A temporary analytics outage must not undo the PGD's verified report
         // and evidence. KTNB will see that no historical app snapshot is available.
         await client.query('ROLLBACK TO SAVEPOINT shift_snapshot');
-        await client.query('UPDATE himoto.management_shift_reports SET submitted_at=now() WHERE id=$1',[saved.id]);
+        await client.query('UPDATE himoto.management_shift_reports SET submitted_at=now(),app_snapshot=NULL WHERE id=$1',[saved.id]);
       }
       await client.query('RELEASE SAVEPOINT shift_snapshot');
       const text=input.ownership_report?ownershipReportText(input.date,input.ownership_report):`BÁO CÁO ${shiftReportTypeLabel(input.report_type).toUpperCase()} · PGD #${input.store_id}\nNgày: ${input.date}\nNhân sự: ${input.staff}\nXe tại cơ sở: ${input.vehicles}\nPin: ${input.batteries}\nTiền mặt: ${input.cash.toLocaleString('vi-VN')} đ\nTK cá nhân: ${input.personal.toLocaleString('vi-VN')} đ\nTK công ty: ${input.company.toLocaleString('vi-VN')} đ\n${input.notes}`.slice(0,3900);

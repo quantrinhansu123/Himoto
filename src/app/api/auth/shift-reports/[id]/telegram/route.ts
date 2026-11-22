@@ -12,7 +12,7 @@ export const maxDuration=300;
 type Context={params:Promise<{id:string}>};
 export const GET=withAccessRequest(async(request:NextRequest,context:Context)=>{
   const {id}=await context.params;if(!/^[1-9]\d{0,14}$/.test(id))return NextResponse.json({message:'Báo cáo không hợp lệ.'},{status:400});
-  try{const stage=request.nextUrl.searchParams.get('stage')||'pgd',key=shiftTelegramKey(id,stage),data=await readShiftTelegram(himotoPool,id,stage);if(data?.status==='pending')after(()=>deliverReportTelegram(key));return NextResponse.json({data},{headers:{'Cache-Control':'no-store'}});}catch(e){return failureResponse('Chưa đọc được trạng thái Telegram.',e);}
+  try{const stage=request.nextUrl.searchParams.get('stage')||'pgd',key=shiftTelegramKey(id,stage),data=await readShiftTelegram(himotoPool,id,stage);if(data?.status==='pending'&&!data.suppressed)after(()=>deliverReportTelegram(key));return NextResponse.json({data},{headers:{'Cache-Control':'no-store'}});}catch(e){return failureResponse('Chưa đọc được trạng thái Telegram.',e);}
 });
 export const POST=withAccessRequest(async(request:NextRequest,context:Context)=>{
   if(request.nextUrl.searchParams.get('stage')==='audit'?!hasPermission(dataAccess.getStore(),'shift.review'):!hasPermission(dataAccess.getStore(),'contracts.draft')&&!hasPermission(dataAccess.getStore(),'finance.write'))return NextResponse.json({message:'Không có quyền gửi báo cáo.'},{status:403});

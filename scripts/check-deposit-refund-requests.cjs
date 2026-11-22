@@ -73,7 +73,7 @@ async function main() {
     const preview = async (order, item) => contractNotificationText('return', await notificationPayload(db, order, 'return', 143, [`return-${item}`]));
     assert.match(await preview(1, 1001), /Hoàn cọc: 2\.000\.000[\s\S]*Tiền mặt/);
 
-    await db.query("UPDATE himoto.management_shift_reports SET payload='{\"report_type\":\"end_shift\"}'");
+    await db.query("UPDATE himoto.management_shift_reports SET status='draft',submitted_at=now(),payload='{\"report_type\":\"end_shift\"}'");
     const closed = { ...input, id: randomUUID(), item_id: 1002 };
     assert.equal((await submitDepositRefund(db, staff, closed)).status, 'pending');
     assert.equal(await transactionCount(2), 0);

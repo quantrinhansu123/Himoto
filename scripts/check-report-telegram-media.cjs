@@ -8,10 +8,11 @@ async function main(){
   const{queueReportTelegram,deliverReportTelegram}=load(path.join(root,'lib/server/report-telegram'));
   const db={async query(sql,params){const result=await pg.query(sql,params);return{rows:result.rows,rowCount:result.affectedRows??result.rows.length};}},checks=[];
   try{
-    await pg.exec(`CREATE SCHEMA himoto;CREATE TABLE himoto.management_report_deliveries(delivery_key text PRIMARY KEY,store_id bigint,route text,text text,status text DEFAULT 'pending',message_id bigint,error_code text,updated_at timestamptz DEFAULT now(),attachments jsonb DEFAULT '[]',media_ids jsonb DEFAULT '[]',text_sent boolean DEFAULT false);
-      CREATE TABLE himoto.management_telegram_settings(singleton boolean,bot_cipher text);CREATE TABLE himoto.management_store_telegram(store_id bigint,chat_id text,thread_id bigint,enabled boolean);CREATE TABLE himoto.management_ownership_telegram(route text,chat_id text,thread_id bigint,enabled boolean);
-      INSERT INTO himoto.management_store_telegram VALUES(23,'fixture-chat',5,true);INSERT INTO himoto.management_ownership_telegram VALUES('ownership_new','fixture-ownership',7,true);`);
-    await db.query('INSERT INTO himoto.management_telegram_settings VALUES(true,$1)',[sealIntegrationSecret({token:'fixture-token-only'})]);
+    await pg.exec(`CREATE SCHEMA himoto;CREATE TABLE himoto.management_report_deliveries(delivery_key text PRIMARY KEY,store_id bigint,route text,text text,status text DEFAULT 'pending',message_id bigint,error_code text,created_at timestamptz DEFAULT now(),updated_at timestamptz DEFAULT now(),attachments jsonb DEFAULT '[]',media_ids jsonb DEFAULT '[]',text_sent boolean DEFAULT false,delivery_target jsonb,suppressed_at timestamptz);
+      CREATE TABLE himoto.management_telegram_settings(singleton boolean,bot_cipher text,updated_at timestamptz DEFAULT now());CREATE TABLE himoto.management_store_telegram(store_id bigint,chat_id text,thread_id bigint,enabled boolean,updated_at timestamptz DEFAULT now());CREATE TABLE himoto.management_ownership_telegram(route text,chat_id text,thread_id bigint,enabled boolean,updated_at timestamptz DEFAULT now());
+      INSERT INTO himoto.management_store_telegram(store_id,chat_id,thread_id,enabled) VALUES(23,'fixture-chat',5,true);
+      INSERT INTO himoto.management_ownership_telegram(route,chat_id,thread_id,enabled) VALUES('ownership_new','fixture-ownership',7,true);`);
+    await db.query('INSERT INTO himoto.management_telegram_settings(singleton,bot_cipher) VALUES(true,$1)',[sealIntegrationSecret({token:'fixture-token-only'})]);
     const photos=Array.from({length:25},(_,i)=>({slot:'shift-'+i,mime_type:'image/jpeg',bytes:Buffer.from([255,216,255]).toString('base64'),cloudinary_public_id:null,cloudinary_cloud_name:null,cloudinary_version:null}));
     photos.push({...photos[0],slot:'video-1',mime_type:'video/mp4',bytes:Buffer.from('fixture-video').toString('base64')});
     await queueReportTelegram(db,'shift:1',23,'PGD fixture','store',photos);
