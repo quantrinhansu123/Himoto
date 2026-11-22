@@ -111,7 +111,7 @@ with sync_playwright() as pw:
         expect(editor.get_by_role('button',name='2. Kiểm tra & gửi Telegram',exact=True)).to_be_disabled()
         editor.get_by_role('button',name='Lưu thay đổi',exact=True).click()
         expect(editor.get_by_role('alert')).to_contain_text('QA hồ sơ đã thay đổi')
-        expect(editor.get_by_label('Ghi chú gửi cùng Telegram',exact=True)).to_have_value('Hoàn cọc theo bill đã đối chiếu QA')
+        expect(editor.get_by_role('textbox',name='Ghi chú gửi cùng Telegram',exact=True)).to_have_value('Hoàn cọc theo bill đã đối chiếu QA')
         checks.append(f'{engine}: unsaved edits block send and a conflict preserves the note without changing the posted refund')
         editor.get_by_role('button',name='Lưu thay đổi',exact=True).click();telegram_dialog=page.get_by_role('dialog',name='Kiểm tra & gửi Telegram · Trả xe',exact=True)
         expect(telegram_dialog.locator('.mg-telegram-preview')).to_contain_text('Tiền mặt')
