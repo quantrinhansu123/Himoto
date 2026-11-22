@@ -6,7 +6,16 @@ export { AUDIT_FIELDS,emptyAuditInput,parseAuditInput,auditComparisons,validateA
 export { OWNERSHIP_REPORT_GROUPS,blankOwnershipReport,ownershipKeys,validateOwnershipSubmission,reconciliation } from "./ownership-report";
 export { SHIFT_AUTOFILL_SECTIONS } from "./shift-autofill";
 export type { ShiftReport,ShiftInput,ShiftReportType,ShiftSnapshot,AuditInput };
-export interface ShiftTelegramState {status:string;message_id:number|null;error_code:string|null;attachment_count?:number;media_count?:number}
+export interface ShiftTelegramState {status:string;message_id:number|null;error_code:string|null;attachment_count?:number;media_count?:number;suppressed?:boolean}
+export interface ShiftReopenInput {request_id:string;revision:number;reason:string;manual:boolean}
+export interface ShiftReopenState {
+  status:"draft"|"submitted";
+  revision:number;
+  can_manual:boolean;
+  blocked_reason:string;
+  request:{state:"pending"|"running"|"failed";reason:string;error?:string;retry_at:string|null}|null;
+  history:{revision:number;reason:string;reopened_at:string;manual_retraction:boolean;actor:string}[];
+}
 export type { ShiftAutofillResult,ShiftAutofillSection,ShiftTransfer } from "./shift-autofill";
 export interface MobileShiftOptions { canWrite:boolean;canReview:boolean;stores:{id:number;name:string;kind:string}[] }
 export interface MobileShiftResult { key:string;operation:string;receipt:{id:number;revision:string};current:ShiftReport }
@@ -15,6 +24,16 @@ export interface MobileAuditSave { input:AuditInput;revision:number;report_revis
 export interface MobileShiftVideoReview {revision:number;stage:'pgd'|'audit';category:string}
 const object=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==="object"&&!Array.isArray(v);
 const integer=(v:unknown)=>Number.isSafeInteger(v)&&Number(v)>0;
+export function isShiftReopenState(v:unknown):v is ShiftReopenState {
+  return object(v)&&(v.status==="draft"||v.status==="submitted")&&integer(v.revision)&&
+    typeof v.can_manual==="boolean"&&typeof v.blocked_reason==="string"&&
+    (v.request===null||object(v.request)&&["pending","running","failed"].includes(String(v.request.state))&&
+      typeof v.request.reason==="string"&&(v.request.error===undefined||typeof v.request.error==="string")&&
+      (v.request.retry_at===null||typeof v.request.retry_at==="string"))&&
+    Array.isArray(v.history)&&v.history.every(row=>object(row)&&integer(row.revision)&&
+      typeof row.reason==="string"&&typeof row.reopened_at==="string"&&
+      typeof row.manual_retraction==="boolean"&&typeof row.actor==="string");
+}
 export function isShiftReport(v:unknown):v is ShiftReport {
   if(!object(v)||!integer(v.id)||!integer(v.revision)||!["draft","submitted"].includes(String(v.status))||!["store_name","created_by_name","updated_at"].every(k=>typeof v[k]==="string")||!Array.isArray(v.photos)||!v.photos.every(p=>typeof p==="string"))return false;
   if(v.stock_captures!==undefined&&(!Array.isArray(v.stock_captures)||!v.stock_captures.every(isShiftStockCapture)))return false;

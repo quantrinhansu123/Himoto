@@ -17,7 +17,7 @@ function Editor({ id, initialStore, initialReportType }: { id: string; initialSt
   if (record.data?.status === "submitted") return <StateView title="Báo cáo PGD đã chốt" message="Số kiểm kê và minh chứng PGD được giữ nguyên. Mở phần đối soát KTNB để tiếp tục kiểm tra." />;
   return <>
     <Stack.Screen options={{ title: `${title} (${shiftReportTypeLabel(effectiveType)})` }} />
-    <ShiftEditor key={`${id}:${record.data?.revision || 0}:${initialReportType}`} initialStore={initialStore} initialReportType={initialReportType} options={options.data} record={id === "new" ? null : record.data!} />
+    <ShiftEditor key={`${id}:${initialReportType}`} initialStore={initialStore} initialReportType={initialReportType} options={options.data} record={id === "new" ? null : record.data!} />
   </>;
 }
 

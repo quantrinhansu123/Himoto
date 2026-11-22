@@ -10,6 +10,7 @@ import { listShiftReports,saveShiftReport } from "./shift-report-domain";
 import { readShiftAuditSnapshot,saveShiftAudit } from "./shift-audit-domain";
 import { ShiftRequestError } from "./shift-report-requests";
 import { readShiftTelegram,retryShiftTelegram } from "./shift-telegram-domain";
+import { queueShiftReopen,readShiftReopen } from "./shift-report-reopen";
 import { ShiftAutofillError,parseShiftAutofill,readShiftAutofill } from "./shift-autofill";
 import { idempotentMobileWrite,mobileBody,mobileRequestKey } from "./mobile-writes";
 import { parseShiftInput,type ShiftReport,type MobileShiftSave,type MobileAuditSave,type MobileShiftResult } from "../../../shared/mobile-shift-reports";
@@ -32,7 +33,7 @@ function fields(raw:URLSearchParams,keys:string[]){for(const[k]of raw)if(!keys.i
 async function transaction<T>(user:SessionUser,read:boolean,run:(client:PoolClient)=>Promise<T>,crossStore=false) {
   permission(user);const scope=read&&crossStore?withMobileReadData:withMobileData;return scope(user,"",async()=>{const client=await himotoPool.connect();try{
     await client.query(read?"BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY":"BEGIN");await client.query("SET LOCAL lock_timeout='5s'");const result=await run(client);await client.query("COMMIT");return result;
-  }catch(error){await client.query("ROLLBACK").catch(()=>{});if(error instanceof ShiftRequestError)throw new MobileError(error.message,error.status,error.code);if(error instanceof ShiftAutofillError)throw new MobileError(error.message,error.status);if((error as {code?:string}).code==='23505')throw new MobileError("PGD đã có báo cáo cùng loại trong ngày này. Mở lại từ danh sách.",409);throw error;}finally{client.release();}});
+  }catch(error){await client.query("ROLLBACK").catch(()=>{});if(error instanceof ShiftRequestError)throw new MobileError(error.message,error.status,error.code);if(error instanceof ShiftAutofillError)throw new MobileError(error.message,error.status);if((error as {code?:string}).code==='23505')throw new MobileError("PGD đã có báo cáo cùng loại trong ngày này.",409,"SHIFT_REPORT_EXISTS");throw error;}finally{client.release();}});
 }
 function report(row:ShiftReport):ShiftReport {return {...row,updated_at:new Date(row.updated_at).toISOString(),media:row.media?.map(m=>({...m,url:`/api/mobile/v1/shift-reports/${row.id}/media/${m.id}`}))};}
 async function current(client:PoolClient,id:number) {const row=(await listShiftReports(client,null,null,id))[0];if(!row)throw new MobileError("Báo cáo không tồn tại hoặc ngoài phạm vi truy cập.",404,"NOT_FOUND");return report(row);}
@@ -50,6 +51,19 @@ export async function saveMobileShift(user:SessionUser,request:NextRequest){
 }
 export function readMobileShiftSnapshot(user:SessionUser,id:string){mobileShiftId(id);return transaction(user,true,client=>readShiftAuditSnapshot(client,id),true);}
 export function readMobileShiftTelegram(user:SessionUser,id:string,stage='pgd'){mobileShiftId(id);return transaction(user,true,client=>readShiftTelegram(client,id,stage));}
+export function readMobileShiftReopen(user:SessionUser,rawId:string){
+  const id=mobileShiftId(rawId);
+  return transaction(user,true,client=>readShiftReopen(client,{
+    ...user,store_id:user.store_id??null,scope_all:canMobileCrossStoreRead(user),
+    cross_store_read:user.scope_all!==true&&user.scope_all_read===true,
+  },id),true);
+}
+export function queueMobileShiftReopen(user:SessionUser,id:number,body:unknown){
+  permission(user,"write");
+  return transaction(user,false,client=>queueShiftReopen(client,{
+    ...user,store_id:user.store_id??null,scope_all:user.scope_all===true,
+  },id,body));
+}
 export function retryMobileShiftTelegram(user:SessionUser,id:string,stage='pgd'){permission(user,stage==='audit'?'audit':'write');mobileShiftId(id);return transaction(user,true,client=>retryShiftTelegram(client,id,stage));}
 export async function saveMobileShiftAudit(user:SessionUser,id:string,request:NextRequest){
   permission(user,"audit");mobileShiftId(id);const key=mobileRequestKey(request.headers.get("Idempotency-Key")),raw=await mobileBody(request,131072);

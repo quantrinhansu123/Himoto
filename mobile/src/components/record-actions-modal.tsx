@@ -246,7 +246,7 @@ export function RecordActionsModal({
         onPress: () =>
           router.push({
             pathname: "/contract-telegram/[id]",
-            params: { id },
+            params: { id,...(status==="completed"||status==="wait_payment"?{eventKind:"return"}:{}) },
           }),
       });
     } else {

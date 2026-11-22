@@ -30,7 +30,8 @@ async function main(){
   }
   try{
     await sql.exec(`CREATE SCHEMA himoto;CREATE TABLE himoto.stores(id bigint PRIMARY KEY,store_name text,kind text);CREATE TABLE himoto.users(id bigint PRIMARY KEY,name text);
-      CREATE TABLE himoto.management_shift_reports(id bigserial PRIMARY KEY,store_id bigint,report_date date,payload jsonb,created_by bigint,status text,revision int DEFAULT 1,updated_at timestamptz DEFAULT now(),submitted_at timestamptz,app_snapshot jsonb,UNIQUE(store_id,report_date));
+      CREATE TABLE himoto.management_shift_reports(id bigserial PRIMARY KEY,store_id bigint,report_date date,payload jsonb,created_by bigint,status text,revision int DEFAULT 1,updated_at timestamptz DEFAULT now(),submitted_at timestamptz,app_snapshot jsonb,reopen_request jsonb,UNIQUE(store_id,report_date));
+      CREATE TABLE himoto.management_shift_report_revisions(report_id bigint,revision int,reason text,reopened_at timestamptz,manual_retraction boolean,actor_id bigint,request_id uuid);
       CREATE TABLE himoto.management_shift_requests(request_id uuid PRIMARY KEY,store_id bigint,created_by bigint,request_hash text,response jsonb);
       CREATE TABLE himoto.management_mobile_requests(user_id bigint,request_id uuid,operation varchar(64),fingerprint text,resource_id bigint,resource_revision text,PRIMARY KEY(user_id,request_id));
       CREATE TABLE himoto.management_shift_photos(report_id bigint,store_id bigint,slot text,mime_type text,data bytea,PRIMARY KEY(report_id,slot));
@@ -40,8 +41,9 @@ async function main(){
       INSERT INTO himoto.stores VALUES(23,'Cơ sở ca QA','rental'),(24,'Cơ sở khác QA','rental');INSERT INTO himoto.users VALUES(7,'KTNB QA');`);
     await sql.exec(`ALTER TABLE himoto.management_shift_media ADD COLUMN storage_sha256 text,ADD COLUMN storage_bytes bigint,ALTER COLUMN cloudinary_version TYPE bigint USING cloudinary_version::bigint;
       ALTER TABLE himoto.management_shift_photos ADD COLUMN object_bucket text,ADD COLUMN object_key text,ADD COLUMN object_etag text;
-      ALTER TABLE himoto.management_report_deliveries ADD COLUMN attachments jsonb DEFAULT '[]',ADD COLUMN media_ids jsonb DEFAULT '[]',ADD COLUMN text_sent boolean DEFAULT false,ADD COLUMN updated_at timestamptz DEFAULT now();`);
+      ALTER TABLE himoto.management_report_deliveries ADD COLUMN attachments jsonb DEFAULT '[]',ADD COLUMN media_ids jsonb DEFAULT '[]',ADD COLUMN text_sent boolean DEFAULT false,ADD COLUMN updated_at timestamptz DEFAULT now(),ADD COLUMN delivery_target jsonb,ADD COLUMN suppressed_at timestamptz,ADD COLUMN retracted_at timestamptz;`);
     const createKey=randomUUID(),created=await save({payload:base,status:'draft'},createKey);assert.equal(created.receipt.id,1);assert.equal(created.receipt.revision,'1');assert((await save({payload:base,status:'draft'},createKey)).receipt.replayed);
+    await assert.rejects(save({payload:base,status:'draft'}),error=>error.code==='SHIFT_REPORT_EXISTS');
     const record=await api.readMobileShift(actor,'1');assert(dto.isShiftReport(record));assert.equal((await domain.listShiftReports({query},'23',null))[0].payload.staff,base.staff);assert.equal((await api.readMobileShifts(actor,new URLSearchParams('store_id=23'))).rows.length,1);
     const changed=await webSave({id:1,revision:1,payload:{...base,notes:'Edited on web'},status:'draft'});assert.equal(changed.revision,2);assert.equal((await api.readMobileShift(actor,'1')).payload.notes,'Edited on web');
     const proof=await api.readMobileShiftResult(actor,createKey);assert(dto.isShiftResult(proof));assert.equal(proof.receipt.revision,'1');assert.equal(proof.current.revision,2);
@@ -172,6 +174,18 @@ async function main(){
     checks.push('Stock capture uses actual scoped inventory SQL, GPS and two-photo OCR inputs; rejects stale location, ambiguous/unmatched plates, duplicate photos and stale writes; web edits preserve evidence and web/app share final stock validation');
     checks.push('Web stock writes enforce session, grants and same origin; web capture replays from mobile with the same receipt and web removal deletes the same capture pair');
     checks.push('Single JPEGs require fresh in-branch GPS, reject unreadable OCR before writing, add exactly one plate photo, coexist with legacy pairs and keep old mobile report payloads readable');
+    const reopenId=String(reportId),reopenInput={request_id:randomUUID(),revision:6,reason:'QA evidence',manual:false};
+    const beforeReopen=await api.readMobileShiftReopen(actor,reopenId);
+    assert(dto.isShiftReopenState(beforeReopen));assert.equal(beforeReopen.status,'submitted');
+    assert.equal(beforeReopen.can_manual,false);assert.equal(beforeReopen.blocked_reason,'');
+    await assert.rejects(async()=>api.queueMobileShiftReopen({...actor,permissions:['contracts.read']},reportId,reopenInput),error=>error.status===403);
+    await assert.rejects(api.queueMobileShiftReopen(actor,reportId,{...reopenInput,manual:true}),error=>error.status===403);
+    assert.equal(await api.queueMobileShiftReopen(actor,reportId,reopenInput),reopenInput.request_id);
+    assert.equal(await api.queueMobileShiftReopen(actor,reportId,{...reopenInput,request_id:randomUUID()}),reopenInput.request_id);
+    const reopenStatus=await api.readMobileShiftReopen(actor,reopenId);
+    assert(dto.isShiftReopenState(reopenStatus));assert.equal(reopenStatus.request.state,'pending');
+    assert.equal((await api.readMobileShiftTelegram(actor,reopenId)).suppressed,true);
+    checks.push('Mobile reopen binds branch and write permissions, reserves manual retraction for finance, reuses a queued request and suppresses Telegram delivery');
     const out=process.argv.indexOf('--fixture-output');if(out>=0){const file=path.resolve(process.argv[out+1]);assert(file.startsWith(path.resolve('.backups')+path.sep)&&!fs.existsSync(file));const seeded=await save({payload:{...base,date:'2026-11-01'},status:'draft'});const record=await api.readMobileShift(actor,String(seeded.receipt.id));const options=await api.readMobileShiftOptions(actor);options.canReview=false;fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,JSON.stringify({fixtureOnly:true,source:'Actual shared SQL report domain with deterministic analytics source; no operational data or messaging',options,record,auditReport:confirmedReport,exported,snapshot:snapshot(),stock:{record:{...record,payload:currentPayload},inventory:initialStock}},null,2));}
     console.log(JSON.stringify({passed:checks.length,checks,operationalWrites:0,realMessagesSent:0,snapshotSource:'Deterministic QA adapter; real analytics/RLS/multi-session acceptance remains separate'},null,2));
   }finally{snap.readShiftSnapshot=originalSnapshot;ownership.readOwnershipReport=originalOwnership;ocr.extractPhoto=originalOcr;sessions.userFromSession=originalSession;for(const[k,d]of Object.entries(descriptors)){if(d)Object.defineProperty(db.himotoPool,k,d);else delete db.himotoPool[k];}await sql.close();}

@@ -496,7 +496,7 @@ export function ContractDetailView({
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel="Thông báo Telegram"
-                  onPress={() => router.push({ pathname: "/contract-telegram/[id]", params: { id } })}
+                  onPress={() => router.push({ pathname: "/contract-telegram/[id]", params: { id,...(record.status==="completed"||record.status==="wait_payment"?{eventKind:"return"}:{}) } })}
                   style={({ pressed }) => [styles.gridItem, { borderColor: theme.border }, pressed && { opacity: 0.7 }]}
                 >
                   <MessageCircle size={20} color={theme.text} />
