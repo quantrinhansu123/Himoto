@@ -122,7 +122,8 @@ async function main(){
    await mobileWrite(manager,'payment_settlement',settlement,paymentKey);
    assert.equal((await mobileWrite(manager,'payment_settlement',settlement,paymentKey)).replayed,true);
    const after=await readMobileContractOperation(manager,'1','payment_settlement');
-   assert.equal(after.status,'renting');assert.equal(after.remaining,account.remaining-50000);
+   assert.equal(after.status,account.status);assert.equal(after.remaining,account.remaining-50000);
+   assert.equal((await proxy.query('SELECT order_status FROM himoto.orders WHERE id=1')).rows[0].order_status,'renting');
    const closing={revision:after.revision,mode:'close_unpaid',amount:'0',paid_at:paidAt,note:'Synthetic app closure',confirmed:true,
      vehicles_confirmed:true,vehicles:after.items.map(row=>({item_id:row.id,revision:row.revision,status:'with_customer'}))};
    await mobileWrite(manager,'payment_settlement',closing);
