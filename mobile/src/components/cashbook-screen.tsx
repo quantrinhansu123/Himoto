@@ -34,7 +34,7 @@ export function CashbookVoucherCard({ row }: { row: MobileCashbookVoucher }) {
     {!!row.content && <Text selectable style={{ color: theme.text, fontSize: 13.5, lineHeight: 20 }}>{row.content}</Text>}
     <View style={{ borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 6, gap: 2 }}>
       <KeyValueRow label="Thời gian" value={`${row.date ? row.date.split("-").reverse().join("/") : "—"}${row.time ? ` ${row.time}` : ""}`} />
-      <KeyValueRow label="Tài khoản / PGD" value={[row.storeName, row.paymentMethod, row.account].filter(Boolean).join(" · ")} />
+      <KeyValueRow label="Tài khoản" value={[row.storeName, row.paymentMethod, row.account].filter(Boolean).join(" · ")} />
       {!!row.actorName && <KeyValueRow label="Người lập" value={row.actorName} />}
     </View>
     {!!row.contractId && session!.user.permissions.includes("contracts.read") && <Button size="sm" secondary label={`Mở hợp đồng ${row.contractCode || `#${row.contractId}`}`} onPress={() => router.push({ pathname: "/record/[kind]/[id]", params: { kind: "contracts", id: row.contractId } })} />}
@@ -54,7 +54,7 @@ export function CashbookScreen({ initialStore }: { initialStore?: string }) {
   };
   const [selected, setSelected] = useState<Map<string, MobileCashbookVoucher>>(new Map());
   const [input, setInput] = useState(""), search = useDebouncedValue(input), [actor, setActor] = useState(""), [from, setFrom] = useState(""), [to, setTo] = useState("");
-  const [open, setOpen] = useState(false), [expanded, setExpanded] = useState(false), [accountsOpen, setAccountsOpen] = useState(false), [kind, setKind] = useState<"income" | "expense">("income");
+  const [open, setOpen] = useState(false), [expanded, setExpanded] = useState(false), [accountsOpen, setAccountsOpen] = useState(false), [selectMode, setSelectMode] = useState(false), [kind, setKind] = useState<"income" | "expense">("income");
   const [allAccounts, setAllAccounts] = useState(false);
   const [incomeState, setIncome] = useState({ page: 1, limit: "10", sort: "date", direction: "desc", filter: "" }), [expenseState, setExpense] = useState(incomeState);
   const filter = JSON.stringify([store, search, actor, from, to]);
@@ -92,6 +92,16 @@ export function CashbookScreen({ initialStore }: { initialStore?: string }) {
         {session!.user.permissions.includes('contracts.read') && <Chip label="Tiền về SePay" onPress={() => router.push('/payment-events')} />}
         <Chip label="Quản lý tài khoản" onPress={() => router.push({ pathname: '/cashbook-accounts', params: { store, status: accountStatus } })} />
         {session!.user.permissions.includes('finance.write') && <Chip label="+ Thêm tài khoản" onPress={() => router.push({ pathname: '/cashbook-account-editor/[kind]/[id]', params: { kind: 'cash', id: 'new', store } })} />}
+        {session!.user.permissions.includes("settings.write") && (
+          <Chip
+            label={selectMode ? `Xong chọn (${selected.size})` : "Chọn xóa phiếu"}
+            selected={selectMode}
+            onPress={() => {
+              if (selectMode) setSelected(new Map());
+              setSelectMode(v => !v);
+            }}
+          />
+        )}
       </ScrollView>
       {open && <Card style={{ gap: 10 }}>
         <FormField label="Tìm phiếu thu chi" value={input} onChangeText={setInput} maxLength={300} />
@@ -176,18 +186,18 @@ export function CashbookScreen({ initialStore }: { initialStore?: string }) {
           { value: "expense", label: "Phiếu chi", count: data?.expense.total },
         ]}
       />
-      {session!.user.permissions.includes("settings.write") && <View style={{ gap: 8 }}>
+      {selectMode && session!.user.permissions.includes("settings.write") && <Card style={{ gap: 8, padding: 12 }}>
         <View style={{ flexDirection: "row", gap: 8 }}>
           <Button size="sm" equalWidth secondary label="Chọn cả trang" disabled={!current?.rows.length} onPress={() => setSelected(previous => { const next = new Map(previous); for (const row of current?.rows || []) next.set(row.id, row); return next; })} />
           {!!selected.size && <Button size="sm" equalWidth secondary label={`Bỏ chọn (${selected.size})`} onPress={() => setSelected(new Map())} />}
         </View>
-        <CashbookDeleteActions key="voucher-delete-actions" selected={[...selected.values()].map(row => ({ id: row.id, amount: row.amount ?? 0 }))} filters={new URLSearchParams({ store_id: store, search, actor, from, to }).toString()} type={kind} disabled={!valid || query.isPending || query.isError} onDeleted={() => setSelected(new Map())} />
-      </View>}
+        <CashbookDeleteActions key="voucher-delete-actions" selected={[...selected.values()].map(row => ({ id: row.id, amount: row.amount ?? 0 }))} filters={new URLSearchParams({ store_id: store, search, actor, from, to }).toString()} type={kind} disabled={!valid || query.isPending || query.isError} onDeleted={() => { setSelected(new Map()); setSelectMode(false); }} />
+      </Card>}
       {query.isError && <InlineError message={query.error.message} />}
     </View>}
-    extraData={selected}
+    extraData={{ selected, selectMode }}
     renderItem={({ item }) => <View style={{ gap: 6 }}>
-      {session!.user.permissions.includes("settings.write") && <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: selected.has(item.id) }} accessibilityLabel={`Chọn ${item.type === "income" ? "phiếu thu" : "phiếu chi"} #${item.id}`} onPress={() => setSelected(previous => { const next = new Map(previous); if (next.has(item.id)) next.delete(item.id); else next.set(item.id, item); return next; })} style={{ minHeight: 40, flexDirection: "row", alignItems: "center", gap: 8 }}>
+      {selectMode && session!.user.permissions.includes("settings.write") && <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: selected.has(item.id) }} accessibilityLabel={`Chọn ${item.type === "income" ? "phiếu thu" : "phiếu chi"} #${item.id}`} onPress={() => setSelected(previous => { const next = new Map(previous); if (next.has(item.id)) next.delete(item.id); else next.set(item.id, item); return next; })} style={{ minHeight: 40, flexDirection: "row", alignItems: "center", gap: 8 }}>
         {selected.has(item.id) ? <CheckSquare size={20} color={theme.primary} /> : <Square size={20} color={theme.muted} />}<Text style={{ color: theme.muted, fontSize: 13, fontWeight: "600" }}>Chọn phiếu #{item.id}</Text>
       </Pressable>}
       <CashbookVoucherCard row={item} />
