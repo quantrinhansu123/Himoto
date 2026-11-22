@@ -12,7 +12,7 @@ import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useSession } from '@/providers/session';
 import { dateTime, money, useTheme } from '@/theme';
 import { contextualStatusLabel } from '@/lib/catalogue-config';
-import { Button, Card, InlineError, StateView, StatusBadge } from './ui';
+import { Button, Card, InlineError, KeyValueRow, StateView, StatusBadge } from './ui';
 import { ChoiceField, FormField } from './form-fields';
 import { RentalDateTime } from './rental-date-time';
 import { ConfirmEdit } from './editor-sheet';
@@ -39,36 +39,50 @@ export function ContractLifecycleEditor({ id, initialAction }: { id: string; ini
     <Stack.Screen options={{ title: 'Tình trạng xe / nợ / bảo lưu' }} />
 
       <KeyboardFormScrollView ref={scroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={{ padding: 18, gap: 16, maxWidth: 760, width: '100%', alignSelf: 'center', paddingBottom: 36 }}>
-        <Text accessibilityRole="header" style={{ ...text, fontSize: 24, lineHeight: 32, fontWeight: '800' }}>Tình trạng hợp đồng</Text>
+        <Text accessibilityRole="header" style={{ ...text, fontSize: 20, lineHeight: 28, fontWeight: '800' }}>Tình trạng hợp đồng</Text>
         {!!(write.error || write.query.error) && <InlineError message={write.error || write.query.error?.message || 'Chưa tải được tình trạng.'} />}
         {!!write.notice && <Text accessibilityLiveRegion="polite" style={text}>{write.notice}</Text>}
         {write.query.isPending && <StateView title="Đang đối chiếu xe, công nợ và tiền cọc" loading />}
         {write.query.isError && <Button secondary label="Tải lại tình trạng hợp đồng" disabled={write.busy} onPress={() => void write.query.refetch()} />}
         {write.entry && <Card style={{ gap: 14 }}>
-          <Text accessibilityRole="header" style={{ ...text, fontSize: 20, fontWeight: '700' }}>{write.proof ? 'Đã ghi nhận tình trạng hợp đồng' : 'Cần đối chiếu thao tác trước'}</Text>
+          <Text accessibilityRole="header" style={{ ...text, fontSize: 18, fontWeight: '700' }}>{write.proof ? 'Đã ghi nhận tình trạng hợp đồng' : 'Cần đối chiếu thao tác trước'}</Text>
           <Text selectable style={muted}>Mã thao tác: {write.entry.key}</Text>
           {write.proof ? <><Text style={text}>Hợp đồng #{write.proof.receipt.id} · phiên bản ghi nhận {write.proof.receipt.revision}.</Text><Text style={muted}>Mở hợp đồng để xem xe, tiền và trạng thái hiện tại. Kết quả này xác nhận lần ghi gốc.</Text><Button label="Đã kiểm tra, mở hợp đồng" loading={write.busy} onPress={() => void write.acknowledge(disablePrevention)} /></> : <><Text style={text}>Mở kết quả nếu đã ghi; khóa mã chưa ghi trước khi cho thao tác tiếp.</Text><Button label="Đối chiếu thao tác tình trạng" loading={write.busy} onPress={() => void write.resolve()} /></>}
         </Card>}
         {context && <>
-          <Card style={{ gap: 12 }}>
-            <Text selectable style={{ ...text, fontSize: 22, fontWeight: '700' }}>{context.code}</Text>
-            <StatusBadge status={context.status === 'renting' && context.overdue ? 'overdue' : context.status} label={contextualStatusLabel('contracts', context.status === 'renting' && context.overdue ? 'overdue' : context.status)} />
-            <Text style={text}>Đã trả / thu hồi: {context.returnedCount}/{context.items.length} lượt xe</Text>
-            <Text style={text}>Thuê / phí còn phải đối chiếu: {money(context.remaining)}</Text>
-            <Text style={text}>Cọc còn giữ: {money(context.depositHeld)} · Tiền thu dư: {money(context.overpayment)}</Text>
+          <Card style={{ gap: 10 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+              <Text selectable style={{ ...text, fontSize: 20, fontWeight: '800' }}>{context.code}</Text>
+              <StatusBadge status={context.status === 'renting' && context.overdue ? 'overdue' : context.status} label={contextualStatusLabel('contracts', context.status === 'renting' && context.overdue ? 'overdue' : context.status)} />
+            </View>
+            <View style={{ gap: 2 }}>
+              <KeyValueRow label="Đã trả / thu hồi" value={`${context.returnedCount}/${context.items.length} lượt xe`} />
+              <KeyValueRow label="Thuê / phí còn phải đối chiếu" value={money(context.remaining)} emphasize />
+              <KeyValueRow label="Cọc còn giữ" value={money(context.depositHeld)} />
+              <KeyValueRow label="Tiền thu dư" value={money(context.overpayment)} />
+              {context.completedFromHold && <KeyValueRow label="Tổn thất công nợ" value={money(context.waivedAmount)} emphasize />}
+              {context.status === 'reserved' && <KeyValueRow label="Thời gian bảo lưu" value={`${dateTime(context.heldAt || '')} → ${dateTime(context.holdUntil || '')}`} />}
+            </View>
             <Text style={muted}>{context.completedFromHold ? 'Đã hoàn thành sau bảo lưu; dừng theo dõi phần công nợ không thu hồi.' : context.settlementNote}</Text>
-            {context.completedFromHold && <Text style={text}>Tổn thất công nợ: {money(context.waivedAmount)}</Text>}
             {context.badDebtClosedAt && <Text style={{ ...text, color: theme.warning, fontWeight: '700' }}>Đã đóng hợp đồng nợ xấu ({dateTime(context.badDebtClosedAt)}). Công nợ còn lại: {money(context.remaining)}; tiếp tục thu hồi theo thực tế.</Text>}
-            {context.status === 'reserved' && <><Text style={text}>Bảo lưu: {dateTime(context.heldAt || '')} → {dateTime(context.holdUntil || '')}</Text><Text style={{ ...text, color: context.holdExpired ? theme.danger : theme.muted }}>{context.holdExpired ? 'Hết hạn bảo lưu. Chờ xác nhận tiếp tục thuê hoặc hoàn thành.' : 'Dừng phát sinh kỳ mới; nợ và cọc trước bảo lưu được giữ.'}</Text></>}
+            {context.status === 'reserved' && <Text style={{ ...text, color: context.holdExpired ? theme.danger : theme.muted }}>{context.holdExpired ? 'Hết hạn bảo lưu. Chờ xác nhận tiếp tục thuê hoặc hoàn thành.' : 'Dừng phát sinh kỳ mới; nợ và cọc trước bảo lưu được giữ.'}</Text>}
           </Card>
-          {context.items.map(i => <Card key={i.id} style={{ gap: 8 }}><Text style={text}>{i.license || i.name} · lượt #{i.id}</Text><Text style={muted}>{i.reconciled ? 'Đã gỡ giữ xe; chưa có ngày thu hồi thực tế. Giữ kho và mốc cũ.' : i.completedAt ? `Đã trả / thu hồi: ${dateTime(i.completedAt)}` : `Chưa trả · hẹn trả ${dateTime(i.endsAt || '')}`}</Text></Card>)}
+          {context.items.map(i => <Card key={i.id} style={{ gap: 4 }}><KeyValueRow label={`${i.license || i.name} · lượt #${i.id}`} value={i.reconciled ? 'Đã gỡ giữ xe' : i.completedAt ? `Đã trả: ${dateTime(i.completedAt)}` : `Hẹn trả: ${dateTime(i.endsAt || '')}`} emphasize={!i.completedAt && !i.reconciled} /></Card>)}
           {!write.entry && context.actions.length > 0 && <LifecycleActionForm key={formVersion} id={id} context={context} initialAction={initialAction} disabled={disabled} onDirty={() => setDirty(true)} onReview={setConfirm} />}
           {(context.status === 'bad_debt' || Boolean(context.badDebtClosedAt)) && !context.allReturned && session?.user.permissions.includes('contracts.return') && <Button secondary label="Thu hồi xe nợ xấu" disabled={write.busy} onPress={() => router.push({ pathname: '/recovery-editor/[id]', params: { id } })} />}
           {context.status === 'bad_debt' && !context.allReturned && session?.user.permissions.includes('contracts.settle') && <Button label="Đóng hợp đồng nợ xấu (kể cả xe còn ở khách)" disabled={write.busy} onPress={() => router.push({ pathname: '/contract-operation/[action]/[id]', params: { action: 'payment_settlement', id, mode: 'close_unpaid' } })} />}
           {session?.user.permissions.some(p => p === 'finance.read' || p === 'finance.write') && <Button secondary label="Thu / chi và xử lý cọc" disabled={write.busy} onPress={() => router.push({ pathname: '/finance/[id]', params: { id } })} />}
           {!write.entry && <Button secondary label="Làm mới tình trạng hợp đồng" disabled={write.busy || write.query.isFetching} onPress={() => setReload(true)} />}
-          <Text accessibilityRole="header" style={{ ...text, fontSize: 20, fontWeight: '700' }}>Lịch sử trạng thái</Text>
-          {context.events.length ? context.events.slice(-eventCount).reverse().map((e, i) => <Card key={`${e.recordedAt}:${i}`} style={{ gap: 8 }}><Text style={text}>{e.label} · {e.actorName || `#${e.actorId}`}</Text><Text style={muted}>Thực tế: {dateTime(e.at)} · Ghi nhận: {dateTime(e.recordedAt)}</Text><Text style={muted}>{contextualStatusLabel('contracts', e.from) || e.from} → {contextualStatusLabel('contracts', e.to) || e.to}</Text>{!!e.note && <Text style={text}>{e.note}</Text>}</Card>) : <Text style={muted}>Chưa có thao tác trạng thái mới.</Text>}
+          <Text accessibilityRole="header" style={{ ...text, fontSize: 18, fontWeight: '700' }}>Lịch sử trạng thái</Text>
+          {context.events.length ? context.events.slice(-eventCount).reverse().map((e, i) => <Card key={`${e.recordedAt}:${i}`} style={{ gap: 6 }}>
+            <Text style={{ ...text, fontWeight: '700' }}>{e.label} · {e.actorName || `#${e.actorId}`}</Text>
+            <View style={{ gap: 2 }}>
+              <KeyValueRow label="Thời điểm thực tế" value={dateTime(e.at)} />
+              <KeyValueRow label="Ghi nhận lúc" value={dateTime(e.recordedAt)} />
+              <KeyValueRow label="Chuyển trạng thái" value={`${contextualStatusLabel('contracts', e.from) || e.from} → ${contextualStatusLabel('contracts', e.to) || e.to}`} emphasize />
+              {!!e.note && <KeyValueRow label="Ghi chú" value={e.note} />}
+            </View>
+          </Card>) : <Text style={muted}>Chưa có thao tác trạng thái mới.</Text>}
           {context.events.length > eventCount && <Button secondary label={`Xem thêm lịch sử (${Math.min(eventCount, context.events.length)}/${context.events.length})`} onPress={() => setEventCount(v => v + 50)} />}
         </>}
       </KeyboardFormScrollView>
@@ -103,7 +117,7 @@ function LifecycleActionForm({ id, context, initialAction, disabled, onDirty, on
       {action === 'resume' && <>
         <RentalDateTime label="hạn trả mới" value={resumeEnd} disabled={disabled} onChange={v => changed(() => setResumeEnd(v))} />
         <Text style={text}>Chọn đủ {context.resumeVehicleCount} xe · đã chọn {vehicles.length}</Text>
-        {vehicles.map(v => <View key={v.id} style={{ gap: 8 }}><Text style={text}>#{v.id} · {v.license} · {v.name}</Text><Button secondary label={`Bỏ xe thuê lại ${v.license}`} disabled={disabled} onPress={() => changed(() => setVehicles(rows => rows.filter(r => r.id !== v.id)))} /></View>)}
+        {vehicles.map(v => <View key={v.id} style={{ gap: 8 }}><Text style={text}>#{v.id} · {v.license} · {v.name}</Text><Button secondary danger label={`Bỏ xe thuê lại ${v.license}`} disabled={disabled} onPress={() => changed(() => setVehicles(rows => rows.filter(r => r.id !== v.id)))} /></View>)}
         <Button secondary label="Chọn xe đang rảnh để thuê lại" disabled={disabled || inventory.isPending || inventory.isError || vehicles.length >= context.resumeVehicleCount} onPress={() => setPicker(true)} />
         {inventory.isPending && <Text style={muted}>Đang tải kho xe…</Text>}
         {inventory.isError && <><InlineError message={inventory.error.message} /><Button secondary label="Tải lại kho xe" disabled={disabled} onPress={() => void inventory.refetch()} /></>}

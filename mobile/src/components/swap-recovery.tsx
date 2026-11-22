@@ -61,14 +61,16 @@ function Recovery({id}:{id:string}) {
     finally{running.current=false;if(alive.current&&epoch.current===current)setBusy(false);}
   }
   const openContract=()=>router.dismissTo({pathname:'/record/[kind]/[id]',params:{kind:'contracts',id}});
-  async function acknowledge(){
+  async function acknowledge(next?:'media'|'telegram'){
     if(!key||!receipt||receipt.requestId!==key||running.current)return;
     running.current=true;setBusy(true);setError('');const current=epoch.current;
     try{
       await pendingWrites.complete(scope,operation,key);
       if(!alive.current||epoch.current!==current)return;
-      for(const queryKey of [['record'],['catalogue'],['overview'],['swap-preparation'],['return-preparation']])void cache.invalidateQueries({queryKey});
-      openContract();
+      for(const queryKey of [['record'],['catalogue'],['overview'],['finance'],['contract-history'],['swap-preparation'],['return-preparation'],['vehicle-profile'],['vehicle-history'],['fleet-inventory']])void cache.invalidateQueries({queryKey});
+      if(next==='media')router.replace({pathname:'/record-media/[entity]/[id]',params:{entity:'contracts',id,kind:'swap',referenceId:String(receipt.swapId)}});
+      else if(next==='telegram')router.replace({pathname:'/contract-telegram/[id]',params:{id,event:`vehicle-swap:${id}:${receipt.swapId}`,onlyEvent:'1'}});
+      else openContract();
     }catch(cause){if(alive.current&&epoch.current===current)setError((cause as Error).message);}
     finally{running.current=false;if(alive.current&&epoch.current===current)setBusy(false);}
   }
@@ -104,8 +106,8 @@ function Recovery({id}:{id:string}) {
         </Card>
         <Button label="Xác nhận đã kiểm tra phiếu đổi xe" loading={busy} onPress={()=>{void acknowledge();}}/>
         <View style={{flexDirection:'row',flexWrap:'wrap',gap:8}}>
-          <Button secondary label="Ảnh & video đổi xe" disabled={busy} onPress={()=>router.push({pathname:'/record-media/[entity]/[id]',params:{entity:'contracts',id}})}/>
-          <Button secondary label="Gửi Telegram đổi xe" disabled={busy} onPress={()=>router.push({pathname:'/contract-telegram/[id]',params:{id}})}/>
+          <Button size="sm" equalWidth secondary label="Ảnh & video đổi xe" disabled={busy} onPress={()=>{void acknowledge('media');}}/>
+          <Button size="sm" equalWidth secondary label="Gửi Telegram đổi xe" disabled={busy} onPress={()=>{void acknowledge('telegram');}}/>
         </View>
         <Button label="Tải lại phiếu đổi xe" secondary loading={busy} onPress={()=>{void load();}}/>
       </>}

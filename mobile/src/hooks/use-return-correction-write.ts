@@ -28,7 +28,7 @@ export function useReturnCorrectionWrite(id: string, page: number) {
       return { key: null, result: null, options };
     } });
   const key = pending || query.data?.key || null, proof = receipt || query.data?.result || null;
-  function invalidate() { for (const queryKey of [['record'], ['catalogue'], ['overview'], ['contract-approval-context'], ['contract-approval'], ['finance'], ['renewal-preparation'], ['return-preparation']]) void cache.invalidateQueries({ queryKey }); }
+  function invalidate() { for (const queryKey of [['record'], ['catalogue'], ['overview'], ['contract-approval-context'], ['contract-approval'], ['finance'], ['renewal-preparation'], ['return-preparation'], ['cashbook'], ['cashbook-accounts'], ['contract-history']]) void cache.invalidateQueries({ queryKey }); }
   async function save(input: MobileReturnCorrectionInput) {
     if (!api || !scope || query.isError || key || running.current || !query.data?.options) return;
     const version = epoch.current.generation; running.current = true; setBusy(true); setError('');

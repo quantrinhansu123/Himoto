@@ -118,7 +118,7 @@ export function CashbookScreen({ initialStore }: { initialStore?: string }) {
         <ChoiceField label="Sắp xếp phiếu" value={paging.sort} choices={CASHBOOK_SORTS} onChange={sort => updatePaging({ sort })} />
         <ChoiceField label="Chiều sắp xếp phiếu" value={paging.direction} choices={[{ value: "desc", label: "Giảm dần" }, { value: "asc", label: "Tăng dần" }]} onChange={direction => updatePaging({ direction })} />
         <ChoiceField label="Số phiếu mỗi trang" value={paging.limit} choices={[5, 10, 25, 50].map(value => ({ value: String(value), label: String(value) }))} onChange={limit => updatePaging({ limit })} />
-        <FileExportButton key={new URLSearchParams({ store_id: store, search, actor, from, to }).toString()} disabled={!valid || query.isFetching || query.isError || !data || input.trim() !== search} load={signal => api!.cashbookExcel(new URLSearchParams({ store_id: store, search, actor, from, to }).toString(), signal)} />
+        <FileExportButton key={new URLSearchParams({ store_id: store, search, actor, from, to }).toString()} disabled={!valid || query.isFetching || query.isError || !data || input.trim() !== search.trim()} load={signal => api!.cashbookExcel(new URLSearchParams({ store_id: store, search, actor, from, to }).toString(), signal)} />
         {!valid && <InlineError message="Đến ngày phải bằng hoặc sau Từ ngày." />}
       </Card>}
       <Card style={{ gap: 10 }}>

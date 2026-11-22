@@ -120,6 +120,7 @@ function RenewalCorrectionForm({ initial, disabled, onDirty, onReview }: { initi
   const [selected, setSelected] = useState(defaultTarget);
   const [calcUnit, setCalcUnit] = useState<'day' | 'hour'>('day');
   const [calcRate, setCalcRate] = useState('');
+  const [countDraft, setCountDraft] = useState<string | null>(null);
   const [forms, setForms] = useState<Record<string, { method: MobileCollectionMethod; account_id: number; paidAt: string; collected: string; before: string; end: string; amount: string; reason: string }>>({}), [error, setError] = useState('');
   const receipt = selected.startsWith('receipt:') ? initial.receipts.find(r => `receipt:${r.id}` === selected) : undefined;
   const renewal: MobileRenewalCorrectionPeriod | undefined = selected.startsWith('version:') ? periods.find(p => `version:${p.version}` === selected) : undefined;
@@ -184,27 +185,32 @@ function RenewalCorrectionForm({ initial, disabled, onDirty, onReview }: { initi
         {collecting && <RentalDateTime label="thực hiện khoản thu" value={form.paidAt} disabled={disabled || receipt?.status === 'cancelled'} onChange={paidAt => change({ ...form, paidAt })} />}
         <FormField label="Số tiền thực tế đã thu (VND)" value={form.collected} keyboardType="number-pad" editable={!disabled && (!receipt || receipt.status === 'approved')} maxLength={13} onChangeText={collected => change({ ...form, collected: collected.replace(/\D/g, '') })} hint={form.collected ? money(Number(form.collected || 0)) : 'Để trống nếu khách chưa thanh toán'} />
         {collecting && <CorrectionRouting label={receipt ? `phiếu gia hạn ${receipt.id}` : `kỳ gia hạn v${renewal!.version}`} value={form} accounts={initial.accounts} disabled={disabled} onChange={routing => change({ ...form, ...routing })} />}
-        <RentalDateTime label="bắt đầu kỳ gia hạn" value={form.before} disabled={disabled} onChange={before => change({ ...form, before })} />
-        <RentalDateTime label="kết thúc kỳ gia hạn" value={form.end} disabled={disabled} onChange={end => change({ ...form, end })} />
-        {feeEditable && !!form.before && (
+        <RentalDateTime label="bắt đầu kỳ gia hạn" value={form.before} disabled={disabled} onChange={before => { setCountDraft(null); change({ ...form, before }); }} />
+        <RentalDateTime label="kết thúc kỳ gia hạn" value={form.end} disabled={disabled} onChange={end => { setCountDraft(null); change({ ...form, end }); }} />
+        {feeEditable && !!form.before && validDraftTime(form.before) && (
           <View style={{ padding: 12, borderRadius: 10, backgroundColor: theme.background, borderWidth: 1, borderColor: theme.border, gap: 10 }}>
             <Text style={{ color: theme.text, fontSize: 14, fontWeight: '700' }}>Tính nhanh thời lượng & phí gia hạn</Text>
             <ChoiceField label="Đơn vị tính" value={calcUnit} choices={[{ value: 'day', label: 'Theo ngày' }, { value: 'hour', label: 'Theo giờ' }]} disabled={disabled} onChange={v => {
               const nextUnit = v as 'day' | 'hour';
               setCalcUnit(nextUnit);
+              setCountDraft(null);
               if (nextUnit === 'hour' && !calcRate) setCalcRate(DEFAULT_RENEWAL_HOURLY_RATE);
             }} />
             <FormField
               label={calcUnit === 'day' ? 'Số ngày gia hạn' : 'Số giờ gia hạn'}
-              value={String(renewalDurationUnits(new Date(`${form.before}:00+07:00`).toISOString(), form.end || '', calcUnit) || '')}
+              value={countDraft ?? String(renewalDurationUnits(new Date(`${form.before}:00+07:00`).toISOString(), form.end || '', calcUnit) || '')}
               keyboardType="number-pad"
               maxLength={3}
               editable={!disabled}
               onChangeText={countText => {
-                const count = Number(countText.replace(/\D/g, ''));
+                const cleaned = countText.replace(/\D/g, '');
+                setCountDraft(cleaned);
+                const count = Number(cleaned);
                 if (!count || count < 1) return;
-                const nextEnd = addRentalDuration(new Date(`${form.before}:00+07:00`).toISOString(), count, calcUnit);
-                const suggested = calcRate ? renewalRateSuggestion(new Date(`${form.before}:00+07:00`).toISOString(), nextEnd, calcRate, calcUnit) : null;
+                const beforeIso = new Date(`${form.before}:00+07:00`).toISOString();
+                const nextEnd = addRentalDuration(beforeIso, count, calcUnit);
+                const suggested = calcRate ? renewalRateSuggestion(beforeIso, nextEnd, calcRate, calcUnit) : null;
+                setCountDraft(null);
                 change({ ...form, end: nextEnd, ...(suggested !== null ? { amount: String(suggested) } : {}) });
               }}
             />
@@ -217,7 +223,8 @@ function RenewalCorrectionForm({ initial, disabled, onDirty, onReview }: { initi
               onChangeText={rateText => {
                 const cleaned = rateText.replace(/\D/g, '');
                 setCalcRate(cleaned);
-                const suggested = cleaned ? renewalRateSuggestion(new Date(`${form.before}:00+07:00`).toISOString(), form.end, cleaned, calcUnit) : null;
+                const beforeIso = new Date(`${form.before}:00+07:00`).toISOString();
+                const suggested = cleaned ? renewalRateSuggestion(beforeIso, form.end, cleaned, calcUnit) : null;
                 if (suggested !== null) change({ ...form, amount: String(suggested) });
               }}
             />

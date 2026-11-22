@@ -65,8 +65,8 @@ export async function readMobileStoreManagers(user: SessionUser) {
   return transaction(user, true, async client => ({ managers: (await client.query("SELECT id,name FROM himoto.users WHERE deleted_at IS NULL AND status='active' ORDER BY name,id")).rows.map(row => ({ id: Number(row.id), name: String(row.name || "") })) }));
 }
 export async function readMobileStoreContracts(user:SessionUser,rawId:string,params:URLSearchParams):Promise<MobileStoreContracts>{
-  allowed(user);const id=storeId(rawId),search=params.get('search')||'',requested=params.get('page')||'1';
-  if([...params.keys()].some(k=>!['search','page'].includes(k)||params.getAll(k).length!==1)||search.length>120||!/^[1-9]\d{0,5}$/.test(requested))throw new MobileError('Bộ lọc hợp đồng cơ sở chưa hợp lệ.');
+  allowed(user);const id=storeId(rawId),search=params.get('search')||'',requested=params.get('page')||'1',status=params.get('status')||'';
+  if([...params.keys()].some(k=>!['search','page','status'].includes(k)||params.getAll(k).length!==1)||search.length>120||status.length>40||!/^[1-9]\d{0,5}$/.test(requested))throw new MobileError('Bộ lọc hợp đồng cơ sở chưa hợp lệ.');
   return transaction(user,true,async db=>{
     const store=(await db.query('SELECT id,store_name FROM himoto.stores WHERE id=$1',[id])).rows[0];
     if(!store)throw new MobileError('Cơ sở không tồn tại hoặc ngoài phạm vi truy cập.',404,'NOT_FOUND');
@@ -74,7 +74,7 @@ export async function readMobileStoreContracts(user:SessionUser,rawId:string,par
     // computes store totals before the local search. Reuse that source/formatter.
     const dataset=await readManagementTable(db,'contracts',new URLSearchParams({all:'1',store:String(id),sort:'code',direction:'desc'}));
     const all=dataset.rows.filter(row=>Number(row.store_id)===id&&row.status!=='draft');
-    const filtered=filterRows(all,{...EMPTY_QUERY,search},'all'),pages=Math.max(1,Math.ceil(filtered.length/25)),page=Math.min(Number(requested),pages);
+    const filtered=filterRows(all,{...EMPTY_QUERY,search},status||'all'),pages=Math.max(1,Math.ceil(filtered.length/25)),page=Math.min(Number(requested),pages);
     const amount=(v:unknown)=>v==null||v===''||!Number.isFinite(Number(v))?0:Number(v),text=(v:unknown)=>v==null?'':String(v),counts=new Map<string,number>();
     for(const row of all)counts.set(row.status,(counts.get(row.status)||0)+1);
     return{id,name:String(store.store_name||''),page,pages,total:filtered.length,summary:{count:all.length,total:all.reduce((sum,r)=>sum+amount(r.total_amount),0),paid:all.reduce((sum,r)=>sum+amount(r.paid_amount),0),debt:all.reduce((sum,r)=>sum+Math.max(amount(r.total_amount)-amount(r.paid_amount),0),0)},statusCounts:[...counts],rows:filtered.slice((page-1)*25,page*25).map(r=>({id:r.id,code:r.code,customer:text(r.customer_name),status:r.status,license:text(r.license),startsAt:text(r.start_date),endsAt:text(r.end_date),total:amount(r.total_amount),paid:amount(r.paid_amount)}))};

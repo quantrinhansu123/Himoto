@@ -4,7 +4,7 @@ import { router } from "expo-router";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useSession } from "@/providers/session";
 import { dateTime, money, useTheme } from "@/theme";
-import { Button, Card, InlineError, StateView } from "./ui";
+import { Button, Card, InlineError, KeyValueRow, StateView, StatusBadge } from "./ui";
 import { FileExportButton } from "./file-export-button";
 
 export function RenewalPeriodsScreen({ id }: { id: string }) {
@@ -26,12 +26,12 @@ function Periods({ id }: { id: string }) {
   return <SafeAreaView edges={["left", "right", "bottom"]} style={{ flex: 1, backgroundColor: theme.background }}>
     <FlatList data={rows} keyExtractor={row => String(row.version)} contentContainerStyle={{ padding: 20, gap: 16, maxWidth: 760, width: "100%", alignSelf: "center" }}
       refreshing={query.isRefetching && !query.isFetchingNextPage} onRefresh={() => { if (!query.isFetching) void query.refetch(); }}
-      ListHeaderComponent={<View style={{ gap: 16 }}>
-        <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 26, fontWeight: "800" }}>{data.code}</Text>
-        <Text style={{ color: theme.muted, fontSize: 16, lineHeight: 25 }}>Các kỳ đã gia hạn, mới nhất trước. Thu tiếp phần phí còn thiếu của đúng kỳ; phí và ngày hẹn trả giữ nguyên.</Text>
+      ListHeaderComponent={<View style={{ gap: 12 }}>
+        <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 20, fontWeight: "800" }}>{data.code}</Text>
+        <Text style={{ color: theme.muted, fontSize: 13.5, lineHeight: 20 }}>Các kỳ đã gia hạn, mới nhất trước. Thu tiếp phần phí còn thiếu của đúng kỳ; phí và ngày hẹn trả giữ nguyên.</Text>
         {!data.available && <InlineError message={data.blockedReason || "Hợp đồng hiện chưa thể thu theo kỳ."} />}
         {stale && <InlineError message="Chưa cập nhật được các kỳ gia hạn. Tải lại danh sách trước khi thu tiền." />}
-        {!data.canWrite && <Text style={{ color: theme.muted, fontSize: 15 }}>Tài khoản có quyền xem; cần quyền ghi thu/chi để nhận tiền.</Text>}
+        {!data.canWrite && <Text style={{ color: theme.muted, fontSize: 13.5 }}>Tài khoản có quyền xem; cần quyền ghi thu/chi để nhận tiền.</Text>}
         {rows.length > 0 && (
           <FileExportButton
             label={`Tải Excel các kỳ gia hạn (${rows.length})`}
@@ -58,13 +58,19 @@ function Periods({ id }: { id: string }) {
           />
         )}
       </View>}
-      ListEmptyComponent={<Card><Text style={{ color: theme.muted, fontSize: 16, lineHeight: 25 }}>Chưa có kỳ gia hạn đã lưu. Mở Gia hạn ở hồ sơ hợp đồng để lập kỳ mới.</Text></Card>}
-      renderItem={({ item }) => <Card style={{ gap: 12 }}>
-        <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 20, fontWeight: "700" }}>Kỳ gia hạn #{item.version}</Text>
-        <Text style={{ color: theme.text, fontSize: 17 }}>{item.license} · {item.vehicleName}</Text>
-        <Text style={{ color: theme.muted, fontSize: 15, lineHeight: 24 }}>{dateTime(item.beforeReturnAt ?? item.createdAt ?? "")} → {dateTime(item.returnAt)}</Text>
-        <Text style={{ color: theme.text, fontSize: 16 }}>Phí: {money(item.amount)} · Đã thu: {money(item.collected)}</Text>
-        <Text style={{ color: item.remaining > 0 ? theme.warning : theme.success, fontSize: 20, fontWeight: "700" }}>{item.remaining > 0 ? `Còn thu: ${money(item.remaining)}` : "Đã thu đủ phí kỳ"}</Text>
+      ListEmptyComponent={<Card><Text style={{ color: theme.muted, fontSize: 14, lineHeight: 21 }}>Chưa có kỳ gia hạn đã lưu. Mở Gia hạn ở hồ sơ hợp đồng để lập kỳ mới.</Text></Card>}
+      renderItem={({ item }) => <Card style={{ gap: 10 }}>
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+          <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 17, fontWeight: "800" }}>Kỳ gia hạn #{item.version}</Text>
+          <StatusBadge status={item.remaining > 0 ? "overdue" : "paid"} label={item.remaining > 0 ? "Còn thu" : "Đã thu đủ"} />
+        </View>
+        <View style={{ gap: 2 }}>
+          <KeyValueRow label="Xe" value={`${item.license} · ${item.vehicleName}`} />
+          <KeyValueRow label="Thời hạn kỳ" value={`${dateTime(item.beforeReturnAt ?? item.createdAt ?? "")} → ${dateTime(item.returnAt)}`} />
+          <KeyValueRow label="Phí kỳ" value={money(item.amount)} />
+          <KeyValueRow label="Đã thu" value={money(item.collected)} />
+          <KeyValueRow label="Còn thu" value={item.remaining > 0 ? money(item.remaining) : "Đã thu đủ phí kỳ"} emphasize />
+        </View>
         {data.canWrite && item.remaining > 0 && <Button label={`Thu cho kỳ gia hạn #${item.version}`} disabled={!data.available || stale || query.isFetching}
           onPress={() => router.push({ pathname: "/renewal-payment/[id]", params: { id, version: String(item.version) } })} />}
       </Card>}

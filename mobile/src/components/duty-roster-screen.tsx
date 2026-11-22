@@ -5,6 +5,7 @@ import { FlatList, Pressable, RefreshControl, ScrollView, Text, View } from "rea
 import { router } from "expo-router";
 import { ChevronLeft, ChevronRight, Plus, SlidersHorizontal } from "lucide-react-native";
 import { dutyAddDays, dutyToday, dutyWeekStart, localDutyTime, type MobileDutyInput, type MobileDutySchedule } from "../../../shared/mobile-duty-roster";
+import { useGlobalBranch } from "@/providers/branch";
 import { useSession } from "@/providers/session";
 import { useWorkspace } from "@/hooks/use-workspace";
 import { useDutyWrite } from "@/hooks/use-duty-write";
@@ -68,10 +69,19 @@ function DutyEditor({ row, date, store, onClose }: { row: MobileDutySchedule | n
 
 export function DutyRosterScreen({initialStore}:{initialStore?:string}={}) {
   const { api, session } = useSession(), theme = useTheme(), workspace = useWorkspace(), writer = useDutyWrite();
+  const canReadAll = Boolean(session!.user.allStores || session!.user.allStoresRead);
+  const defaultStore = canReadAll ? "all" : String(session!.user.storeId || "all");
+  const { selectedStore: globalStore, selectStore: setGlobalStore } = useGlobalBranch(defaultStore);
+  const [storeOverride, setStoreOverride] = useState<string | null>(initialStore ?? null);
+  const store = !canReadAll ? defaultStore : (storeOverride !== null ? storeOverride : globalStore || defaultStore);
+  const setStore = (next: string) => {
+    if (!canReadAll) return;
+    if (initialStore) setStoreOverride(next);
+    else { setStoreOverride(null); setGlobalStore(next); }
+  };
   const [week, setWeek] = useState(() => dutyWeekStart(dutyToday()));
   const [showShifts,setShowShifts]=useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [store, setStore] = useState(initialStore || "all");
   const [staffFilter, setStaffFilter] = useState("all");
   const [day, setDay] = useState("all"), [editor, setEditor] = useState<{ row: MobileDutySchedule | null } | null>(null), [deleting, setDeleting] = useState<MobileDutySchedule | null>(null);
   const readable = session!.user.permissions.includes("hr.read"), writable = session!.user.permissions.includes("hr.write");
@@ -85,8 +95,8 @@ export function DutyRosterScreen({initialStore}:{initialStore?:string}={}) {
     if (!row.starts_at || !row.ends_at) return row.duty_date === day;
     return Date.parse(row.starts_at) < Date.parse(`${dutyAddDays(day, 1)}T00:00:00+07:00`) && Date.parse(row.ends_at) > Date.parse(`${day}T00:00:00+07:00`);
   });
-  const stores = (workspace.data?.stores || []);
-  const filterCount = Number(store !== (initialStore || "all")) + Number(staffFilter !== "all");
+  const stores = (workspace.data?.stores || []).filter(item => canReadAll || item.id === session!.user.storeId);
+  const filterCount = Number(store !== (initialStore || defaultStore)) + Number(staffFilter !== "all");
   function moveWeek(value: string) { setWeek(dutyWeekStart(value)); setDay("all"); }
   const shortDay = (d: string, i: number) => `${["T2", "T3", "T4", "T5", "T6", "T7", "CN"][i]} ${d.slice(8, 10)}/${d.slice(5, 7)}`;
   return <>
@@ -127,7 +137,7 @@ export function DutyRosterScreen({initialStore}:{initialStore?:string}={}) {
         {filtersOpen && (
           <Card style={{ gap: 10 }}>
             <DateField label="Chọn ngày trong tuần" value={week} onChange={moveWeek} />
-            <ChoiceField label="Cơ sở" value={store} choices={[{ value: "all", label: "Tất cả cơ sở" }, ...stores.map(item => ({ value: String(item.id), label: item.name }))]} onChange={v => { setStore(v); setStaffFilter("all"); }} searchable />
+            <ChoiceField label="Cơ sở" value={store} choices={[...(canReadAll ? [{ value: "all", label: "Tất cả cơ sở" }] : []), ...stores.map(item => ({ value: String(item.id), label: item.name }))]} onChange={v => { setStore(v); setStaffFilter("all"); }} searchable />
             <ChoiceField label="Nhân viên trực" value={staffFilter} choices={[{ value: "all", label: "Tất cả nhân viên" }, ...staffOptions]} onChange={setStaffFilter} searchable />
             <FilteredListExport kind="duties" filters={new URLSearchParams({week,day,...(store==='all'?{}:{store_id:store}),...(staffFilter==='all'?{}:{staff_id:staffFilter})}).toString()} disabled={roster.isFetching||roster.isError||!visible.length}/>
           </Card>

@@ -273,12 +273,22 @@ function PreparationForm({ id }: { id: string }) {
         <Button
           secondary
           label="Mở Telegram hợp đồng"
-          onPress={() => router.replace({ pathname: "/contract-telegram/[id]", params: { id } })}
+          loading={action.checking}
+          onPress={() => {
+            void action.openReceipt(() =>
+              router.replace({ pathname: "/contract-telegram/[id]", params: { id } }),
+            );
+          }}
         />
         <Button
           secondary
           label="Mở Thu / Chi hợp đồng"
-          onPress={() => router.replace({ pathname: "/finance/[id]", params: { id } })}
+          loading={action.checking}
+          onPress={() => {
+            void action.openReceipt(() =>
+              router.replace({ pathname: "/finance/[id]", params: { id } }),
+            );
+          }}
         />
       </SafeAreaView>
     );

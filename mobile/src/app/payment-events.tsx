@@ -10,7 +10,7 @@ import { Button, Card, InlineError, KeyValueRow, SkeletonList, StateView, Status
 
 export default function Route() {
   const { api, session } = useSession(), theme = useTheme();
-  const allowed = !!api && !!session?.user.permissions.includes('contracts.read');
+  const allowed = !!api && !!session?.user.permissions.some(p => p === 'contracts.read' || p === 'finance.read');
   const query = useQuery({
     queryKey: ['sepay-events', api?.origin, session?.user.id, session?.user.storeId, session?.user.allStores],
     queryFn: ({ signal }) => api!.sepayEvents(0, signal), retry: false, enabled: allowed,

@@ -8,14 +8,14 @@ import { dutyAddDays, dutyToday, dutyWeekStart } from '../../../shared/mobile-du
 import { shiftCreditLabel } from '../../../shared/attendance-shifts';
 import { useSession } from '@/providers/session';
 import { useTheme } from '@/theme';
-import { Button, Card, InlineError, SkeletonList, StateView } from '@/components/ui';
+import { Button, Card, InfoBanner, InlineError, KeyValueRow, SkeletonList, StateView } from '@/components/ui';
 import { ChoiceField } from '@/components/form-fields';
 import { ConfirmEdit } from '@/components/editor-sheet';
 import { KeyboardFormScrollView } from '@/components/keyboard-form-scroll-view';
 
 const WEEKDAYS = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
 const labelDate = (date: string) => {
-  const d = new Date(`${date}T00:00:00+07:00`);
+  const d = new Date(`${date}T00:00:00Z`);
   const wd = Number.isFinite(d.getTime()) ? WEEKDAYS[d.getUTCDay()] : '';
   return `${wd ? wd + ' · ' : ''}${date.split('-').reverse().join('/')}`;
 };
@@ -46,13 +46,15 @@ function WeekForm({ initial, moveWeek }: { initial: SelfRegistrationWeek; moveWe
       <Text style={{ color: theme.muted, fontSize: 12.5 }}>Tuần {labelDate(data.week)} – {labelDate(data.dates[6])}</Text>
     </View>
     <View style={{ flexDirection: 'row', gap: 8 }}>
-      <Button size="sm" equalWidth secondary label="Tuần trước" disabled={busy || changed.length > 0 || data.week <= dutyWeekStart(dutyToday())} onPress={() => moveWeek(dutyAddDays(data.week, -7))} />
+      <Button size="sm" equalWidth secondary label="Tuần trước" disabled={busy || changed.length > 0 || data.week <= dutyWeekStart(data.today || dutyToday())} onPress={() => moveWeek(dutyAddDays(data.week, -7))} />
       <Button size="sm" equalWidth secondary label="Tuần sau" disabled={busy || changed.length > 0} onPress={() => moveWeek(dutyAddDays(data.week, 7))} />
     </View>
     {data.dates.map(date => <Card key={date} style={{ gap: 8 }}><ChoiceField label={`Ca làm ngày ${labelDate(date)}${date < data.today ? ' · Đã qua' : date === data.today ? ' · Hôm nay' : ''}`} value={draft[date] || ''} searchable disabled={busy || uncertain || date < data.today} choices={[{ value: '', label: 'Chưa đăng ký' }, ...REGISTRATION_SHIFTS.map(shift => ({ value: shift.code, label: `${shift.code} · ${shift.name}${shift.start ? ` (${shift.start}–${shift.end}${shift.code === 'G1+G3' ? ', nghỉ 12:00–17:00' : ''})` : ''} · ${shiftCreditLabel(shift.credit)} công` }))]} onChange={value => { setDraft(current => ({ ...current, [date]: value })); setMessage(''); }} /></Card>)}
-    <Text style={{ color: theme.text, fontWeight: '700' }}>Tổng công đăng ký dự kiến: {shiftCreditLabel(data.dates.reduce((sum, date) => sum + registrationCredit(draft[date]), 0))} công</Text>
-    <Text style={{ color: theme.muted, lineHeight: 22 }}>Chỉ đăng ký ca của chính bạn tại cơ sở trong hồ sơ. Ngày đã qua không thể sửa. Ca đăng ký được hiển thị trên bảng tháng của quản lý, chưa thay thế lịch trực và công chấm thực tế.</Text>
-    {!!error && <InlineError message={error} />}{!!message && <Text accessibilityLiveRegion="polite" style={{ color: theme.text }}>{message}</Text>}
+    <Card style={{ gap: 6 }}>
+      <KeyValueRow label="Tổng công đăng ký dự kiến" value={`${shiftCreditLabel(data.dates.reduce((sum, date) => sum + registrationCredit(draft[date]), 0))} công`} emphasize />
+      <Text style={{ color: theme.muted, fontSize: 13, lineHeight: 20 }}>Chỉ đăng ký ca của chính bạn tại cơ sở trong hồ sơ. Ngày đã qua không thể sửa. Ca đăng ký được hiển thị trên bảng tháng của quản lý, chưa thay thế lịch trực và công chấm thực tế.</Text>
+    </Card>
+    {!!error && <InlineError message={error} />}{!!message && <InfoBanner tone="success" message={message} />}
     <Button label="Lưu đăng ký ca" loading={busy} disabled={uncertain || !changed.length} onPress={() => setConfirm(true)} />
     {!!changed.length && <Button secondary label="Bỏ thay đổi" disabled={busy} onPress={() => apply(data)} />}
     <Button secondary label="Tải lại để đối chiếu" loading={busy} disabled={!uncertain && changed.length > 0} onPress={() => void reload()} />
@@ -61,7 +63,7 @@ function WeekForm({ initial, moveWeek }: { initial: SelfRegistrationWeek; moveWe
   </KeyboardFormScrollView>;
 }
 export default function Route() {
-  const { api, session } = useSession(), [week, setWeek] = useState(() => dutyWeekStart(dutyToday()));
+  const { api, session } = useSession(), theme = useTheme(), [week, setWeek] = useState(() => dutyWeekStart(dutyToday()));
   const query = useQuery({ queryKey: ['self-shift-registration', session?.user.id, week], queryFn: ({ signal }) => api!.selfRegistration(week, signal), enabled: !!api && !!session, retry: false, refetchOnReconnect: false, refetchOnWindowFocus: false });
-  return <SafeAreaView edges={['bottom', 'left', 'right']} style={{ flex: 1 }}>{query.isPending ? <View style={{ padding: 16 }}><SkeletonList count={4} lines={2} /></View> : query.isError ? <StateView title="Chưa mở được đăng ký ca" message={query.error.message} retry={() => void query.refetch()} /> : <WeekForm key={`${api!.origin}:${session!.token}:${week}`} initial={query.data} moveWeek={setWeek} />}</SafeAreaView>;
+  return <SafeAreaView edges={['bottom', 'left', 'right']} style={{ flex: 1, backgroundColor: theme.background }}>{query.isPending ? <View style={{ padding: 16 }}><SkeletonList count={4} lines={2} /></View> : query.isError ? <StateView title="Chưa mở được đăng ký ca" message={query.error.message} retry={() => void query.refetch()} /> : <WeekForm key={`${api!.origin}:${session!.token}:${week}`} initial={query.data} moveWeek={setWeek} />}</SafeAreaView>;
 }

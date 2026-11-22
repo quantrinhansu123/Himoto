@@ -13,13 +13,17 @@ import { FileExportButton } from '@/components/file-export-button';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useScreenActive } from '@/hooks/use-screen-active';
 import { useWorkspace } from '@/hooks/use-workspace';
+import { useGlobalBranch } from '@/providers/branch';
 import { useSession } from '@/providers/session';
 import { dateTime, money, useTheme } from '@/theme';
 
 function CollectionReport() {
   const { api, session } = useSession(), theme = useTheme(), workspace = useWorkspace(), active = useScreenActive();
-  const user = session!.user, all = user.allStores || user.allStoresRead;
-  const [store, setStore] = useState(all ? 'all' : String(user.storeId ?? ''));
+  const user = session!.user, all = Boolean(user.allStores || user.allStoresRead);
+  const defaultStore = all ? 'all' : String(user.storeId ?? '');
+  const { selectedStore: globalStore, selectStore: setGlobalStore } = useGlobalBranch(defaultStore);
+  const store = all ? (globalStore || 'all') : defaultStore;
+  const setStore = (next: string) => { if (all) setGlobalStore(next); };
   const [search, setSearch] = useState(''), term = useDebouncedValue(search), [handling, setHandling] = useState('');
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [preview, setPreview] = useState<{ store: string; hash: string; messages: string[] }>();
@@ -105,7 +109,7 @@ function CollectionReport() {
               ...(all ? [{ value: 'all', label: 'Tất cả cơ sở' }] : []),
               ...(workspace.data?.stores ?? []).filter(row => all || row.id === user.storeId).map(row => ({ value: String(row.id), label: row.name })),
             ]} disabled={!all || busy || !!preview} onChange={value => { setStore(value); setError(''); setNotice(''); }} searchable />
-            <FileExportButton key={filters.toString()} disabled={!rows.length || query.isFetching || query.isError || search.trim() !== term} load={signal => api!.collectionReportExcel(filters, signal)} />
+            <FileExportButton key={filters.toString()} disabled={!rows.length || query.isFetching || query.isError || search.trim() !== term.trim()} load={signal => api!.collectionReportExcel(filters, signal)} />
           </Card>
         )}
         {store === 'all' && user.permissions.includes('contracts.draft') && <Text style={{ color: theme.muted, fontSize: 12 }}>Mở bộ lọc chọn một PGD cụ thể để gửi báo cáo Telegram nhóm PGD.</Text>}
@@ -115,8 +119,8 @@ function CollectionReport() {
       </View>}
       ListEmptyComponent={!store ? <StateView title="Tài khoản chưa được gán PGD" />
         : query.isPending ? <SkeletonList count={4} lines={3} />
-        : query.isError ? <StateView title="Chưa tải được báo cáo nợ chậm" message={query.error.message} retry={() => { void query.refetch(); }} />
-          : <StateView title="Không có hợp đồng nợ chậm phù hợp" />}
+          : query.isError ? <StateView title="Chưa tải được báo cáo nợ chậm" message={query.error.message} retry={() => { void query.refetch(); }} />
+            : <StateView title="Không có hợp đồng nợ chậm phù hợp" />}
       renderItem={({ item }) => <Card style={{ gap: 8, padding: 13 }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
@@ -135,7 +139,7 @@ function CollectionReport() {
         </View>
         {!!item.followup.notes && <Text style={{ color: theme.muted, fontSize: 12.5, lineHeight: 18 }} numberOfLines={3}>{item.followup.notes}</Text>}
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingTop: 2 }}>
-          <Button size="sm" equalWidth label="Cập nhật xử lý" onPress={() => router.push({ pathname: '/collection-followup/[id]', params: { id: String(item.id) } })} />
+          <Button size="sm" equalWidth secondary={!(user.permissions.includes('contracts.draft') || user.permissions.includes('finance.write'))} label={user.permissions.includes('contracts.draft') || user.permissions.includes('finance.write') ? 'Cập nhật xử lý' : 'Xem ghi chú'} onPress={() => router.push({ pathname: '/collection-followup/[id]', params: { id: String(item.id) } })} />
           <Button size="sm" equalWidth secondary label="Mở HĐ" onPress={() => router.push({ pathname: '/record/[kind]/[id]', params: { kind: 'contracts', id: String(item.id) } })} />
           {!!item.phone && <Button size="sm" secondary icon={<Phone size={13} color={theme.text} />} label="Gọi" onPress={() => call(item.phone)} />}
         </View>

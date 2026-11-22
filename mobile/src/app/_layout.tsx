@@ -194,6 +194,25 @@ function Navigator() {
             name="customer/[id]"
             options={{ title: "Sửa khách hàng" }}
           />
+          <Stack.Screen name="catalogue-export/[kind]" options={{ title: "Xuất danh sách" }} />
+          <Stack.Screen name="contract-approval/[id]" options={{ title: "Duyệt hợp đồng" }} />
+          <Stack.Screen name="contract-correction/[kind]/[id]" options={{ title: "Chỉnh sửa giao dịch" }} />
+          <Stack.Screen name="contract-edit/[id]" options={{ title: "Sửa hợp đồng" }} />
+          <Stack.Screen name="contract-history/[id]" options={{ title: "Lịch sử hợp đồng" }} />
+          <Stack.Screen name="contract-lifecycle/[id]" options={{ title: "Xử lý hợp đồng" }} />
+          <Stack.Screen name="contract-qr/[id]" options={{ title: "Mã QR thanh toán" }} />
+          <Stack.Screen name="customer-store-import" options={{ title: "Gán cơ sở khách hàng" }} />
+          <Stack.Screen name="draft-delete/[id]" options={{ title: "Xóa hợp đồng nháp" }} />
+          <Stack.Screen name="import-customers" options={{ title: "Nhập khách hàng từ Excel" }} />
+          <Stack.Screen name="import-result/[key]" options={{ title: "Kết quả nhập dữ liệu" }} />
+          <Stack.Screen name="ownership-terms/[id]" options={{ title: "Điều khoản thuê sở hữu" }} />
+          <Stack.Screen name="print/[kind]/[id]" options={{ title: "In biểu mẫu" }} />
+          <Stack.Screen name="rental-terms/[id]" options={{ title: "Điều khoản thuê xe" }} />
+          <Stack.Screen name="reports" options={{ title: "Báo cáo tổng hợp" }} />
+          <Stack.Screen name="return-correction/[id]" options={{ title: "Chỉnh sửa phiếu trả xe" }} />
+          <Stack.Screen name="vehicle-import" options={{ title: "Nhập danh sách xe từ Excel" }} />
+          <Stack.Screen name="vehicle-import-result/[key]" options={{ title: "Kết quả nhập xe" }} />
+          <Stack.Screen name="vehicle-reset" options={{ title: "Làm mới dữ liệu xe" }} />
           <Stack.Screen
             name="record/[kind]/[id]"
             options={{ title: "Chi tiết hồ sơ" }}

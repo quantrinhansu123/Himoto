@@ -12,7 +12,7 @@ import { dateTime, money, useTheme } from '@/theme';
 import { useContractEditWrite } from '@/hooks/use-contract-edit-write';
 import { addDraftVehicle, changeDraftTime, chooseDraftCustomer, chooseDraftType, draftSteps } from '@/lib/draft-form';
 import { contextualStatusLabel } from '@/lib/catalogue-config';
-import { Button, Card, InlineError, SegmentedBar, StateView } from './ui';
+import { Button, Card, InfoBanner, InlineError, KeyValueRow, SegmentedBar, StateView } from './ui';
 import { ChoiceField, FormField, KeyboardScrollContext } from './form-fields';
 import { DateField } from './date-field';
 import { RentalDateTime } from './rental-date-time';
@@ -25,6 +25,7 @@ export function ContractEditEditor({ id, initialMode = 'full' }: { id: string; i
   const write = useContractEditWrite(id), theme = useTheme(), cache = useQueryClient();
   const [editMode, setEditMode] = useState<'full' | 'profile'>(initialMode);
   const [profileBusy, setProfileBusy] = useState(false);
+  const [daysDraft, setDaysDraft] = useState<string | null>(null);
   const [input, setInput] = useState<MobileContractEditInput | null>(null);
   const [step, setStep] = useState(0), [confirm, setConfirm] = useState(false), [reload, setReload] = useState(false);
   const [customerPicker, setCustomerPicker] = useState(false), [vehiclePicker, setVehiclePicker] = useState(false), [customerCreate, setCustomerCreate] = useState(false);
@@ -40,7 +41,7 @@ export function ContractEditEditor({ id, initialMode = 'full' }: { id: string; i
   const scrollInputIntoView = useCallback((target: any) => {
     if (!target) return;
     setTimeout(() => {
-      try { (scroll.current as any)?.scrollResponderScrollNativeHandleToKeyboard?.(target, 140, true); } catch {}
+      try { (scroll.current as any)?.scrollResponderScrollNativeHandleToKeyboard?.(target, 140, true); } catch { }
     }, 80);
   }, []);
   useEffect(() => { if (write.key || write.error) { scroll.current?.scrollTo({ y: 0, animated: false }); AccessibilityInfo.announceForAccessibility(write.error || 'Kiểm tra kết quả lần sửa hợp đồng.'); } }, [write.key, write.error]);
@@ -107,7 +108,7 @@ export function ContractEditEditor({ id, initialMode = 'full' }: { id: string; i
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <KeyboardScrollContext.Provider value={scrollInputIntoView}>
       <ScrollView ref={scroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={{ padding: 18, gap: 16, maxWidth: 760, width: '100%', alignSelf: 'center', paddingBottom: keyboardHeight > 0 ? keyboardHeight + 80 : 280 }} automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}>
-        <Text accessibilityRole="header" style={{ ...text, fontSize: 24, lineHeight: 32, fontWeight: '800' }}>Sửa đầy đủ hợp đồng</Text>
+        <Text accessibilityRole="header" style={{ ...text, fontSize: 22, lineHeight: 30, fontWeight: '800' }}>{editMode === 'profile' ? 'Sửa thông tin khách / hồ sơ' : 'Sửa đầy đủ hợp đồng'}</Text>
         {!!(write.error || write.query.error || localError) && <InlineError message={localError || write.error || write.query.error?.message || 'Chưa tải được hợp đồng.'} />}
         {!!write.notice && <Text accessibilityLiveRegion="polite" style={text}>{write.notice}</Text>}
         {write.query.isPending && <StateView title="Đang tải hồ sơ và kiểm tra lần sửa trước" loading />}
@@ -152,25 +153,35 @@ export function ContractEditEditor({ id, initialMode = 'full' }: { id: string; i
             <DraftSection title="Ngày hồ sơ">
               <DateField label="Ngày ký hợp đồng" value={d.signed_on} disabled={disabled} onChange={v => set('signed_on', v)} />
               <DateField label="Ngày tạo / nhập hợp đồng" value={d.created_on} disabled={disabled} onChange={v => set('created_on', v)} />
-              {d.backfill && <><ChoiceField label="Tình trạng thực tế của hợp đồng lịch sử" value={d.backfill.returned_at === undefined ? 'ongoing' : 'returned'} choices={[{ value: 'ongoing', label: 'Khách còn đang thuê' }, { value: 'returned', label: 'Khách đã trả xe từ trước' }]} disabled={disabled} onChange={v => set('backfill', { note: d.backfill!.note, ...(v === 'returned' ? { returned_at: '' } : {}) })} /><FormField label="Lý do nhập bổ sung" value={d.backfill.note} editable={!disabled} multiline maxLength={1000} onChangeText={v => set('backfill', { ...d.backfill!, note: v })} />{d.backfill.returned_at !== undefined && <RentalDateTime label="trả xe thực tế" value={d.backfill.returned_at} disabled={disabled} onChange={v => set('backfill', { ...d.backfill!, returned_at: v })} />}</>}
+              {d.backfill && <><ChoiceField label="Tình trạng thực tế của hợp đồng lịch sử" value={d.backfill.returned_at === undefined ? 'ongoing' : 'returned'} choices={[{ value: 'ongoing', label: 'Khách còn đang thuê' }, { value: 'returned', label: 'Khách đã trả xe từ trước' }]} disabled={disabled || editMode === 'profile'} onChange={v => set('backfill', { note: d.backfill!.note, ...(v === 'returned' ? { returned_at: '' } : {}) })} /><FormField label="Lý do nhập bổ sung" value={d.backfill.note} editable={!disabled && editMode !== 'profile'} multiline maxLength={1000} onChangeText={v => set('backfill', { ...d.backfill!, note: v })} />{d.backfill.returned_at !== undefined && <RentalDateTime label="trả xe thực tế" value={d.backfill.returned_at} disabled={disabled || editMode === 'profile'} onChange={v => set('backfill', { ...d.backfill!, returned_at: v })} />}</>}
             </DraftSection>
           </>}
           {step === 1 && <>
-            {session?.user.permissions.includes('customers.read') && <Button secondary label="Chọn hồ sơ khách" disabled={disabled} onPress={() => setCustomerPicker(true)} />}
-            {session?.user.permissions.includes('customers.read') && session.user.permissions.includes('customers.write') && <Button secondary label="Thêm khách trong hợp đồng" disabled={disabled} onPress={() => setCustomerCreate(true)} />}
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              {session?.user.permissions.includes('customers.read') && <Button size="sm" equalWidth secondary label="Chọn hồ sơ khách" disabled={disabled} onPress={() => setCustomerPicker(true)} />}
+              {session?.user.permissions.includes('customers.read') && session.user.permissions.includes('customers.write') && <Button size="sm" equalWidth secondary label="Thêm khách mới" disabled={disabled} onPress={() => setCustomerCreate(true)} />}
+            </View>
             <DraftParty {...props} />
           </>}
           {step === 2 && <>
             <DraftSection title="Thời gian thuê">
-              <RentalDateTime label="nhận xe" value={d.start_date} disabled={disabled || editMode === 'profile'} onChange={v => change(changeDraftTime(value, 'start_date', v))} />
-              <FormField label="Số ngày thuê" value={rentalDayCount(d.start_date, d.end_date)} keyboardType="number-pad" maxLength={4} editable={!disabled && editMode !== 'profile'} onChangeText={v => { const nextEnd = addRentalDays(d.start_date, v.trim()); if (nextEnd) change(changeDraftTime(value, 'end_date', nextEnd)); }} />
-              <RentalDateTime label="hẹn trả xe" value={d.end_date} disabled={disabled || editMode === 'profile'} onChange={v => change(changeDraftTime(value, 'end_date', v))} />
+              <RentalDateTime label="nhận xe" value={d.start_date} disabled={disabled || editMode === 'profile'} onChange={v => { setDaysDraft(null); change(changeDraftTime(value, 'start_date', v)); }} />
+              <FormField label="Số ngày thuê" value={daysDraft ?? rentalDayCount(d.start_date, d.end_date)} keyboardType="number-pad" maxLength={4} editable={!disabled && editMode !== 'profile'} onChangeText={v => { setDaysDraft(v); const nextEnd = addRentalDays(d.start_date, v.trim()); if (nextEnd) { setDaysDraft(null); change(changeDraftTime(value, 'end_date', nextEnd)); } }} />
+              <RentalDateTime label="hẹn trả xe" value={d.end_date} disabled={disabled || editMode === 'profile'} onChange={v => { setDaysDraft(null); change(changeDraftTime(value, 'end_date', v)); }} />
               <Text style={muted}>Giữ nguyên dòng xe đã trả và lịch riêng khi không đổi lịch chung. Thêm hoặc bỏ xe sẽ cập nhật dòng xe và kho theo trạng thái hợp đồng.</Text>
             </DraftSection>
             <Button secondary label="Thêm / thay xe" disabled={disabled || editMode === 'profile' || d.vehicles.filter(v => v.id).length >= 50} onPress={() => setVehiclePicker(true)} />
             <DraftVehicleLines {...props} disabled={disabled || editMode === 'profile'} />
           </>}
-          {step === 3 && <><DraftFees {...props} /><Card style={{ gap: 10 }}><Text style={text}>Tiền thuê đã thu theo phiếu: {money(profile?.rentalPaid ?? null)}</Text><Text style={text}>Tiền cọc đã thu theo phiếu: {money(profile?.depositPaid ?? null)}</Text><Text style={muted}>Sửa đơn giá, tổng hoặc cọc hợp đồng không ghi đè số tiền thực nhận. Thu/chi điều chỉnh tại luồng phiếu.</Text></Card></>}
+          {step === 3 && <>
+            {editMode === 'profile' && <InfoBanner tone="info" title="Chế độ Bổ sung hồ sơ nhẹ" message="Các trường đơn giá, tổng tiền, tiền cọc được khóa để giữ nguyên tài chính và trạng thái duyệt thuê sở hữu." />}
+            <DraftFees {...props} disabled={disabled || editMode === 'profile'} />
+            <Card style={{ gap: 8 }}>
+              <KeyValueRow label="Tiền thuê đã thu theo phiếu" value={money(profile?.rentalPaid ?? null)} emphasize />
+              <KeyValueRow label="Tiền cọc đã thu theo phiếu" value={money(profile?.depositPaid ?? null)} emphasize />
+              <Text style={muted}>Sửa đơn giá, tổng hoặc cọc hợp đồng không ghi đè số tiền thực nhận. Thu/chi điều chỉnh tại luồng phiếu.</Text>
+            </Card>
+          </>}
           {step === 4 && <>
             <DraftSection title="Ký kết và ghi chú">
               <DateField label="Ngày ủy quyền" value={d.authorization_date} disabled={disabled} onChange={v => set('authorization_date', v)} />

@@ -102,7 +102,7 @@ export async function readMobileSalesReport(user: SessionUser, rawKind: string, 
       doc.metrics = [...metrics("Doanh số ước tính", estimate, [["sales", "Doanh số"], ["contracts", "Hợp đồng trong kỳ", "count"], ["active_contracts", "Đang thuê / chưa trả", "count"], ["finished_contracts", "Đã trả", "count"], ["vehicles", "Số xe trong hợp đồng", "count"]]),
         ...metrics("Doanh thu thực thu", { ...received.total, company_fees: received.company_fees }, [["revenue", "Doanh thu"], ["rental", "Phí thuê đã thu"], ["renewal", "Gia hạn đã thu"], ["late", "Trả muộn đã thu"], ["early", "Đã hoàn do trả sớm"], ["company_fees", "Phí khác · Công ty"]]),
         ...metrics("Công nợ", summary.kpis, [["debt", "Tiền thuê còn thiếu"], ["debtContracts", "Hợp đồng còn thiếu tiền", "count"], ["overdueDebt", "Nợ quá hạn chưa thu đủ"], ["overdueContracts", "Hợp đồng quá hạn chưa thu đủ", "count"], ["badDebt", "Nợ xấu riêng"]])];
-      if (received.unclassified_count) doc.notes.push(`Có ${received.unclassified_count} phiếu chưa phân loại (${received.unclassified_amount} đồng), chưa cộng doanh thu; cần đối chiếu Sổ quỹ trước chốt KPI.`);
+      if (received.unclassified_count) doc.notes.push(`Có ${received.unclassified_count} phiếu chưa phân loại (${received.unclassified_amount.toLocaleString("vi-VN")} đồng), chưa cộng doanh thu; cần đối chiếu Sổ quỹ trước chốt KPI.`);
     } else if (kind === "ledger") {
       const report = await revenueLedger(client, query,true); checked(validRevenueLedger(report));
       const other = {...report,rows:[],total:report.oppositeTotals!.count,page:1,pages:Math.max(1,Math.ceil(report.oppositeTotals!.count/report.page_size)),totals:report.oppositeTotals!}; checked(validRevenueLedgerTotals(other));

@@ -6,6 +6,7 @@ import { Pressable, RefreshControl, ScrollView, Text, TextInput, View } from "re
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Search, SlidersHorizontal, X } from "lucide-react-native";
 import type { MobileRecord } from "../../../shared/mobile-contract";
+import { useGlobalBranch } from "@/providers/branch";
 import { useSession } from "@/providers/session";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useTheme, money } from "@/theme";
@@ -17,15 +18,24 @@ import { ReminderBatch } from "@/components/reminder-batch";
 function Reminders({ initialTab = "history", initialStore }: { initialTab?: string; initialStore?: string }) {
   const { api, session } = useSession(), theme = useTheme(), cache = useQueryClient();
   const canReadAll = Boolean(session!.user.allStores || session!.user.allStoresRead);
-  const [store, setStore] = useState(initialStore && (canReadAll || initialStore === String(session!.user.storeId)) ? initialStore : session!.user.allStores ? "all" : String(session!.user.storeId || "all"));
-  const [tab, setTab] = useState<"history" | "compose">(initialTab === "compose" ? "compose" : "history");
+  const defaultStore = canReadAll ? "all" : String(session!.user.storeId || "all");
+  const { selectedStore: globalStore, selectStore: setGlobalStore } = useGlobalBranch(defaultStore);
+  const [storeOverride, setStoreOverride] = useState<string | null>(initialStore && (canReadAll || initialStore === String(session!.user.storeId)) ? initialStore : null);
+  const store = !canReadAll ? defaultStore : (storeOverride !== null ? storeOverride : globalStore || defaultStore);
+  const setStore = (next: string) => {
+    if (!canReadAll) return;
+    if (initialStore) setStoreOverride(next);
+    else { setStoreOverride(null); setGlobalStore(next); }
+  };
+  const allowed = session!.user.permissions.includes("contracts.read");
+  const canSend = allowed && session!.user.permissions.some(p => p === "contracts.draft" || p === "finance.write");
+  const [tabState, setTab] = useState<"history" | "compose">(initialTab === "compose" && canSend ? "compose" : "history");
+  const tab = canSend ? tabState : "history";
   const [page, setPage] = useState(1);
   const [input, setInput] = useState(""), search = useDebouncedValue(input);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [selection, setSelection] = useState<Record<string, MobileRecord>>({});
   const [batch, setBatch] = useState<number[] | null>(null);
-  const allowed = session!.user.permissions.includes("contracts.read");
-  const canSend = allowed && session!.user.permissions.some(p => p === "contracts.draft" || p === "finance.write");
   const options = useQuery({ queryKey: ["reminder-options", session!.user.id], queryFn: ({ signal }) => api!.reminderOptions(signal), enabled: allowed });
   const filters = new URLSearchParams({ store, page: String(page) }), params = filters.toString();
   filters.set("search", search);
@@ -35,7 +45,11 @@ function Reminders({ initialTab = "history", initialStore }: { initialTab?: stri
   if (!allowed) return <StateView title="Không có quyền xem lịch sử nhắc nợ" />;
   const current = tab === "history" ? history : contracts, total = current.data?.total || 0, pages = current.data?.pages || 1, selected = Object.values(selection);
   const toggle = (row: MobileRecord) => setSelection(previous => { const next = { ...previous }; if (next[row.id]) delete next[row.id]; else next[row.id] = row; return next; });
-  function sent() { void cache.invalidateQueries({ queryKey: ["reminder-history"] }); }
+  function sent() {
+    setSelection({});
+    void cache.invalidateQueries({ queryKey: ["reminder-history"] });
+    void cache.invalidateQueries({ queryKey: ["reminder-contracts"] });
+  }
   const storeName = store === "all" ? "Tất cả cơ sở" : (options.data?.stores || []).find(r => String(r.id) === store)?.name || "Cơ sở đã chọn";
 
   return (
@@ -138,7 +152,7 @@ function Reminders({ initialTab = "history", initialStore }: { initialTab?: stri
           <StateView title={tab === "history" ? "Chưa có lịch sử nhắc nợ" : "Không có hợp đồng đến hạn phù hợp"} />
         )}
         <PaginationBar page={page} pages={pages} total={total} unit={tab === "history" ? "lần gửi" : "hợp đồng"} disabled={current.isFetching} onChange={setPage} />
-        {batch && <ReminderBatch ids={batch} onClose={() => setBatch(null)} onSent={sent} />}
+        {batch && <ReminderBatch ids={batch} onClose={() => setBatch(null)} onSent={sent} onOpenHistory={() => { setBatch(null); setTab("history"); setPage(1); }} />}
       </ScrollView>
     </SafeAreaView>
   );
@@ -148,5 +162,5 @@ export default function Route() {
   const { api, session } = useSession();
   const { tab, store } = useLocalSearchParams<{ tab?: string; store?: string }>();
   if (!api || !session) return <StateView title="Đăng nhập để xem nhắc nợ" />;
-  return <Reminders key={`${api.origin}:${session.token}:${session.user.storeId}:${session.user.allStores}:${session.user.permissions.join(",")}:${tab || ""}:${store || ""}`} initialTab={typeof tab === "string" ? tab : undefined} initialStore={typeof store === "string" ? store : undefined} />;
+  return <Reminders key={`${api.origin}:${session.token}:${session.user.storeId}:${session.user.allStores}:${session.user.allStoresRead}:${session.user.permissions.join(",")}:${tab || ""}:${store || ""}`} initialTab={typeof tab === "string" ? tab : undefined} initialStore={typeof store === "string" ? store : undefined} />;
 }

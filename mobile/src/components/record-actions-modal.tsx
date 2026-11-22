@@ -136,7 +136,15 @@ export function RecordActionsModal({
 
     // 3. Gia hạn
     if (has("contracts.renew")) {
-      if (["renting", "overdue", "wait_payment", "bad_debt"].includes(status)) {
+      const isOwnership = record.monitoring?.rentalType === "ownership" || record.monitoring?.rentalType === "ownership_cd";
+      if (isOwnership) {
+        actions.push({
+          id: "renew",
+          label: "Gia hạn hợp đồng",
+          blockedReason: "Hợp đồng thuê sở hữu đóng tiền theo kỳ — không dùng chức năng gia hạn ngày/giờ.",
+          icon: CalendarPlus,
+        });
+      } else if (["renting", "overdue", "wait_payment", "bad_debt"].includes(status)) {
         actions.push({
           id: "renew",
           label: "Gia hạn hợp đồng",
@@ -391,7 +399,7 @@ export function RecordActionsModal({
           }),
       });
     }
-    if (has("contracts.draft") && !["draft", "cancelled"].includes(status)) {
+    if ((has("contracts.draft") || has("contracts.return")) && !["draft", "cancelled"].includes(status)) {
       actions.push({
         id: "battery_swap",
         label: "Đổi pin theo hợp đồng",
@@ -419,18 +427,20 @@ export function RecordActionsModal({
           }),
       });
     }
-    if (has("contracts.delete") && ["draft", "deposit_contract", "completed"].includes(status)) {
+    if ((status === "draft" ? (has("contracts.delete") || has("contracts.draft")) : has("contracts.delete")) && ["draft", "deposit_contract", "completed"].includes(status)) {
       actions.push({
         id: "delete_or_hide",
         label: status === "draft" ? "Xóa bản nháp" : status === "deposit_contract" ? "Xóa HĐ đặt cọc" : "Ẩn hợp đồng khỏi danh sách",
-        description: "Mở chi tiết hợp đồng để xác nhận thao tác",
+        description: status === "draft" ? "Xóa bản nháp chưa phát hành" : "Mở chi tiết hợp đồng để xác nhận thao tác",
         icon: X,
         color: "#DC2626",
         onPress: () =>
-          router.push({
-            pathname: "/record/[kind]/[id]",
-            params: { kind: "contracts", id },
-          }),
+          status === "draft"
+            ? router.push({ pathname: "/draft-delete/[id]", params: { id } })
+            : router.push({
+                pathname: "/record/[kind]/[id]",
+                params: { kind: "contracts", id },
+              }),
       });
     }
   } else if (kind === "vehicles") {
@@ -480,7 +490,7 @@ export function RecordActionsModal({
         onPress: () =>
           router.push({
             pathname: "/record-media/[entity]/[id]",
-            params: { entity: "vehicles", id },
+            params: { entity: "vehicles", id, kind: "vehicle", referenceId: id },
           }),
       });
     }
@@ -570,7 +580,7 @@ export function RecordActionsModal({
         onPress: () =>
           router.push({
             pathname: "/record-media/[entity]/[id]",
-            params: { entity: "customers", id },
+            params: { entity: "customers", id, kind: "customer", referenceId: id },
           }),
       });
     }
@@ -594,7 +604,8 @@ export function RecordActionsModal({
       animationType="fade"
       onRequestClose={onClose}
     >
-      <Pressable style={styles.backdrop} onPress={onClose}>
+      <View style={styles.backdrop}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
         <View
           style={[
             styles.sheet,
@@ -728,7 +739,7 @@ export function RecordActionsModal({
             })}
           </ScrollView>
         </View>
-      </Pressable>
+      </View>
     </Modal>
   );
 }

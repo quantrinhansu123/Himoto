@@ -5,7 +5,7 @@ import Svg, { Polyline } from "react-native-svg";
 import type { MobileSalesReport, ReportAction, ReportFormat, ReportRow, ReportSection, ReportValue, ReportPageChange } from "../../../shared/mobile-reports";
 import { useSession } from "@/providers/session";
 import { money, useTheme } from "@/theme";
-import { Button, Card } from "./ui";
+import { Button, Card, KeyValueRow } from "./ui";
 import { FileExportButton } from "./file-export-button";
 
 export function reportValue(value: ReportValue, format: ReportFormat) {
@@ -40,14 +40,39 @@ function RowCard({ row, section }: { row: ReportRow; section: ReportSection }) {
   const theme = useTheme(), { session } = useSession(), [expanded, setExpanded] = useState(false);
   const primary = section.key === "ledger" ? "signedAmount" : section.columns.some(col => col.key === "revenue") ? "revenue" : "rent";
   const index = section.columns.findIndex(col => col.key === primary), title = reportValue(row.values[0], section.columns[0]?.format || "text");
+  const detailColumns = section.columns.map((col, colIndex) => ({ col, colIndex })).filter(item => item.colIndex !== 0 && item.colIndex !== index);
+  const visibleDetails = expanded ? detailColumns : detailColumns.slice(0, 3);
   const actionAllowed = !row.action || row.action.kind !== "customer" || session!.user.permissions.includes("customers.read");
-  return <Card style={{ gap: 12 }}>
-    <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 19, fontWeight: "800" }}>{title}</Text>
-    {index >= 0 && <View style={{ gap: 3 }}><Text style={{ color: theme.muted }}>{section.columns[index].label}</Text><Text style={{ color: typeof row.values[index] === "number" && Number(row.values[index]) < 0 ? theme.danger : theme.text, fontSize: 21, fontWeight: "800" }}>{reportValue(row.values[index], section.columns[index].format)}</Text></View>}
-    {section.columns.slice(1, expanded ? undefined : 3).map((col, offset) => <View key={col.key} style={{ gap: 3 }}><Text style={{ color: theme.muted }}>{col.label}</Text><Text selectable style={{ color: theme.text, lineHeight: 23 }}>{reportValue(row.values[offset + 1], col.format)}</Text></View>)}
-    {section.columns.length > 3 && <Button secondary label={`${expanded ? "Thu gọn" : "Chi tiết"} ${title}`} onPress={() => setExpanded(value => !value)} />}
+  return <Card style={{ gap: 10, padding: 14 }}>
+    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+      <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 16, fontWeight: "800", flex: 1 }}>{title}</Text>
+      {index >= 0 && (
+        <View style={{ alignItems: "flex-end" }}>
+          <Text style={{ color: theme.muted, fontSize: 11.5 }}>{section.columns[index].label}</Text>
+          <Text style={{ color: typeof row.values[index] === "number" && Number(row.values[index]) < 0 ? theme.danger : theme.primary, fontSize: 16, fontWeight: "800" }}>
+            {reportValue(row.values[index], section.columns[index].format)}
+          </Text>
+        </View>
+      )}
+    </View>
+    {visibleDetails.length > 0 && (
+      <View style={{ gap: 2, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 6 }}>
+        {visibleDetails.map(({ col, colIndex }) => (
+          <KeyValueRow key={col.key} label={col.label} value={reportValue(row.values[colIndex], col.format)} selectable />
+        ))}
+      </View>
+    )}
     {expanded && row.series && <ProgressLine series={row.series} />}
-    {row.action && actionAllowed && <Button secondary label={`${row.action.label} · ${title}`} onPress={() => openReportAction(row.action!)} />}
+    {(detailColumns.length > 3 || Boolean(row.series) || (row.action && actionAllowed)) && (
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, paddingTop: 2 }}>
+        {(detailColumns.length > 3 || Boolean(row.series)) && (
+          <Button size="sm" equalWidth secondary label={`${expanded ? "Thu gọn" : "Chi tiết"} ${title}`} onPress={() => setExpanded(value => !value)} />
+        )}
+        {row.action && actionAllowed && (
+          <Button size="sm" equalWidth secondary label={`${row.action.label} · ${title}`} onPress={() => openReportAction(row.action!)} />
+        )}
+      </View>
+    )}
   </Card>;
 }
 const RACE_COLORS = ["#E11D48", "#2563EB", "#059669", "#D97706", "#7C3AED", "#0D9488"];
@@ -164,17 +189,17 @@ function Section({ section, onPage, showSectionExport }: { section: ReportSectio
     )}
     {rows.map(row => <RowCard key={row.key} row={row} section={section} />)}
     {!rows.length && <Text style={{ color: theme.muted, lineHeight: 23 }}>Không có dữ liệu phù hợp trong kỳ.</Text>}
-    {section.total && <Card style={{ gap: 10 }}><Text style={{ color: theme.text, fontSize: 18, fontWeight: "800" }}>Tổng toàn bộ kết quả</Text>{section.columns.slice(1).map((col, index) => <Text key={col.key} style={{ color: theme.text, lineHeight: 23 }}>{col.label}: {reportValue(section.total![index + 1], col.format)}</Text>)}</Card>}
+    {section.total && <Card style={{ gap: 6, padding: 14 }}><Text style={{ color: theme.text, fontSize: 16, fontWeight: "800" }}>Tổng toàn bộ kết quả</Text>{section.columns.slice(1).map((col, index) => <KeyValueRow key={col.key} label={col.label} value={reportValue(section.total![index + 1], col.format)} emphasize />)}</Card>}
     {total > 0 && (
-      <View style={{ gap: 10 }}>
-        <Text style={{ color: theme.muted }}>{total} dòng · Trang {page}/{pages}</Text>
+      <View style={{ gap: 8 }}>
+        <Text style={{ color: theme.muted, fontSize: 13 }}>{total} dòng · Trang {page}/{pages}</Text>
         <View style={{ flexDirection: "row", gap: 8 }}>
-          <Button equalWidth secondary label={`Đầu · ${section.title}`} disabled={page <= 1} onPress={() => choose(1)} />
-          <Button equalWidth secondary label={`Trước · ${section.title}`} disabled={page <= 1} onPress={() => choose(page - 1)} />
+          <Button size="sm" equalWidth secondary label={`Đầu · ${section.title}`} disabled={page <= 1} onPress={() => choose(1)} />
+          <Button size="sm" equalWidth secondary label={`Trước · ${section.title}`} disabled={page <= 1} onPress={() => choose(page - 1)} />
         </View>
         <View style={{ flexDirection: "row", gap: 8 }}>
-          <Button equalWidth secondary label={`Sau · ${section.title}`} disabled={page >= pages} onPress={() => choose(page + 1)} />
-          <Button equalWidth secondary label={`Cuối · ${section.title}`} disabled={page >= pages} onPress={() => choose(pages)} />
+          <Button size="sm" equalWidth secondary label={`Sau · ${section.title}`} disabled={page >= pages} onPress={() => choose(page + 1)} />
+          <Button size="sm" equalWidth secondary label={`Cuối · ${section.title}`} disabled={page >= pages} onPress={() => choose(pages)} />
         </View>
       </View>
     )}
@@ -183,10 +208,18 @@ function Section({ section, onPage, showSectionExport }: { section: ReportSectio
 export function SalesReportView({ report, onPage }: { report: MobileSalesReport; onPage: ReportPageChange }) {
   const theme = useTheme(), groups = new Map<string, typeof report.metrics>();
   for (const metric of report.metrics) groups.set(metric.group, [...groups.get(metric.group) || [], metric]);
-  return <View style={{ gap: 20 }}>
-    <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 25, fontWeight: "800" }}>{report.title}</Text>
-    {report.notes.map(note => <Text key={note} style={{ color: theme.muted, lineHeight: 23 }}>{note}</Text>)}
-    {[...groups].map(([group, metrics]) => <Card key={group} style={{ gap: 14 }}><Text style={{ color: theme.text, fontSize: 19, fontWeight: "800" }}>{group}</Text>{metrics.map((metric, index) => <View key={metric.label} style={{ gap: 8 }}><Text style={{ color: theme.muted }}>{metric.label}</Text><Text style={{ color: theme.text, fontSize: index === 0 ? 25 : 18, fontWeight: "700" }}>{reportValue(metric.value, metric.format)}</Text>{metric.action && <Button secondary label={`${metric.action.label} · ${metric.label}`} disabled={!metric.value} onPress={() => openReportAction(metric.action!)} />}</View>)}</Card>)}
+  return <View style={{ gap: 16 }}>
+    <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 20, fontWeight: "800" }}>{report.title}</Text>
+    {report.notes.map(note => <Text key={note} style={{ color: theme.muted, fontSize: 13, lineHeight: 20 }}>{note}</Text>)}
+    {[...groups].map(([group, metrics]) => <Card key={group} style={{ gap: 10, padding: 14 }}>
+      <Text style={{ color: theme.text, fontSize: 16, fontWeight: "800" }}>{group}</Text>
+      {metrics.map((metric, index) => (
+        <View key={metric.label} style={{ gap: 4 }}>
+          <KeyValueRow label={metric.label} value={reportValue(metric.value, metric.format)} emphasize={index === 0} valueColor={index === 0 ? theme.primary : theme.text} />
+          {metric.action && <Button size="sm" secondary label={`${metric.action.label} · ${metric.label}`} disabled={!metric.value} onPress={() => openReportAction(metric.action!)} />}
+        </View>
+      ))}
+    </Card>)}
     {report.sections.map(section => <Section key={section.key} section={section} onPage={onPage} showSectionExport={report.sections.length > 1} />)}
   </View>;
 }

@@ -1,5 +1,5 @@
 import {useCallback,useEffect,useMemo,useRef,useState} from 'react';
-import {ScrollView,Text} from 'react-native';
+import {ScrollView,Text,View} from 'react-native';
 import {router,useFocusEffect} from 'expo-router';
 import {useQueryClient} from '@tanstack/react-query';
 import {SafeAreaView} from 'react-native-safe-area-context';
@@ -7,7 +7,7 @@ import type {MobileRecoveryReceipt} from '../../../shared/mobile-bad-debt-recove
 import {useSession} from '@/providers/session';
 import {pendingWrites} from '@/lib/pending-writes';
 import {dateTime,money,statuses,useTheme} from '@/theme';
-import {Button,Card,InlineError,StateView} from './ui';
+import {Button,Card,InlineError,KeyValueRow,StateView,StatusBadge} from './ui';
 import {ConfirmEdit} from './editor-sheet';
 
 export function BadDebtRecoveryReceipt({id}:{id:string}) {
@@ -61,7 +61,7 @@ function Receipt({id}:{id:string}) {
     running.current=true;setBusy(true);setError('');const current=epoch.current;
     try{
       await pendingWrites.complete(scope,operation,key);if(!alive.current||epoch.current!==current)return;
-      for(const queryKey of [['record'],['catalogue'],['overview'],['recovery-preparation'],['return-preparation'],['swap-preparation']])void cache.invalidateQueries({queryKey});
+      for(const queryKey of [['record'],['catalogue'],['overview'],['recovery-preparation'],['return-preparation'],['swap-preparation'],['finance'],['contract-history'],['vehicle-profile'],['vehicle-history'],['fleet-inventory']])void cache.invalidateQueries({queryKey});
       openContract();
     }catch(cause){if(alive.current&&epoch.current===current)setError((cause as Error).message);}
     finally{running.current=false;if(alive.current&&epoch.current===current)setBusy(false);}
@@ -78,25 +78,32 @@ function Receipt({id}:{id:string}) {
         <Button label="Tải lại phiếu thu hồi" secondary loading={busy} onPress={()=>{void load();}}/>
         {!key&&<Button label="Mở hợp đồng" secondary disabled={busy} onPress={openContract}/>}
       </Card>:<>
-        <Card style={{gap:16}}>
-          <Text accessibilityRole="header" style={{color:theme.text,fontSize:25,fontWeight:'800'}}>Thu hồi xe đã được ghi nhận</Text>
-          <Text style={{color:theme.text,fontSize:19,fontWeight:'700'}}>{receipt.review.code}</Text>
-          <Text style={{color:theme.text,fontSize:19,fontWeight:'700'}}>{receipt.review.item.license||('Xe #'+receipt.review.item.vehicleId)}</Text>
-          <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>{receipt.review.item.name}</Text>
-          <Text style={{color:theme.text,fontSize:17,lineHeight:26}}>Thu hồi thực tế: {dateTime(receipt.event.recoveredAt)}</Text>
-          <Text selectable style={{color:theme.muted,fontSize:15,lineHeight:24}}>Ghi bởi {receipt.actorName} · {dateTime(receipt.recordedAt)} · mã {receipt.requestId}</Text>
-          {!!receipt.event.note&&<Text style={{color:theme.text,fontSize:16,lineHeight:25}}>{receipt.event.note}</Text>}
-          {!receipt.current&&<InlineError message="Hồ sơ có thay đổi sau lần thu hồi này. Đây là phiếu gốc; kiểm tra dữ liệu hiện tại trước khi thao tác tiếp."/>}
-          {!receipt.itemCurrent&&<Text style={{color:theme.warning,fontSize:16,lineHeight:25}}>Dòng xe hoặc ngày thu hồi đã thay đổi.</Text>}
-          {!receipt.historyCurrent&&<Text style={{color:theme.warning,fontSize:16,lineHeight:25}}>Lịch sử thu hồi đã thay đổi sau khi ghi.</Text>}
-          {!receipt.moneyCurrent&&<Text style={{color:theme.warning,fontSize:16,lineHeight:25}}>Số dư hoặc lịch sử tiền đã thay đổi sau khi ghi.</Text>}
-        </Card>
         <Card style={{gap:14}}>
-          <Text accessibilityRole="header" style={{color:theme.text,fontSize:21,fontWeight:'700'}}>Số dư được giữ nguyên khi thu hồi</Text>
-          <Text style={{color:theme.text,fontSize:17,lineHeight:26}}>Còn nợ thuê: {amount(receipt.review.after.rentalRemaining)}</Text>
-          <Text style={{color:theme.text,fontSize:17,lineHeight:26}}>Cọc đang giữ: {amount(receipt.review.after.depositHeld)}</Text>
-          <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>Trạng thái sau ghi: {statuses[receipt.review.after.status]||receipt.review.after.status}</Text>
-          <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>Không phát sinh thu hoặc hoàn tiền. Kiểm tra tình trạng kho hiện tại trước khi bàn giao xe tiếp.</Text>
+          <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'800'}}>Thu hồi xe đã được ghi nhận</Text>
+          <View style={{gap:2}}>
+            <KeyValueRow label="Mã hợp đồng" value={receipt.review.code} emphasize />
+            <KeyValueRow label="Biển số" value={receipt.review.item.license||('Xe #'+receipt.review.item.vehicleId)} emphasize />
+            <KeyValueRow label="Tên xe" value={receipt.review.item.name} />
+            <KeyValueRow label="Thu hồi thực tế" value={dateTime(receipt.event.recoveredAt)} emphasize />
+            <KeyValueRow label="Người ghi nhận" value={`${receipt.actorName} · ${dateTime(receipt.recordedAt)}`} />
+            {!!receipt.event.note&&<KeyValueRow label="Ghi chú" value={receipt.event.note} />}
+          </View>
+          <Text selectable style={{color:theme.muted,fontSize:13,lineHeight:19}}>Mã đối chiếu: {receipt.requestId}</Text>
+          {!receipt.current&&<InlineError message="Hồ sơ có thay đổi sau lần thu hồi này. Đây là phiếu gốc; kiểm tra dữ liệu hiện tại trước khi thao tác tiếp."/>}
+          {!receipt.itemCurrent&&<Text style={{color:theme.warning,fontSize:14,lineHeight:21}}>Dòng xe hoặc ngày thu hồi đã thay đổi.</Text>}
+          {!receipt.historyCurrent&&<Text style={{color:theme.warning,fontSize:14,lineHeight:21}}>Lịch sử thu hồi đã thay đổi sau khi ghi.</Text>}
+          {!receipt.moneyCurrent&&<Text style={{color:theme.warning,fontSize:14,lineHeight:21}}>Số dư hoặc lịch sử tiền đã thay đổi sau khi ghi.</Text>}
+        </Card>
+        <Card style={{gap:12}}>
+          <View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center',gap:8}}>
+            <Text accessibilityRole="header" style={{color:theme.text,fontSize:18,fontWeight:'700'}}>Số dư được giữ nguyên khi thu hồi</Text>
+            <StatusBadge status={receipt.review.after.status} label={statuses[receipt.review.after.status]||receipt.review.after.status} />
+          </View>
+          <View style={{gap:2}}>
+            <KeyValueRow label="Còn nợ thuê" value={amount(receipt.review.after.rentalRemaining)} emphasize />
+            <KeyValueRow label="Cọc đang giữ" value={amount(receipt.review.after.depositHeld)} />
+          </View>
+          <Text style={{color:theme.muted,fontSize:13.5,lineHeight:20}}>Không phát sinh thu hoặc hoàn tiền. Kiểm tra tình trạng kho hiện tại trước khi bàn giao xe tiếp.</Text>
         </Card>
         <Button label="Xác nhận đã kiểm tra phiếu thu hồi" loading={busy} onPress={()=>{void acknowledge();}}/>
         <Button label="Tải lại phiếu thu hồi" secondary loading={busy} onPress={()=>{void load();}}/>

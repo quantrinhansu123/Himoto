@@ -26,7 +26,7 @@ export function usePaymentWrite(id: string, dirty: boolean) {
   function accept(result: MobilePaymentReceipt) {
     if (result.id !== Number(id)) throw new ApiError("Phiếu thu/chi không khớp hợp đồng. Giữ mã để đối chiếu.", 502, "INVALID_RESPONSE");
     setReceipt(result);
-    for (const queryKey of [["finance"], ["record"], ["catalogue"], ["overview"], ["contract-preparation"]])
+    for (const queryKey of [["finance"], ["record"], ["catalogue"], ["overview"], ["contract-preparation"], ["cashbook"], ["cashbook-accounts"], ["contract-history"]])
       void cache.invalidateQueries({ queryKey });
   }
   useEffect(() => {
@@ -68,7 +68,7 @@ export function usePaymentWrite(id: string, dirty: boolean) {
       if (current(original)) {
         setError((cause as Error).message);
         if (cause instanceof ApiError && (cause.status === 0 || cause.status >= 500))
-          for (const queryKey of [["finance"], ["record"], ["catalogue"], ["overview"]]) void cache.invalidateQueries({ queryKey });
+          for (const queryKey of [["finance"], ["record"], ["catalogue"], ["overview"], ["cashbook"], ["cashbook-accounts"], ["contract-history"]]) void cache.invalidateQueries({ queryKey });
       }
     } finally { running.current = false; if (alive.current) setBusy(false); }
   }
@@ -89,12 +89,13 @@ export function usePaymentWrite(id: string, dirty: boolean) {
         if (!current(original)) return;
         setKey(null);
         setNotice("Máy chủ xác nhận chưa ghi thu/chi và đã khóa mã cũ. Nội dung đang nhập được giữ để rà soát lại.");
-        void cache.invalidateQueries({ queryKey: ["finance"] });
+        for (const queryKey of [["finance"], ["cashbook"], ["cashbook-accounts"], ["contract-history"]])
+          void cache.invalidateQueries({ queryKey });
       }
     } catch (cause) { if (current(original)) setError((cause as Error).message); }
     finally { running.current = false; if (alive.current) setChecking(false); }
   }
-  async function openReceipt() {
+  async function openReceipt(after?: () => void) {
     if (!scope || !receipt || !key || running.current) return;
     running.current = true; setChecking(true); setError("");
     const original = token.current;
@@ -102,7 +103,8 @@ export function usePaymentWrite(id: string, dirty: boolean) {
       await pendingWrites.complete(scope, operation, key);
       if (!current(original)) return;
       disablePrevention();
-      router.dismissTo({ pathname: "/finance/[id]", params: { id } });
+      if (after) after();
+      else router.dismissTo({ pathname: "/finance/[id]", params: { id } });
     } catch (cause) { if (current(original)) setError((cause as Error).message); }
     finally { running.current = false; if (alive.current) setChecking(false); }
   }

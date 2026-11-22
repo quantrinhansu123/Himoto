@@ -3,7 +3,7 @@ import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
 import { Text, type ScrollViewInstance, type TextInputInstance } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { STORE_KINDS, MOBILE_STORE_STATUSES, validateStoreCreation, validateStoreEdits, type StoreCreation, type MobileStoreProfile, type MobileStoreManagers } from "../../../shared/mobile-stores";
 import { useSession } from "@/providers/session";
 import { useStoreWrite } from "@/hooks/use-store-write";
@@ -29,8 +29,8 @@ function StoreForm({ profile, managers }: { profile: MobileStoreProfile | null; 
     if (Object.keys(next).length) { scroll.current?.scrollTo({ y: 0 }); requestAnimationFrame(() => inputs.current[Object.keys(next)[0]]?.focus()); return; }
     setConfirm(true);
   }
-  return <><KeyboardFormScrollView ref={scroll} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 20, paddingBottom: 24 + insets.bottom, gap: 18, maxWidth: 760, width: "100%", alignSelf: "center" }}>
-      <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 26, fontWeight: "800" }}>{profile ? "Chỉnh sửa cơ sở" : "Thêm cơ sở"}</Text>
+  return <SafeAreaView edges={["bottom", "left", "right"]} style={{ flex: 1, backgroundColor: theme.background }}><KeyboardFormScrollView ref={scroll} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, paddingBottom: 24 + insets.bottom, gap: 14, maxWidth: 760, width: "100%", alignSelf: "center" }}>
+      <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 20, fontWeight: "800" }}>{profile ? "Chỉnh sửa cơ sở" : "Thêm cơ sở"}</Text>
       {!!Object.keys(errors).length && <InlineError message="Kiểm tra các trường được đánh dấu trước khi lưu cơ sở." />}
       {write.pending && <InlineError message="Cơ sở còn yêu cầu chưa rõ kết quả. Mở Tài khoản để đối chiếu trước khi lưu tiếp." />}
       {!!write.error && <InlineError message={write.error} />}
@@ -48,7 +48,7 @@ function StoreForm({ profile, managers }: { profile: MobileStoreProfile | null; 
     </KeyboardFormScrollView>
     {confirm && <ConfirmEdit title={profile ? "Lưu thay đổi cơ sở?" : "Tạo cơ sở?"} message={`${form.name.trim()}\n${MOBILE_STORE_STATUSES.find(row => row.value === form.status)?.label}\nPhụ trách: ${choices.find(row => row.value === (form.user_id === null ? "" : String(form.user_id)))?.label}`} onCancel={() => setConfirm(false)} onConfirm={() => { setConfirm(false); void write.save(profile ? { ...details(), revision: profile.revision } : creation()); }} />}
     {write.exit && <ConfirmEdit title="Rời biểu mẫu cơ sở?" message="Thông tin chưa gửi trong biểu mẫu sẽ mất. Yêu cầu đã gửi vẫn giữ mã để đối chiếu trong Tài khoản." confirmLabel="Rời biểu mẫu" onCancel={write.cancelExit} onConfirm={write.leave} busy={write.busy} />}
-  </>;
+  </SafeAreaView>;
 }
 export function StoreEditor({ id }: { id: string | null }) {
   const { api, session } = useSession(), allowed = !!api && session!.user.permissions.includes("settings.write"), valid = id === null || /^[1-9]\d{0,14}$/.test(id);

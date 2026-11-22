@@ -29,7 +29,7 @@ export function useContractLifecycleWrite(id: string) {
       return { entry: null, result: null, context: await api!.contractLifecycle(id, signal) };
     } });
   const entry = pending || query.data?.entry || null, proof = receipt || query.data?.result || null;
-  function invalidate() { for (const queryKey of [['record'], ['catalogue'], ['overview'], ['finance'], ['renewal-preparation'], ['return-preparation'], ['vehicle']]) void cache.invalidateQueries({ queryKey }); }
+  function invalidate() { for (const queryKey of [['record'], ['catalogue'], ['overview'], ['finance'], ['renewal-preparation'], ['return-preparation'], ['vehicle'], ['cashbook'], ['cashbook-accounts'], ['contract-history']]) void cache.invalidateQueries({ queryKey }); }
   async function save(input: MobileLifecycleInput) {
     if (!api || !scope || query.isError || entry || running.current || !query.data?.context) return;
     const version = epoch.current.generation; running.current = true; setBusy(true); setError('');

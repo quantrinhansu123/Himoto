@@ -54,7 +54,7 @@ export function ReturnCorrectionEditor({ id, initialItem }: { id: string; initia
           {data.allReturned !== false && <Button secondary label="Bổ sung hoàn cọc" disabled={disabled || dirty}
             onPress={() => router.push({ pathname: '/deposit-refund/[id]/[itemId]', params: { id, itemId, event: data.eventKey } })} />}
           <Button secondary label="Ảnh và video lượt trả" disabled={disabled || dirty}
-            onPress={() => router.push({ pathname: '/record-media/[entity]/[id]', params: { entity: 'contracts', id, kind: 'return', referenceId: itemId } })} />
+            onPress={() => router.push({ pathname: '/record-media/[entity]/[id]', params: { entity: 'contracts', id, kind: 'return', referenceId: String(data.lines[0]?.id || itemId) } })} />
           <Button secondary label="Kiểm tra và gửi Telegram trả xe" disabled={disabled || dirty}
             onPress={() => router.push({ pathname: '/contract-telegram/[id]', params: { id, event: data.eventKey, eventKind: 'return', returnItemId: itemId } })} />
           {dirty && <Text style={muted}>Lưu các thay đổi của lượt trả để mở những thao tác trên.</Text>}

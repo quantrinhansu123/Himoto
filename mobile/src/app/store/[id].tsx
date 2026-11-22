@@ -2,12 +2,12 @@ import { useState } from "react";
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from "@tanstack/react-query";
 import { router, Stack, useLocalSearchParams } from "expo-router";
-import { Linking, ScrollView, Text } from "react-native";
+import { Linking, ScrollView, Text, View } from "react-native";
 import type { MobileStoreProfile } from "../../../../shared/mobile-stores";
 import { useSession } from "@/providers/session";
 import { useStoreWrite } from "@/hooks/use-store-write";
 import { useTheme } from "@/theme";
-import { Button, InlineError, StateView } from "@/components/ui";
+import { Button, Card, InlineError, ListActionRow, StateView } from "@/components/ui";
 import { StoreProfileCard } from "@/components/store-profile-card";
 import { WorkShiftCatalogue } from '@/components/work-shift-catalogue';
 import { ConfirmEdit } from "@/components/editor-sheet";
@@ -16,22 +16,31 @@ function StoreDetails({ row }: { row: MobileStoreProfile }) {
   const { session } = useSession(), theme = useTheme(), write = useStoreWrite(String(row.id), false);
   const [remove, setRemove] = useState(false), [contactError, setContactError] = useState("");
   const editable = session!.user.permissions.includes("settings.write"), phone = row.phone.replace(/[\s().-]/g, "");
+  const canCall = /^\+?\d{9,13}$/.test(phone);
   return <>
     <Stack.Screen options={{ title: row.name }} />
-    <SafeAreaView edges={['bottom','left','right']} style={{flex:1}}><ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40, gap: 16, maxWidth: 760, width: "100%", alignSelf: "center" }}>
+    <SafeAreaView edges={['bottom','left','right']} style={{flex:1,backgroundColor:theme.background}}><ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40, gap: 12, maxWidth: 760, width: "100%", alignSelf: "center" }}>
       <StoreProfileCard row={row} />
-      <WorkShiftCatalogue store={String(row.id)} />
+      {(editable || canCall) && (
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          {editable && <Button size="sm" equalWidth label="Chỉnh sửa cơ sở" disabled={write.busy || write.checking || write.pending} onPress={() => router.push({ pathname: "/store-editor/[id]", params: { id: String(row.id) } })} />}
+          {canCall && <Button size="sm" equalWidth secondary label={`Gọi ${phone}`} onPress={() => { setContactError(""); void Linking.openURL(`tel:${phone}`).catch(() => setContactError("Thiết bị chưa mở được cuộc gọi. Có thể sao chép số điện thoại ở trên.")); }} />}
+        </View>
+      )}
+      {!!contactError && <InlineError message={contactError} />}
       {!!write.error && <InlineError message={write.error} />}
       {write.pending && <InlineError message="Cơ sở còn yêu cầu chưa rõ kết quả. Mở Tài khoản để đối chiếu trước khi sửa hoặc xóa." />}
-      {(write.pending || write.error) && <Button secondary label="Mở Tài khoản để đối chiếu" onPress={() => router.push("/(tabs)/account")} />}
-      {editable && <Button label="Chỉnh sửa cơ sở" disabled={write.busy || write.checking || write.pending} onPress={() => router.push({ pathname: "/store-editor/[id]", params: { id: String(row.id) } })} />}
-      {!!contactError && <InlineError message={contactError} />}
-      {/^\+?\d{9,13}$/.test(phone) && <Button secondary label="Gọi điện cơ sở" onPress={() => { setContactError(""); void Linking.openURL(`tel:${phone}`).catch(() => setContactError("Thiết bị chưa mở được cuộc gọi. Có thể sao chép số điện thoại ở trên.")); }} />}
-      <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 18, fontWeight: "700" }}>Dữ liệu tại cơ sở</Text>
-      {session!.user.permissions.includes('contracts.read')&&<Button secondary label="Hợp đồng của cơ sở" onPress={()=>router.push({pathname:'/store-records/[id]/[kind]',params:{id:String(row.id),kind:'contracts'}})}/>}
-      {session!.user.permissions.includes("finance.read") && <Button secondary label="Sổ quỹ / Sổ két của cơ sở" onPress={() => router.push({ pathname: "/cashbook", params: { store: String(row.id) } })} />}
-      {([{ kind: "staff", permission: "hr.read", label: "Nhân sự của cơ sở" }, { kind: "vehicles", permission: "vehicles.read", label: "Xe tại cơ sở" }, { kind: "customers", permission: "customers.read", label: "Khách hàng của cơ sở" }] as const).filter(link => session!.user.permissions.includes(link.permission)).map(link => <Button key={link.kind} secondary label={link.label} onPress={() => router.push({ pathname: "/store-records/[id]/[kind]", params: { id: String(row.id), kind: link.kind } })} />)}
-      {editable && <Button secondary label="Xóa cơ sở" disabled={write.busy || write.checking || write.pending} onPress={() => setRemove(true)} />}
+      {(write.pending || write.error) && <Button size="sm" secondary label="Mở Tài khoản để đối chiếu" onPress={() => router.push("/(tabs)/account")} />}
+      <WorkShiftCatalogue store={String(row.id)} />
+      <Card style={{ gap: 2, padding: 14 }}>
+        <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 16, fontWeight: "800", marginBottom: 4 }}>Dữ liệu tại cơ sở</Text>
+        {session!.user.permissions.includes('contracts.read') && <ListActionRow title="Hợp đồng của cơ sở" subtitle="Xem danh sách & công nợ hợp đồng" onPress={() => router.push({ pathname: '/store-records/[id]/[kind]', params: { id: String(row.id), kind: 'contracts' } })} />}
+        {session!.user.permissions.includes("finance.read") && <ListActionRow title="Sổ quỹ / Sổ két của cơ sở" subtitle="Xem thu chi & số dư tài khoản" onPress={() => router.push({ pathname: "/cashbook", params: { store: String(row.id) } })} />}
+        {([{ kind: "staff", permission: "hr.read", label: "Nhân sự của cơ sở", sub: `${row.staffCount} nhân sự` }, { kind: "vehicles", permission: "vehicles.read", label: "Xe tại cơ sở", sub: `${row.vehicleCount} xe` }, { kind: "customers", permission: "customers.read", label: "Khách hàng của cơ sở", sub: "Danh sách khách tiếp nhận" }] as const).filter(link => session!.user.permissions.includes(link.permission)).map(link => (
+          <ListActionRow key={link.kind} title={link.label} subtitle={link.sub} onPress={() => router.push({ pathname: "/store-records/[id]/[kind]", params: { id: String(row.id), kind: link.kind } })} />
+        ))}
+      </Card>
+      {editable && <Button size="sm" secondary danger label="Xóa cơ sở" disabled={write.busy || write.checking || write.pending} onPress={() => setRemove(true)} />}
     </ScrollView></SafeAreaView>
     {remove && <ConfirmEdit title="Xóa cơ sở?" message={`${row.code} · ${row.name}\nChỉ xóa được cơ sở không có dữ liệu liên quan, kể cả dữ liệu lưu trữ. Thao tác xóa không thể hoàn tác. Có thể chọn Tạm ngừng trong Chỉnh sửa cơ sở để giữ lịch sử.`} confirmLabel="Xóa cơ sở" busy={write.busy} onCancel={() => setRemove(false)} onConfirm={() => { setRemove(false); void write.save({ revision: row.revision }, true); }} />}
     {write.exit && <ConfirmEdit title="Rời hồ sơ cơ sở?" message="Yêu cầu đã gửi vẫn giữ mã trong Tài khoản để đối chiếu. Kiểm tra kết quả trước khi gửi yêu cầu mới." confirmLabel="Rời hồ sơ" busy={write.busy} onCancel={write.cancelExit} onConfirm={write.leave} />}

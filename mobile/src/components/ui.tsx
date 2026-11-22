@@ -124,12 +124,14 @@ export function KeyValueRow({
   value,
   valueColor,
   strong = false,
+  emphasize = false,
   selectable = false,
 }: {
   label: string;
   value: string | number | null | undefined;
   valueColor?: string;
   strong?: boolean;
+  emphasize?: boolean;
   selectable?: boolean;
 }) {
   const theme = useTheme();
@@ -144,7 +146,7 @@ export function KeyValueRow({
           styles.kvValue,
           {
             color: valueColor || theme.text,
-            fontWeight: strong ? "700" : "600",
+            fontWeight: strong || emphasize ? "700" : "600",
           },
         ]}
       >
@@ -207,19 +209,22 @@ export function Chip({
 
 export function SegmentedBar<T extends string>({
   options,
+  items,
   value,
   onChange,
   disabled = false,
   scrollable = false,
 }: {
-  options: readonly { value: T; label: string; count?: number }[];
+  options?: readonly { value: T; label: string; count?: number }[];
+  items?: readonly { value: T; label: string; count?: number }[];
   value: T;
   onChange: (next: T) => void;
   disabled?: boolean;
   scrollable?: boolean;
 }) {
   const theme = useTheme();
-  const content = options.map((opt) => {
+  const list = options ?? items ?? [];
+  const content = list.map((opt) => {
     const active = opt.value === value;
     return (
       <Pressable
@@ -432,8 +437,11 @@ export function PaginationBar({
   unit = "kết quả",
   summary,
   disabled = false,
+  loading = false,
   hasNext,
   onChange,
+  onPrev,
+  onNext,
 }: {
   page: number;
   pages?: number;
@@ -441,14 +449,18 @@ export function PaginationBar({
   unit?: string;
   summary?: string;
   disabled?: boolean;
+  loading?: boolean;
   hasNext?: boolean;
-  onChange: (nextPage: number) => void;
+  onChange?: (nextPage: number) => void;
+  onPrev?: () => void;
+  onNext?: () => void;
 }) {
   const theme = useTheme();
-  const canPrev = page > 1 && !disabled;
+  const isDisabled = disabled || loading;
+  const canPrev = page > 1 && !isDisabled;
   const canNext =
     (hasNext !== undefined ? hasNext : pages !== undefined ? page < pages : false) &&
-    !disabled;
+    !isDisabled;
   if (page <= 1 && !canNext && (pages === undefined || pages <= 1)) {
     return summary ? (
       <Text
@@ -479,7 +491,7 @@ export function PaginationBar({
         accessibilityRole="button"
         accessibilityLabel="Trang trước"
         disabled={!canPrev}
-        onPress={() => onChange(page - 1)}
+        onPress={() => (onPrev ? onPrev() : onChange?.(page - 1))}
         style={({ pressed }) => [
           styles.pageBtn,
           {
@@ -510,7 +522,7 @@ export function PaginationBar({
         accessibilityRole="button"
         accessibilityLabel="Trang sau"
         disabled={!canNext}
-        onPress={() => onChange(page + 1)}
+        onPress={() => (onNext ? onNext() : onChange?.(page + 1))}
         style={({ pressed }) => [
           styles.pageBtn,
           {

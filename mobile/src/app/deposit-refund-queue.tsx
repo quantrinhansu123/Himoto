@@ -42,7 +42,7 @@ function Queue() {
     setSaved(row);
     setSelected(undefined);
     setPage(1);
-    for (const key of ['deposit-refund', 'deposit-refund-queue', 'return-correction-profile', 'cashbook', 'cashbook-accounts', 'contract-history', 'telegram']) {
+    for (const key of ['deposit-refund', 'deposit-refund-queue', 'return-correction-profile', 'record', 'catalogue', 'finance', 'cashbook', 'cashbook-accounts', 'contract-history', 'telegram']) {
       void cache.invalidateQueries({ queryKey: [key] });
     }
   }
@@ -68,11 +68,11 @@ function Queue() {
   const refresh = () => {
     if (!selected) void query.refetch();
   };
-  return <SafeAreaView edges={['left', 'right', 'bottom']} style={{ flex: 1 }}>
+  return <SafeAreaView edges={['left', 'right', 'bottom']} style={{ flex: 1, backgroundColor: theme.background }}>
     <KeyboardFormScrollView contentContainerStyle={{ padding: 20, gap: 16, paddingBottom: 40, width: '100%', maxWidth: 760, alignSelf: 'center' }}
       refreshControl={selected ? undefined : <RefreshControl refreshing={query.isRefetching} onRefresh={refresh} tintColor={theme.primary} />}>
       {selected ? <>
-        <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 24, fontWeight: '800' }}>Duyệt hoàn cọc · {selected.code}</Text>
+        <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 22, fontWeight: '800' }}>Duyệt hoàn cọc · {selected.code}</Text>
         <DepositRefundRequestCard key={selected.id} row={selected} showPhoto />
         {!!selected.replaces_id && <Text style={muted}>Khi duyệt, hệ thống hủy hiệu lực phiếu #{selected.replaces_id} và ghi phiếu thay thế.</Text>}
         {own
@@ -81,7 +81,7 @@ function Queue() {
               editable={!busy} onChangeText={value => { setNote(value); setError(''); }} />}
         {!!error && <InlineError message={error} />}
         {!own && <View style={{ flexDirection: 'row', gap: 10 }}>
-          <Button equalWidth secondary label="Từ chối" disabled={busy} onPress={() => review('reject')} />
+          <Button equalWidth secondary danger label="Từ chối" disabled={busy} onPress={() => review('reject')} />
           <Button equalWidth label="Duyệt và ghi phiếu chi" loading={busy} onPress={() => review('approve')} />
         </View>}
         <Button secondary label="Về danh sách chờ duyệt" disabled={busy} onPress={() => { setSelected(undefined); setError(''); }} />

@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
-import { Text } from 'react-native';
+import { Text, View } from 'react-native';
 import { useSession } from '@/providers/session';
 import { dateTime, useTheme } from '@/theme';
-import { Button, Card, InlineError } from './ui';
+import { Button, Card, InlineError, KeyValueRow, StatusBadge } from './ui';
 
 export function ContractApprovalSummary({ id }: { id: string }) {
   const { api, session } = useSession(), theme = useTheme();
@@ -13,9 +13,12 @@ export function ContractApprovalSummary({ id }: { id: string }) {
   if (query.isError) return <Card style={{ gap: 12 }}><InlineError message="Chưa kiểm tra được trạng thái duyệt hợp đồng." /><Button secondary label="Kiểm tra lại trạng thái duyệt" onPress={() => void query.refetch()} /></Card>;
   const state = query.data.approval;
   if (!state) return null;
-  return <Card style={{ gap: 12 }}>
-    <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 18, fontWeight: '700' }}>Duyệt thuê sở hữu</Text>
-    <Text style={{ color: theme.muted, lineHeight: 22 }}>{state.approved_at ? `Đã duyệt bởi ${state.approved_by || 'Chưa rõ người duyệt'} · ${dateTime(state.approved_at)}` : state.status === 'draft' ? 'Bản nháp cần được kiểm tra và phát hành trước.' : 'Hợp đồng chưa được duyệt.'}</Text>
-    <Button secondary label="Kiểm tra và duyệt hợp đồng" onPress={() => router.push({ pathname: '/contract-approval/[id]', params: { id } })} />
+  return <Card style={{ gap: 10 }}>
+    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+      <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 17, fontWeight: '800' }}>Duyệt thuê sở hữu</Text>
+      <StatusBadge status={state.approved_at ? 'approved' : 'pending'} label={state.approved_at ? 'Đã duyệt' : 'Chờ duyệt'} />
+    </View>
+    <KeyValueRow label="Chi tiết duyệt" value={state.approved_at ? `${state.approved_by || 'Chưa rõ người duyệt'} · ${dateTime(state.approved_at)}` : state.status === 'draft' ? 'Bản nháp cần được kiểm tra và phát hành trước.' : 'Hợp đồng chưa được duyệt.'} />
+    <Button size="sm" secondary label="Kiểm tra và duyệt hợp đồng" onPress={() => router.push({ pathname: '/contract-approval/[id]', params: { id } })} />
   </Card>;
 }

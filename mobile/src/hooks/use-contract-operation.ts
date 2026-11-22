@@ -29,7 +29,7 @@ export function useContractOperation(id: string, action: ContractOperation) {
   const locked = busy || !pending.isSuccess || pending.isFetching || !!pending.data || query.isError || query.isFetching;
 
   function refresh() {
-    for (const key of ['contract-operation', 'record', 'catalogue', 'contract-finance', 'contract-history', 'cashbook', 'cashbook-accounts', 'telegram']) {
+    for (const key of ['contract-operation', 'record', 'catalogue', 'finance', 'contract-history', 'cashbook', 'cashbook-accounts', 'telegram']) {
       void cache.invalidateQueries({ queryKey: [key] });
     }
   }

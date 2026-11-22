@@ -211,22 +211,22 @@ export default function Account() {
           <ListActionRow
             title="Đổi mật khẩu tài khoản"
             subtitle="Cập nhật mật khẩu đăng nhập hệ thống"
-            icon={<KeyRound size={18} color="#2563EB" accessible={false} />}
-            iconBg="#EFF6FF"
+            icon={<KeyRound size={18} color={theme.info} accessible={false} />}
+            iconBg={theme.infoBackground}
             onPress={() => router.push("/change-password")}
           />
           <ListActionRow
             title="Hướng dẫn và hỏi đáp"
             subtitle="Quy trình thao tác, sổ tay 17 chương & FAQ"
-            icon={<BookOpen size={18} color="#059669" accessible={false} />}
-            iconBg="#ECFDF5"
+            icon={<BookOpen size={18} color={theme.success} accessible={false} />}
+            iconBg={theme.successBackground}
             onPress={() => router.push("/guide")}
           />
           <ListActionRow
             title="Dữ liệu offline & Đồng bộ"
             subtitle="Theo dõi bản nháp lưu máy và phiên chờ gửi"
-            icon={<CloudOff size={18} color="#D97706" accessible={false} />}
-            iconBg="#FEF3C7"
+            icon={<CloudOff size={18} color={theme.warning} accessible={false} />}
+            iconBg={theme.warningBackground}
             onPress={() => router.navigate("/offline-sync")}
           />
           <ListActionRow
@@ -237,8 +237,8 @@ export default function Account() {
             }
             subtitle="Cập nhật tính năng mới trực tiếp (không cần cài lại APK)"
             rightText={versionText}
-            icon={<RefreshCw size={18} color="#7C3AED" accessible={false} />}
-            iconBg="#F5F3FF"
+            icon={<RefreshCw size={18} color={theme.accent} accessible={false} />}
+            iconBg={theme.accentBackground}
             loading={checkingUpdate}
             divider={false}
             onPress={() => {

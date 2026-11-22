@@ -1,6 +1,6 @@
 import { KeyboardFormScrollView } from "./keyboard-form-scroll-view";
 import {useEffect,useRef,useState} from 'react';
-import {Keyboard,Pressable,Text,type ScrollViewInstance} from 'react-native';
+import {Keyboard,Pressable,Text,View,type ScrollViewInstance} from 'react-native';
 import {keepPreviousData,useQuery} from '@tanstack/react-query';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import type {MobileRecoveryInput,MobileRecoveryItem,MobileRecoveryPreparation,MobileRecoveryPreview} from '../../../shared/mobile-bad-debt-recovery';
@@ -10,7 +10,7 @@ import {useReducedMotion} from '@/hooks/use-reduced-motion';
 import {recoveryFormInput} from '@/lib/recovery-form';
 import {returnLocalTime} from '@/lib/return-form';
 import {dateTime,money,statuses,useTheme} from '@/theme';
-import {Button,Card,InlineError,StateView} from './ui';
+import {Button,Card,InlineError,KeyValueRow,StateView,StatusBadge} from './ui';
 import {FormField} from './form-fields';
 import {RentalDateTime} from './rental-date-time';
 import {ConfirmEdit} from './editor-sheet';
@@ -87,14 +87,14 @@ function RecoveryForm({id}:{id:string}) {
   </Card>);
   const data=query.data,amount=(v:number|null)=>v===null?'Chưa đối chiếu':money(v);
   return frame(<>
-    <Text accessibilityRole="header" style={{color:theme.text,fontSize:26,fontWeight:'800'}}>Thu hồi xe nợ xấu</Text>
-    <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>Bước {step+1}/3 · {selection?.order.code||data?.code||'Hợp đồng'}</Text>
+    <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'800'}}>Thu hồi xe nợ xấu</Text>
+    <Text style={{color:theme.muted,fontSize:14,lineHeight:21}}>Bước {step+1}/3 · {selection?.order.code||data?.code||'Hợp đồng'}</Text>
     {!!(error||action.error)&&<InlineError message={error||action.error}/>}
-    {!!action.notice&&<Text accessibilityLiveRegion="polite" style={{color:theme.text,fontSize:16,lineHeight:25}}>{action.notice}</Text>}
-    {step===0&&<Card style={{gap:16}}>
-      <Text accessibilityRole="header" style={{color:theme.text,fontSize:21,fontWeight:'700'}}>1. Chọn xe đã thu hồi</Text>
-      <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>Mỗi lần ghi nhận một xe đã nhận lại thực tế. Thao tác không thu tiền, hoàn cọc hoặc xóa nợ.</Text>
-      {!!selection&&<Text style={{color:theme.text,fontSize:17,fontWeight:'700'}}>Đã chọn: {selection.item.license||selection.item.name}</Text>}
+    {!!action.notice&&<Text accessibilityLiveRegion="polite" style={{color:theme.text,fontSize:14,lineHeight:21}}>{action.notice}</Text>}
+    {step===0&&<Card style={{gap:14}}>
+      <Text accessibilityRole="header" style={{color:theme.text,fontSize:18,fontWeight:'700'}}>1. Chọn xe đã thu hồi</Text>
+      <Text style={{color:theme.muted,fontSize:13.5,lineHeight:20}}>Mỗi lần ghi nhận một xe đã nhận lại thực tế. Thao tác không thu tiền, hoàn cọc hoặc xóa nợ.</Text>
+      {!!selection&&<KeyValueRow label="Đã chọn xe" value={selection.item.license||selection.item.name} emphasize />}
       {query.isError&&<InlineError message={(query.error as Error).message}/>}
       {query.isFetching&&<Text style={{color:theme.muted}}>Đang tải xe…</Text>}
       {!!data?.blockedReason&&<InlineError message={data.blockedReason}/>}
@@ -102,51 +102,65 @@ function RecoveryForm({id}:{id:string}) {
         accessibilityState={{checked:selection?.item.id===row.id,disabled:locked||query.isFetching||!row.available}} disabled={locked||query.isFetching||!row.available}
         onPress={()=>{setSelection({order:data,item:row});clearReview();}}
         style={{minHeight:64,gap:6,padding:14,borderRadius:12,borderWidth:selection?.item.id===row.id?2:1,borderColor:selection?.item.id===row.id?theme.primary:theme.border,opacity:row.available?1:0.65}}>
-        <Text style={{color:theme.text,fontSize:17,fontWeight:'700'}}>{row.license||('Xe #'+row.vehicleId)}</Text>
-        <Text style={{color:theme.muted,fontSize:15,lineHeight:23}}>{row.name}</Text>
-        {!!row.completedAt&&<Text style={{color:theme.muted,fontSize:15,lineHeight:23}}>Đã nhận lại: {dateTime(row.completedAt)}</Text>}
-        {!!row.blockedReason&&<Text style={{color:theme.warning,fontSize:15,lineHeight:23}}>{row.blockedReason}</Text>}
+        <Text style={{color:theme.text,fontSize:16,fontWeight:'700'}}>{row.license||('Xe #'+row.vehicleId)}</Text>
+        <Text style={{color:theme.muted,fontSize:14,lineHeight:21}}>{row.name}</Text>
+        {!!row.completedAt&&<Text style={{color:theme.muted,fontSize:14,lineHeight:21}}>Đã nhận lại: {dateTime(row.completedAt)}</Text>}
+        {!!row.blockedReason&&<Text style={{color:theme.warning,fontSize:14,lineHeight:21}}>{row.blockedReason}</Text>}
       </Pressable>)}
-      {data?.items.total===0&&<Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>Không có dòng xe cần thu hồi.</Text>}
-      {data&&<Text style={{color:theme.muted,fontSize:15}}>Trang {data.items.page}/{data.items.pages} · {data.items.total} dòng xe</Text>}
-      <Button label="Trang xe thu hồi trước" secondary disabled={locked||query.isFetching||page===1} onPress={()=>{setPage(p=>p-1);top();}}/>
-      <Button label="Trang xe thu hồi tiếp" secondary disabled={locked||query.isFetching||!data||page>=data.items.pages} onPress={()=>{setPage(p=>p+1);top();}}/>
+      {data?.items.total===0&&<Text style={{color:theme.muted,fontSize:14,lineHeight:21}}>Không có dòng xe cần thu hồi.</Text>}
+      {data&&<Text style={{color:theme.muted,fontSize:13.5}}>Trang {data.items.page}/{data.items.pages} · {data.items.total} dòng xe</Text>}
+      <View style={{flexDirection:'row',gap:10}}>
+        <Button size="sm" equalWidth label="Trang xe thu hồi trước" secondary disabled={locked||query.isFetching||page===1} onPress={()=>{setPage(p=>p-1);top();}}/>
+        <Button size="sm" equalWidth label="Trang xe thu hồi tiếp" secondary disabled={locked||query.isFetching||!data||page>=data.items.pages} onPress={()=>{setPage(p=>p+1);top();}}/>
+      </View>
       <Button label="Tải lại xe cần thu hồi" secondary loading={query.isFetching} disabled={locked} onPress={()=>selection?setReload(true):void query.refetch()}/>
       <Button label="Nhập ngày thu hồi" disabled={locked||!selection||query.isFetching||query.isError} onPress={()=>{setStep(1);top();}}/>
     </Card>}
-    {step===1&&selection&&<Card style={{gap:16}}>
-      <Text accessibilityRole="header" style={{color:theme.text,fontSize:21,fontWeight:'700'}}>2. Ngày thu hồi và ghi chú</Text>
-      <Text style={{color:theme.text,fontSize:18,fontWeight:'700'}}>{selection.item.license||selection.item.name}</Text>
-      <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>Nhận xe từ: {selection.item.startsAt?dateTime(selection.item.startsAt):'Chưa có ngày'}{selection.order.ownership?' · Thuê sở hữu':''}</Text>
-      <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>Ngày và giờ thực tế theo giờ Việt Nam.</Text>
+    {step===1&&selection&&<Card style={{gap:14}}>
+      <Text accessibilityRole="header" style={{color:theme.text,fontSize:18,fontWeight:'700'}}>2. Ngày thu hồi và ghi chú</Text>
+      <View style={{gap:2}}>
+        <KeyValueRow label="Xe thu hồi" value={selection.item.license||selection.item.name} emphasize />
+        <KeyValueRow label="Nhận xe từ" value={`${selection.item.startsAt?dateTime(selection.item.startsAt):'Chưa có ngày'}${selection.order.ownership?' · Thuê sở hữu':''}`} />
+      </View>
+      <Text style={{color:theme.muted,fontSize:13.5,lineHeight:20}}>Ngày và giờ thực tế theo giờ Việt Nam.</Text>
       <RentalDateTime label="thu hồi thực tế" value={recoveredAt} onChange={v=>{setRecoveredAt(v);clearReview();}} disabled={locked}/>
       <FormField label="Ghi chú thu hồi" hint="Tối đa 1.000 ký tự" value={note} onChangeText={v=>{setNote(v);clearReview();}} editable={!locked} multiline maxLength={1000}/>
       <Button label="Rà soát thu hồi xe" loading={previewing} disabled={locked} onPress={()=>{void preview();}}/>
-      <Button label="Chọn lại xe thu hồi" secondary disabled={locked} onPress={()=>{clearReview();setStep(0);top();}}/>
-      <Button label="Tải lại xe cần thu hồi" secondary disabled={locked} onPress={()=>setReload(true)}/>
+      <View style={{flexDirection:'row',gap:10}}>
+        <Button size="sm" equalWidth label="Chọn lại xe thu hồi" secondary disabled={locked} onPress={()=>{clearReview();setStep(0);top();}}/>
+        <Button size="sm" equalWidth label="Tải lại xe cần thu hồi" secondary disabled={locked} onPress={()=>setReload(true)}/>
+      </View>
     </Card>}
     {step===2&&review&&input&&<>
-      <Card style={{gap:16}}>
-        <Text accessibilityRole="header" style={{color:theme.text,fontSize:21,fontWeight:'700'}}>3. Rà soát thu hồi xe</Text>
-        <Text style={{color:theme.text,fontSize:19,fontWeight:'700'}}>{review.item.license||('Xe #'+review.item.vehicleId)}</Text>
-        <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>{review.item.name}{review.ownership?' · Thuê sở hữu':''}</Text>
-        <Text style={{color:theme.text,fontSize:17,lineHeight:26}}>Thu hồi thực tế: {dateTime(review.recoveredAt)}</Text>
-        {!!review.note&&<Text style={{color:theme.text,fontSize:16,lineHeight:25}}>{review.note}</Text>}
-        <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>Mốc chốt nợ: {review.billingStoppedAt?dateTime(review.billingStoppedAt):review.badDebtAt?dateTime(review.badDebtAt):'Chưa có mốc'}</Text>
+      <Card style={{gap:12}}>
+        <Text accessibilityRole="header" style={{color:theme.text,fontSize:18,fontWeight:'700'}}>3. Rà soát thu hồi xe</Text>
+        <View style={{gap:2}}>
+          <KeyValueRow label="Biển số" value={review.item.license||('Xe #'+review.item.vehicleId)} emphasize />
+          <KeyValueRow label="Tên xe" value={`${review.item.name}${review.ownership?' · Thuê sở hữu':''}`} />
+          <KeyValueRow label="Thu hồi thực tế" value={dateTime(review.recoveredAt)} emphasize />
+          <KeyValueRow label="Mốc chốt nợ" value={review.billingStoppedAt?dateTime(review.billingStoppedAt):review.badDebtAt?dateTime(review.badDebtAt):'Chưa có mốc'} />
+          {!!review.note&&<KeyValueRow label="Ghi chú" value={review.note} />}
+        </View>
       </Card>
-      <Card style={{gap:14}}>
-        <Text accessibilityRole="header" style={{color:theme.text,fontSize:21,fontWeight:'700'}}>Giữ nguyên số dư và cọc</Text>
-        <Text style={{color:theme.text,fontSize:17,lineHeight:26}}>Tổng thuê: {amount(review.after.totalAmount)}</Text>
-        <Text style={{color:theme.text,fontSize:17,lineHeight:26}}>Đã thu thuê: {amount(review.after.rentalPaid)}</Text>
-        <Text style={{color:theme.text,fontSize:17,lineHeight:26}}>Còn nợ thuê: {amount(review.after.rentalRemaining)}</Text>
-        <Text style={{color:theme.text,fontSize:17,lineHeight:26}}>Cọc đang giữ: {amount(review.after.depositHeld)}</Text>
-        <Text style={{color:theme.text,fontSize:17,lineHeight:26}}>Số xe còn giữ sau thu hồi: {review.after.remainingItems}</Text>
-        <Text style={{color:theme.text,fontSize:17,lineHeight:26}}>Trạng thái sau ghi: {statuses[review.after.status]||review.after.status}</Text>
-        <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>Thu hồi xe không xóa khoản nợ và không phát sinh thu/hoàn tiền. Xe chỉ sẵn sàng bàn giao tiếp khi đáp ứng tình trạng kho hiện tại.</Text>
+      <Card style={{gap:12}}>
+        <View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center',gap:8}}>
+          <Text accessibilityRole="header" style={{color:theme.text,fontSize:18,fontWeight:'700'}}>Giữ nguyên số dư và cọc</Text>
+          <StatusBadge status={review.after.status} label={statuses[review.after.status]||review.after.status} />
+        </View>
+        <View style={{gap:2}}>
+          <KeyValueRow label="Tổng thuê" value={amount(review.after.totalAmount)} />
+          <KeyValueRow label="Đã thu thuê" value={amount(review.after.rentalPaid)} />
+          <KeyValueRow label="Còn nợ thuê" value={amount(review.after.rentalRemaining)} emphasize />
+          <KeyValueRow label="Cọc đang giữ" value={amount(review.after.depositHeld)} />
+          <KeyValueRow label="Số xe còn giữ sau thu hồi" value={String(review.after.remainingItems)} />
+        </View>
+        <Text style={{color:theme.muted,fontSize:13.5,lineHeight:20}}>Thu hồi xe không xóa khoản nợ và không phát sinh thu/hoàn tiền. Xe chỉ sẵn sàng bàn giao tiếp khi đáp ứng tình trạng kho hiện tại.</Text>
       </Card>
       <Button label="Ghi thu hồi xe nợ xấu" disabled={locked} onPress={()=>setConfirm(true)}/>
-      <Button label="Sửa ngày hoặc ghi chú thu hồi" secondary disabled={locked} onPress={()=>{clearReview();setStep(1);top();}}/>
-      <Button label="Tải lại xe cần thu hồi" secondary disabled={locked} onPress={()=>setReload(true)}/>
+      <View style={{flexDirection:'row',gap:10}}>
+        <Button size="sm" equalWidth label="Sửa ngày hoặc ghi chú thu hồi" secondary disabled={locked} onPress={()=>{clearReview();setStep(1);top();}}/>
+        <Button size="sm" equalWidth label="Tải lại xe cần thu hồi" secondary disabled={locked} onPress={()=>setReload(true)}/>
+      </View>
     </>}
   </>);
 }

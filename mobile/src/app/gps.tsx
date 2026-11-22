@@ -8,6 +8,7 @@ import * as Linking from 'expo-linking';
 import {HelpCircle,MapPin,RefreshCw,Search,SlidersHorizontal,X} from 'lucide-react-native';
 import {Button,Card,Chip,InfoBanner,InlineError,KeyValueRow,PaginationBar,SegmentedBar,SkeletonList,StateView,StatusBadge} from '@/components/ui';
 import {ChoiceField} from '@/components/form-fields';
+import {useDebouncedValue} from '@/hooks/use-debounced-value';
 import {useGps,useGpsHistory,useGpsEventOptions,useGpsSyncState} from '@/hooks/use-gps';
 import {useSession} from '@/providers/session';
 import {useTheme,statuses} from '@/theme';
@@ -18,8 +19,9 @@ const date=(value:string|null|undefined)=>value?new Date(value).toLocaleString('
 const eventLabels:Record<string,string>={connection_online:'Kết nối trở lại',connection_offline:'Mất kết nối',ignition_on:'Bật khóa điện',ignition_off:'Tắt khóa điện'};
 export default function GpsScreen() {
   const theme=useTheme(),{api,session}=useSession(),cache=useQueryClient();
-  const [filters,setFilters]=useState<MobileGpsQuery>({...defaultGpsQuery}),[search,setSearch]=useState(''),[mode,setMode]=useState<'devices'|'events'>('devices');
-  const query=useGps(filters,mode==='devices'),history=useGpsHistory(filters,mode==='events'),options=useGpsEventOptions(filters.store,mode==='events');
+  const [filters,setFilters]=useState<MobileGpsQuery>({...defaultGpsQuery}),[search,setSearch]=useState(''),debouncedSearch=useDebouncedValue(search,300),[mode,setMode]=useState<'devices'|'events'>('devices');
+  const activeFilters:MobileGpsQuery=mode==='devices'&&debouncedSearch!==filters.search?{...filters,search:debouncedSearch,page:1}:filters;
+  const query=useGps(activeFilters,mode==='devices'),history=useGpsHistory(filters,mode==='events'),options=useGpsEventOptions(filters.store,mode==='events');
   const [syncing,setSyncing]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[requestedAt,setRequestedAt]=useState<string|null>(null);
   const syncState=useGpsSyncState(!!requestedAt),currentRead=mode==='devices'?query:history,refreshCurrent=currentRead.refetch;
   const alive=useRef(true),syncBusy=useRef(false),visible=useRef(false);
@@ -106,47 +108,49 @@ export default function GpsScreen() {
           <Button size="sm" icon={<RefreshCw size={14} color={theme.primaryText} />} label={syncing?'Đang đồng bộ…':'Đồng bộ'} loading={syncing} onPress={()=>void sync()} />
         </View>
         <SegmentedBar value={mode} onChange={setMode} options={[{value:'devices',label:'Thiết bị GPS'},{value:'events',label:'Lịch sử GPS'}]} />
-        <View style={{flexDirection:'row',gap:8}}>
-          <View style={{flex:1,flexDirection:'row',alignItems:'center',gap:8,borderWidth:1,borderRadius:10,borderColor:theme.controlBorder,backgroundColor:theme.surface,paddingHorizontal:11,minHeight:44}}>
-            <Search size={18} color={theme.muted} accessible={false} />
-            <TextInput
-              accessibilityLabel="Tìm nhanh GPS"
-              placeholder="Biển số, tên GPS, IMEI hoặc cơ sở…"
-              placeholderTextColor={theme.muted}
-              value={search}
-              onChangeText={setSearch}
-              maxLength={120}
-              returnKeyType="search"
-              onSubmitEditing={()=>filter({search})}
-              autoCorrect={false}
-              style={{flex:1,color:theme.text,fontSize:14.5,paddingVertical:8}}
-            />
-            {!!search&&<Pressable onPress={()=>{setSearch('');filter({search:''});}} hitSlop={8}><X size={17} color={theme.muted} /></Pressable>}
+        {mode==='devices'&&<>
+          <View style={{flexDirection:'row',gap:8}}>
+            <View style={{flex:1,flexDirection:'row',alignItems:'center',gap:8,borderWidth:1,borderRadius:10,borderColor:theme.controlBorder,backgroundColor:theme.surface,paddingHorizontal:11,minHeight:44}}>
+              <Search size={18} color={theme.muted} accessible={false} />
+              <TextInput
+                accessibilityLabel="Tìm nhanh GPS"
+                placeholder="Biển số, tên GPS, IMEI hoặc cơ sở…"
+                placeholderTextColor={theme.muted}
+                value={search}
+                onChangeText={setSearch}
+                maxLength={120}
+                returnKeyType="search"
+                onSubmitEditing={()=>filter({search})}
+                autoCorrect={false}
+                style={{flex:1,color:theme.text,fontSize:14.5,paddingVertical:8}}
+              />
+              {!!search&&<Pressable onPress={()=>{setSearch('');filter({search:''});}} hitSlop={8}><X size={17} color={theme.muted} /></Pressable>}
+            </View>
+            <Pressable accessibilityRole="button" accessibilityLabel="Bộ lọc GPS" onPress={()=>setFiltersOpen(old=>!old)} style={{minWidth:44,minHeight:44,paddingHorizontal:11,borderRadius:10,borderWidth:1,borderColor:filtersOpen||activeFilterCount?theme.primary:theme.controlBorder,backgroundColor:filtersOpen||activeFilterCount?theme.tint:theme.surface,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:4}}>
+              <SlidersHorizontal size={18} color={filtersOpen||activeFilterCount?theme.primary:theme.text} />
+              {!!activeFilterCount&&<Text style={{color:theme.primary,fontSize:12,fontWeight:'700'}}>{activeFilterCount}</Text>}
+            </Pressable>
           </View>
-          <Pressable accessibilityRole="button" accessibilityLabel="Bộ lọc GPS" onPress={()=>setFiltersOpen(old=>!old)} style={{minWidth:44,minHeight:44,paddingHorizontal:11,borderRadius:10,borderWidth:1,borderColor:filtersOpen||activeFilterCount?theme.primary:theme.controlBorder,backgroundColor:filtersOpen||activeFilterCount?theme.tint:theme.surface,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:4}}>
-            <SlidersHorizontal size={18} color={filtersOpen||activeFilterCount?theme.primary:theme.text} />
-            {!!activeFilterCount&&<Text style={{color:theme.primary,fontSize:12,fontWeight:'700'}}>{activeFilterCount}</Text>}
-          </Pressable>
-        </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap:7}}>
-          {GPS_FILTER_STATES.map(s=><Chip key={s} label={s==='all'?'Toàn bộ xe':GPS_STATE_LABELS[s]} count={data?(s==='all'?data.summary.fleet:data.summary.states[s]):undefined} selected={filters.state===s} onPress={()=>{if(s==='all'){setSearch('');filter({state:s,provider:'all',vehicle_status:'all',search:''});}else filter({state:filters.state===s?'all':s});}} />)}
-          <Chip label="Giải thích" selected={helpOpen} icon={<HelpCircle size={14} color={helpOpen?theme.primary:theme.text} />} onPress={()=>setHelpOpen(old=>!old)} />
-          {!!(filters.search||filters.state!=='all'||activeFilterCount)&&(
-            <Chip label="Xóa lọc" onPress={()=>{setSearch('');setFilters({...defaultGpsQuery});}} />
-          )}
-        </ScrollView>
-        {helpOpen&&<InfoBanner tone="info" title="Cách đọc trạng thái GPS" message="GPS tự cập nhật mỗi phút khi mở màn hình. ON/OFF là kết nối thiết bị, độc lập với khóa điện. Dữ liệu quá 10 phút hiện “Chưa cập nhật”. Dừng trên 3 ngày: hơn 72 giờ và tất cả thiết bị còn khả dụng của xe xác nhận." />}
-        {filtersOpen&&<Card style={{gap:10}}>
-          <ChoiceField label="Cơ sở GPS" value={filters.store} choices={[{value:'all',label:'Toàn bộ cơ sở'},...(query.data?.stores||[]).map(s=>({value:String(s.id),label:s.name}))]} onChange={store=>filter({store,event_device:''})} searchable/>
-          <ChoiceField label="Trạng thái xe" value={filters.vehicle_status} choices={[{value:'all',label:'Tất cả trạng thái xe'},{value:'ready',label:'Lưu kho'},{value:'using',label:'Đang thuê'},{value:'repairing',label:'Bảo dưỡng'},{value:'pending',label:'Đặt trước'},{value:'sold',label:'Đã bán'},{value:'bad_debt',label:'Nợ xấu'},{value:'broken',label:'Hỏng'},{value:'in_transit',label:'Chờ luân chuyển'}]} onChange={vehicle_status=>filter({vehicle_status:vehicle_status as MobileGpsQuery['vehicle_status']})}/>
-          <ChoiceField label="Nền tảng GPS" value={filters.provider} choices={[{value:'all',label:'Tất cả'},{value:'protrack',label:'Protrack'},{value:'iopgps',label:'IOPGPS'}]} onChange={provider=>filter({provider:provider as MobileGpsQuery['provider']})}/>
-          <Button size="sm" secondary label="Tìm theo từ khóa đã nhập" onPress={()=>filter({search})}/>
-          <FilteredListExport kind="gps" filters={new URLSearchParams({...filters,page:String(filters.page)}).toString()} disabled={query.isFetching||query.isError||!data?.total||search!==filters.search}/>
-        </Card>}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap:7}}>
+            {GPS_FILTER_STATES.map(s=><Chip key={s} label={s==='all'?'Toàn bộ xe':GPS_STATE_LABELS[s]} count={data?(s==='all'?data.summary.fleet:data.summary.states[s]):undefined} selected={filters.state===s} onPress={()=>{if(s==='all'){setSearch('');filter({state:s,provider:'all',vehicle_status:'all',search:''});}else filter({state:filters.state===s?'all':s});}} />)}
+            <Chip label="Giải thích" selected={helpOpen} icon={<HelpCircle size={14} color={helpOpen?theme.primary:theme.text} />} onPress={()=>setHelpOpen(old=>!old)} />
+            {!!(filters.search||filters.state!=='all'||activeFilterCount)&&(
+              <Chip label="Xóa lọc" onPress={()=>{setSearch('');setFilters({...defaultGpsQuery});}} />
+            )}
+          </ScrollView>
+          {helpOpen&&<InfoBanner tone="info" title="Cách đọc trạng thái GPS" message="GPS tự cập nhật mỗi phút khi mở màn hình. ON/OFF là kết nối thiết bị, độc lập với khóa điện. Dữ liệu quá 10 phút hiện “Chưa cập nhật”. Dừng trên 3 ngày: hơn 72 giờ và tất cả thiết bị còn khả dụng của xe xác nhận." />}
+          {filtersOpen&&<Card style={{gap:10}}>
+            <ChoiceField label="Cơ sở GPS" value={filters.store} choices={[{value:'all',label:'Toàn bộ cơ sở'},...(query.data?.stores||[]).map(s=>({value:String(s.id),label:s.name}))]} onChange={store=>filter({store,event_device:''})} searchable/>
+            <ChoiceField label="Trạng thái xe" value={filters.vehicle_status} choices={[{value:'all',label:'Tất cả trạng thái xe'},{value:'ready',label:'Lưu kho'},{value:'using',label:'Đang thuê'},{value:'repairing',label:'Bảo dưỡng'},{value:'pending',label:'Đặt trước'},{value:'sold',label:'Đã bán'},{value:'bad_debt',label:'Nợ xấu'},{value:'broken',label:'Hỏng'},{value:'in_transit',label:'Chờ luân chuyển'}]} onChange={vehicle_status=>filter({vehicle_status:vehicle_status as MobileGpsQuery['vehicle_status']})}/>
+            <ChoiceField label="Nền tảng GPS" value={filters.provider} choices={[{value:'all',label:'Tất cả'},{value:'protrack',label:'Protrack'},{value:'iopgps',label:'IOPGPS'}]} onChange={provider=>filter({provider:provider as MobileGpsQuery['provider']})}/>
+            <FilteredListExport kind="gps" filters={new URLSearchParams({...filters,page:String(filters.page)}).toString()} disabled={query.isFetching||query.isError||!data?.total||search.trim()!==filters.search.trim()}/>
+          </Card>}
+        </>}
         {!!(error||currentRead.error)&&<InlineError message={error||currentRead.error?.message||'Chưa tải được GPS.'}/>}
         {!!notice&&<InfoBanner tone="info" message={notice} />}
         {!!requestedAt&&syncState.isError&&<InlineError message="Chưa đọc được tiến độ đồng bộ. Dữ liệu gần nhất vẫn được giữ."/>}
         {mode==='events'?<Card style={{gap:10}}>
+          <ChoiceField label="Cơ sở GPS" value={filters.store} choices={[{value:'all',label:'Toàn bộ cơ sở'},...(query.data?.stores||[]).map(s=>({value:String(s.id),label:s.name}))]} onChange={store=>filter({store,event_device:''})} searchable/>
           <ChoiceField label="Nguồn lịch sử GPS" value={filters.event_source} choices={[{value:'all',label:'Tất cả nguồn'},{value:'poll',label:'Lấy mẫu'},{value:'history',label:'Nhật ký đọc bù'},{value:'webhook',label:'Sự kiện trực tiếp'}]} onChange={event_source=>filter({event_source:event_source as MobileGpsQuery['event_source']})}/>
           <ChoiceField label="Thiết bị trong lịch sử" value={filters.event_device} choices={[{value:'',label:'Tất cả thiết bị'},...(!options.isPlaceholderData?options.data?.devices||[]:[]).map(d=>({value:String(d.id),label:d.label}))]} onChange={event_device=>filter({event_device})} searchable/>
           {options.isError&&<><InlineError message="Chưa tải được bộ chọn thiết bị lịch sử."/><Button size="sm" label="Tải lại bộ chọn thiết bị" secondary onPress={()=>void options.refetch()}/></>}

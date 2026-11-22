@@ -43,7 +43,6 @@ import { useSession } from "@/providers/session";
 import { useGlobalBranch } from "@/providers/branch";
 import { useWorkspace } from "@/hooks/use-workspace";
 import { cardShadow, useTheme, roles } from "@/theme";
-import { WorkspaceLinks } from "@/components/workspace-links";
 import { ManagementDrawer } from "@/components/management-drawer";
 import { backfillActions } from "../../../../shared/mobile-backfill";
 
@@ -88,11 +87,6 @@ export default function Overview() {
     session?.user.permissions.includes(`${item.kind}.read`),
   );
 
-  const storeScope = (kind: CatalogueKind) => {
-    if (kind === "vehicles") return selectedStore;
-    return selectedStore;
-  };
-
   const queries = useQueries({
     queries: available.map((item) => ({
       queryKey: [
@@ -102,11 +96,7 @@ export default function Overview() {
         item.kind,
       ],
       queryFn: ({ signal }: { signal: AbortSignal }) =>
-        api!.catalogue(
-          item.kind,
-          `size=1&store=${storeScope(item.kind)}`,
-          signal,
-        ),
+        api!.catalogue(item.kind, `size=1&store=${selectedStore}`, signal),
       enabled: !!api,
       staleTime: 60_000,
       gcTime: 300_000,
@@ -133,10 +123,19 @@ export default function Overview() {
     gcTime: 120_000,
   });
 
+  const notificationsQuery = useQuery({
+    queryKey: ["notifications", session?.user.id],
+    queryFn: ({ signal }) => api!.notifications(signal),
+    enabled: !!api && typeof api.notifications === "function",
+    staleTime: 60_000,
+    gcTime: 300_000,
+  });
+
   const refresh = () => {
     void restore(true);
     void workspace.refetch();
     void operationsQuery.refetch();
+    void notificationsQuery.refetch();
     queries.forEach((query) => {
       void query.refetch();
     });
@@ -920,9 +919,6 @@ export default function Overview() {
           operationsQuery.isError) && (
           <InlineError message="Một số dữ liệu chưa tải được. Kéo xuống để thử lại." />
         )}
-
-        {/* Các liên kết hồ sơ mở rộng */}
-        <WorkspaceLinks />
 
         <Text
           style={{

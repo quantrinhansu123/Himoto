@@ -100,7 +100,7 @@ export function useContractAction(id: string, dirty: boolean) {
     // Only authentication/scope changes should restart recovery.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api, scope, id]);
-  function open(value: MobileWriteReceipt) {
+  function open(value: MobileWriteReceipt, after?: () => void) {
     setSaved(true);
     disablePrevention();
     for (const queryKey of [
@@ -109,8 +109,16 @@ export function useContractAction(id: string, dirty: boolean) {
       ["overview"],
       ["draft-edit"],
       ["contract-preparation"],
+      ["finance"],
+      ["cashbook"],
+      ["cashbook-accounts"],
+      ["contract-history"],
     ])
       void cache.invalidateQueries({ queryKey });
+    if (after) {
+      after();
+      return;
+    }
     router.dismissTo({
       pathname: "/record/[kind]/[id]",
       params: { kind: "contracts", id: String(value.id) },
@@ -171,13 +179,13 @@ export function useContractAction(id: string, dirty: boolean) {
       if (alive.current) setChecking(false);
     }
   }
-  async function openReceipt() {
+  async function openReceipt(after?: () => void) {
     if (!scope || !receipt || checking) return;
     setChecking(true);
     await pendingWrites
       .complete(scope, receipt.operation, receipt.key)
       .catch(() => {});
-    if (alive.current) open(receipt.value);
+    if (alive.current) open(receipt.value, after);
   }
   return {
     busy,

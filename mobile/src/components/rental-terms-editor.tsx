@@ -47,9 +47,10 @@ function defaults(initial: MobileRentalTerms, itemId: number): MobileRentalTerms
 function RentalTermsForm({ initial, disabled, onDirty, onReview }: { initial: MobileRentalTerms; disabled: boolean; onDirty: (value: boolean) => void; onReview: (input: MobileRentalTermsInput) => void }) {
   const defaultItem = initial.items.find(i => !i.completed_at) || initial.items[0];
   const theme = useTheme(), [input, setInput] = useState<MobileRentalTermsInput | null>(() => defaultItem ? defaults(initial, defaultItem.id) : null), [pick, setPick] = useState<number | null>(null), [error, setError] = useState('');
+  const [daysDraft, setDaysDraft] = useState<string | null>(null);
   const line = initial.items.find(i => i.id === input?.item_id), text = { color: theme.text, fontSize: 16, lineHeight: 24 }, muted = { color: theme.muted, fontSize: 14, lineHeight: 22 };
   const dirty = !!input && JSON.stringify(input) !== JSON.stringify(defaults(initial, input.item_id));
-  const days = input ? rentalDayCount(input.start_at, input.end_at) : '';
+  const days = daysDraft ?? (input ? rentalDayCount(input.start_at, input.end_at) : '');
   const nextTotalNum = input && /^\d+$/.test(input.total_amount) ? Number(input.total_amount) : null;
   const overpaidAfterEdit = nextTotalNum !== null && (initial.paid_amount ?? 0) > nextTotalNum;
   function change(next: MobileRentalTermsInput) { if (!disabled) { setInput(next); onDirty(JSON.stringify(next) !== JSON.stringify(defaults(initial, next.item_id))); setError(''); } }
@@ -69,9 +70,9 @@ function RentalTermsForm({ initial, disabled, onDirty, onReview }: { initial: Mo
     {input && line ? <>
       <ChoiceField label="Dòng xe sửa tiền / ngày thuê" value={String(input.item_id)} searchable disabled={disabled} choices={initial.items.map(i => ({ value: String(i.id), label: `${i.license || `Xe #${i.vehicle_id}`} · Dòng #${i.id}${i.completed_at ? ' · Đã trả' : ''}` }))} onChange={v => { if (Number(v) !== input.item_id) { if (dirty) setPick(Number(v)); else choose(Number(v)); } }} />
       <Card style={{ gap: 16 }}><Text style={text}>{line.license || `Xe #${line.vehicle_id}`}{line.completed_at ? ` · Đã trả thực tế ${dateTime(line.completed_at)}` : ' · Chưa ghi trả xe'}</Text>
-        <RentalDateTime label="nhận xe cần sửa" value={input.start_at} disabled={disabled} onChange={start_at => change({ ...input, start_at })} />
-        <FormField label="Số ngày thuê" value={days} keyboardType="number-pad" maxLength={4} editable={!disabled} onChangeText={v => { const nextEnd = addRentalDays(input.start_at, v.trim()); if (nextEnd) change({ ...input, end_at: nextEnd }); }} hint="Nhập số ngày để tự tính lại hạn trả xe." />
-        <RentalDateTime label="hẹn trả cần sửa" value={input.end_at} disabled={disabled} onChange={end_at => change({ ...input, end_at })} />
+        <RentalDateTime label="nhận xe cần sửa" value={input.start_at} disabled={disabled} onChange={start_at => { setDaysDraft(null); change({ ...input, start_at }); }} />
+        <FormField label="Số ngày thuê" value={days} keyboardType="number-pad" maxLength={4} editable={!disabled} onChangeText={v => { setDaysDraft(v); const nextEnd = addRentalDays(input.start_at, v.trim()); if (nextEnd) { setDaysDraft(null); change({ ...input, end_at: nextEnd }); } }} hint="Nhập số ngày để tự tính lại hạn trả xe." />
+        <RentalDateTime label="hẹn trả cần sửa" value={input.end_at} disabled={disabled} onChange={end_at => { setDaysDraft(null); change({ ...input, end_at }); }} />
         <FormField label="Đơn giá dòng xe (VND)" value={input.unit_price} keyboardType="number-pad" maxLength={13} editable={!disabled} onChangeText={unit_price => change({ ...input, unit_price })} hint="Để trống để giữ đơn giá cũ; 0 là sửa đơn giá về 0." />
         <FormField label="Tổng tiền hợp đồng sau sửa (VND)" value={input.total_amount} keyboardType="number-pad" maxLength={13} editable={!disabled} onChangeText={total_amount => change({ ...input, total_amount })} hint={money(Number(input.total_amount || 0))} />
         {overpaidAfterEdit && (

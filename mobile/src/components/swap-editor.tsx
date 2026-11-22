@@ -1,6 +1,6 @@
 import { KeyboardFormScrollView } from "./keyboard-form-scroll-view";
 import {useEffect,useRef,useState} from 'react';
-import {Keyboard,Pressable,Text,type ScrollViewInstance} from 'react-native';
+import {Keyboard,Pressable,Text,View,type ScrollViewInstance} from 'react-native';
 import {keepPreviousData,useQuery} from '@tanstack/react-query';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import type {MobileSwapInput,MobileSwapLine,MobileSwapPreparation,MobileSwapPreview,MobileSwapVehicle} from '../../../shared/mobile-swaps';
@@ -8,7 +8,7 @@ import {useSession} from '@/providers/session';
 import {useSwapWrite} from '@/hooks/use-swap-write';
 import {useReducedMotion} from '@/hooks/use-reduced-motion';
 import {dateTime,useTheme} from '@/theme';
-import {Button,Card,InlineError,StateView} from './ui';
+import {Button,Card,InlineError,KeyValueRow,StateView} from './ui';
 import {FormField} from './form-fields';
 import {ConfirmEdit} from './editor-sheet';
 
@@ -90,15 +90,15 @@ function SwapForm({id}:{id:string}) {
   </Card>);
   const data=query.data;
   return frame(<>
-    <Card style={{gap:10}}>
-      <Text accessibilityRole="header" style={{color:theme.text,fontSize:25,fontWeight:'800'}}>Đổi xe trong hợp đồng</Text>
-      <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>{selection?.order.code||data?.code||('#'+id)} · {selection?.order.ownership||data?.ownership?'Thuê sở hữu':'Thuê xe'}</Text>
-      <Text accessibilityLiveRegion="polite" style={{color:theme.text,fontSize:16}}>Bước {step+1}/3 · {['Chọn xe đang thuê','Chọn xe thay thế','Rà soát đổi xe'][step]}</Text>
+    <Card style={{gap:8}}>
+      <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'800'}}>Đổi xe trong hợp đồng</Text>
+      <Text style={{color:theme.muted,fontSize:14,lineHeight:21}}>{selection?.order.code||data?.code||('#'+id)} · {selection?.order.ownership||data?.ownership?'Thuê sở hữu':'Thuê xe'}</Text>
+      <Text accessibilityLiveRegion="polite" style={{color:theme.text,fontSize:14,fontWeight:'700'}}>Bước {step+1}/3 · {['Chọn xe đang thuê','Chọn xe thay thế','Rà soát đổi xe'][step]}</Text>
     </Card>
     {!!(error||action.error)&&<InlineError message={error||action.error}/>}
-    {!!action.notice&&<Text accessibilityLiveRegion="polite" style={{color:theme.text,fontSize:16,lineHeight:25}}>{action.notice}</Text>}
+    {!!action.notice&&<Text accessibilityLiveRegion="polite" style={{color:theme.text,fontSize:14,lineHeight:21}}>{action.notice}</Text>}
     {step===0&&<Card style={{gap:14}}>
-      <Text accessibilityRole="header" style={{color:theme.text,fontSize:21,fontWeight:'700'}}>1. Chọn xe đang thuê</Text>
+      <Text accessibilityRole="header" style={{color:theme.text,fontSize:18,fontWeight:'700'}}>1. Chọn xe đang thuê</Text>
       {query.isPending&&<Text style={{color:theme.muted}}>Đang tải hợp đồng…</Text>}
       {query.isError&&<InlineError message={(query.error as Error).message}/>}
       {data?.blockedReason&&<InlineError message={data.blockedReason}/>}
@@ -106,67 +106,75 @@ function SwapForm({id}:{id:string}) {
         accessibilityState={{checked:selection?.item.id===row.id,disabled:locked||query.isFetching||!row.available}} disabled={locked||query.isFetching||!row.available}
         onPress={()=>{setSelection({order:data,item:row});setVehicle(null);setCandidatePage(1);clearReview();}}
         style={{minHeight:64,gap:6,padding:14,borderRadius:12,borderWidth:selection?.item.id===row.id?2:1,borderColor:selection?.item.id===row.id?theme.primary:theme.border,opacity:row.available?1:0.65}}>
-        <Text style={{color:theme.text,fontSize:17,fontWeight:'700'}}>{row.license||('Xe #'+row.vehicleId)}</Text>
-        <Text style={{color:theme.muted,fontSize:15,lineHeight:23}}>{row.name}</Text>
-        {!!row.blockedReason&&<Text style={{color:theme.warning,fontSize:15,lineHeight:23}}>{row.blockedReason}</Text>}
+        <Text style={{color:theme.text,fontSize:16,fontWeight:'700'}}>{row.license||('Xe #'+row.vehicleId)}</Text>
+        <Text style={{color:theme.muted,fontSize:14,lineHeight:21}}>{row.name}</Text>
+        {!!row.blockedReason&&<Text style={{color:theme.warning,fontSize:14,lineHeight:21}}>{row.blockedReason}</Text>}
       </Pressable>)}
-      {data&&<Text style={{color:theme.muted,fontSize:15}}>Trang {data.items.page}/{data.items.pages} · {data.items.total} dòng xe</Text>}
-      <Button label="Trang xe đang thuê trước" secondary disabled={locked||query.isFetching||page===1} onPress={()=>{setPage(p=>p-1);top();}}/>
-      <Button label="Trang xe đang thuê tiếp" secondary disabled={locked||query.isFetching||!data||page>=data.items.pages} onPress={()=>{setPage(p=>p+1);top();}}/>
+      {data&&<Text style={{color:theme.muted,fontSize:13.5}}>Trang {data.items.page}/{data.items.pages} · {data.items.total} dòng xe</Text>}
+      <View style={{flexDirection:'row',gap:10}}>
+        <Button size="sm" equalWidth label="Trang xe đang thuê trước" secondary disabled={locked||query.isFetching||page===1} onPress={()=>{setPage(p=>p-1);top();}}/>
+        <Button size="sm" equalWidth label="Trang xe đang thuê tiếp" secondary disabled={locked||query.isFetching||!data||page>=data.items.pages} onPress={()=>{setPage(p=>p+1);top();}}/>
+      </View>
       <Button label="Tải lại hợp đồng đổi xe" secondary loading={query.isFetching} disabled={locked} onPress={()=>selection?setReload(true):void query.refetch()}/>
       <Button label="Tìm xe thay thế" disabled={locked||!selection||query.isFetching||query.isError} onPress={()=>{setStep(1);top();}}/>
     </Card>}
     {step===1&&selection&&<>
       <Card style={{gap:12}}>
-        <Text accessibilityRole="header" style={{color:theme.text,fontSize:21,fontWeight:'700'}}>2. Chọn xe thay thế</Text>
-        <Text style={{color:theme.text,fontSize:17,lineHeight:26}}>Xe đang thuê: {selection.item.license||selection.item.name}</Text>
-        <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>{selection.order.ownership?'Chỉ chọn xe đã nhận vào kho Thuê sở hữu.':'Chỉ chọn xe đang Lưu kho tại cơ sở nguồn hợp đồng.'}</Text>
+        <Text accessibilityRole="header" style={{color:theme.text,fontSize:18,fontWeight:'700'}}>2. Chọn xe thay thế</Text>
+        <KeyValueRow label="Xe đang thuê" value={selection.item.license||selection.item.name} emphasize />
+        <Text style={{color:theme.muted,fontSize:13.5,lineHeight:20}}>{selection.order.ownership?'Chỉ chọn xe đã nhận vào kho Thuê sở hữu.':'Chỉ chọn xe đang Lưu kho tại cơ sở nguồn hợp đồng.'}</Text>
         <FormField label="Biển số hoặc tên xe thay thế" value={search} onChangeText={setSearch} maxLength={120} editable={!locked} returnKeyType="search" onSubmitEditing={applySearch}/>
         <Button label="Tìm trong kho thay thế" secondary disabled={locked} onPress={applySearch}/>
       </Card>
       <Card style={{gap:14}}>
         {candidates.isError&&<InlineError message={(candidates.error as Error).message}/>}
         {candidates.isFetching&&<Text style={{color:theme.muted}}>Đang kiểm tra kho…</Text>}
-        {!candidates.isFetching&&!candidates.isError&&candidates.data?.rows.length===0&&<Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>Không có xe Lưu kho phù hợp. Kiểm tra từ khóa hoặc hoàn tất điều chuyển/nhận kho trước.</Text>}
+        {!candidates.isFetching&&!candidates.isError&&candidates.data?.rows.length===0&&<Text style={{color:theme.muted,fontSize:14,lineHeight:21}}>Không có xe Lưu kho phù hợp. Kiểm tra từ khóa hoặc hoàn tất điều chuyển/nhận kho trước.</Text>}
         {candidates.data?.rows.map(row=><Pressable key={row.id} accessibilityRole="radio" accessibilityLabel={'Chọn xe thay thế '+(row.license||row.name||('#'+row.id))}
           accessibilityState={{checked:vehicle?.id===row.id,disabled:locked||candidates.isFetching||row.id===selection.item.vehicleId}} disabled={locked||candidates.isFetching||row.id===selection.item.vehicleId}
           onPress={()=>{setVehicle(row);clearReview();}}
           style={{minHeight:64,gap:6,padding:14,borderRadius:12,borderWidth:vehicle?.id===row.id?2:1,borderColor:vehicle?.id===row.id?theme.primary:theme.border}}>
-          <Text style={{color:theme.text,fontSize:17,fontWeight:'700'}}>{row.license||('Xe #'+row.id)}</Text>
-          <Text style={{color:theme.muted,fontSize:15,lineHeight:23}}>{[row.name,row.color,row.year].filter(Boolean).join(' · ')}</Text>
-          <Text style={{color:theme.text,fontSize:15,lineHeight:23}}>Kho: {row.storeName||('#'+row.storeId)}</Text>
-          {!!row.draftHolds?.length&&<Text style={{color:theme.warning,fontSize:15,lineHeight:23}}>Đang được giữ trong hợp đồng nháp: {row.draftHolds.map(hold=>[hold.code,hold.customer,hold.storeName].filter(Boolean).join(' · ')).join('; ')}. Kiểm tra trước khi chọn xe.</Text>}
+          <Text style={{color:theme.text,fontSize:16,fontWeight:'700'}}>{row.license||('Xe #'+row.id)}</Text>
+          <Text style={{color:theme.muted,fontSize:14,lineHeight:21}}>{[row.name,row.color,row.year].filter(Boolean).join(' · ')}</Text>
+          <Text style={{color:theme.text,fontSize:14,lineHeight:21}}>Kho: {row.storeName||('#'+row.storeId)}</Text>
+          {!!row.draftHolds?.length&&<Text style={{color:theme.warning,fontSize:13.5,lineHeight:20}}>Đang được giữ trong hợp đồng nháp: {row.draftHolds.map(hold=>[hold.code,hold.customer,hold.storeName].filter(Boolean).join(' · ')).join('; ')}. Kiểm tra trước khi chọn xe.</Text>}
         </Pressable>)}
-        <Text style={{color:theme.muted,fontSize:15}}>Trang kho {candidatePage}</Text>
-        <Button label="Trang kho trước" secondary disabled={locked||candidates.isFetching||candidatePage===1} onPress={()=>{setCandidatePage(p=>p-1);top();}}/>
-        <Button label="Trang kho tiếp" secondary disabled={locked||candidates.isFetching||!candidates.data?.hasMore} onPress={()=>{setCandidatePage(p=>p+1);top();}}/>
+        <Text style={{color:theme.muted,fontSize:13.5}}>Trang kho {candidatePage}</Text>
+        <View style={{flexDirection:'row',gap:10}}>
+          <Button size="sm" equalWidth label="Trang kho trước" secondary disabled={locked||candidates.isFetching||candidatePage===1} onPress={()=>{setCandidatePage(p=>p-1);top();}}/>
+          <Button size="sm" equalWidth label="Trang kho tiếp" secondary disabled={locked||candidates.isFetching||!candidates.data?.hasMore} onPress={()=>{setCandidatePage(p=>p+1);top();}}/>
+        </View>
         <Button label="Tải lại danh sách xe thay thế" secondary loading={candidates.isFetching} disabled={locked} onPress={()=>{void candidates.refetch();}}/>
       </Card>
-      {vehicle&&<Card style={{gap:8}}>
-        <Text style={{color:theme.text,fontSize:17,fontWeight:'700'}}>Đã chọn: {vehicle.license||vehicle.name}</Text>
-        <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>{vehicle.storeName}</Text>
+      {vehicle&&<Card style={{gap:4}}>
+        <KeyValueRow label="Xe thay thế đã chọn" value={vehicle.license||vehicle.name} emphasize />
+        <KeyValueRow label="Cơ sở / kho" value={vehicle.storeName} />
       </Card>}
       <Button label="Rà soát đổi xe" loading={previewing} disabled={locked||!vehicle||candidates.isFetching||candidates.isError} onPress={()=>{void preview();}}/>
-      <Button label="Chọn lại xe đang thuê" secondary disabled={locked} onPress={()=>{setStep(0);clearReview();top();}}/>
-      <Button label="Tải lại để chọn lại xe" secondary disabled={locked} onPress={()=>setReload(true)}/>
+      <View style={{flexDirection:'row',gap:10}}>
+        <Button size="sm" equalWidth label="Chọn lại xe đang thuê" secondary disabled={locked} onPress={()=>{setStep(0);clearReview();top();}}/>
+        <Button size="sm" equalWidth label="Tải lại để chọn lại xe" secondary disabled={locked} onPress={()=>setReload(true)}/>
+      </View>
     </>}
     {step===2&&review&&<>
-      <Card style={{gap:14}}>
-        <Text accessibilityRole="header" style={{color:theme.text,fontSize:21,fontWeight:'700'}}>3. Rà soát đổi xe</Text>
-        <Text style={{color:theme.muted,fontSize:16}}>Xe cũ</Text>
-        <Text style={{color:theme.text,fontSize:20,fontWeight:'700'}}>{review.item.license||review.item.name}</Text>
-        <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>Nhận xe: {review.item.startsAt?dateTime(review.item.startsAt):'Chưa có giờ nhận'}</Text>
-        <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>Hạn trả: {review.item.returnAt?dateTime(review.item.returnAt):'Chưa có hạn trả'}</Text>
-        <Text style={{color:theme.muted,fontSize:16}}>Xe thay thế</Text>
-        <Text style={{color:theme.text,fontSize:20,fontWeight:'700'}}>{review.vehicle.license||review.vehicle.name}</Text>
-        <Text style={{color:theme.text,fontSize:16,lineHeight:25}}>{[review.vehicle.name,review.vehicle.brand,review.vehicle.color,review.vehicle.year].filter(Boolean).join(' · ')}</Text>
-        <Text style={{color:theme.text,fontSize:16,lineHeight:25}}>Kho: {review.vehicle.storeName||('#'+review.vehicle.storeId)}</Text>
-        {!!review.vehicle.draftHolds?.length&&<Text style={{color:theme.warning,fontSize:16,lineHeight:25}}>Xe đang được giữ trong hợp đồng nháp: {review.vehicle.draftHolds.map(hold=>hold.code).join(', ')}. Kiểm tra trước khi xác nhận đổi xe.</Text>}
-        <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>Giữ nguyên kỳ thuê, giá, tiền cọc và các khoản đã thu/hoàn. Lượt đổi này không ghi thêm khoản tiền.</Text>
+      <Card style={{gap:12}}>
+        <Text accessibilityRole="header" style={{color:theme.text,fontSize:18,fontWeight:'700'}}>3. Rà soát đổi xe</Text>
+        <View style={{gap:2}}>
+          <KeyValueRow label="Xe đang thuê (xe cũ)" value={review.item.license||review.item.name} emphasize />
+          <KeyValueRow label="Nhận xe" value={review.item.startsAt?dateTime(review.item.startsAt):'Chưa có giờ nhận'} />
+          <KeyValueRow label="Hạn trả" value={review.item.returnAt?dateTime(review.item.returnAt):'Chưa có hạn trả'} />
+          <KeyValueRow label="Xe thay thế" value={review.vehicle.license||review.vehicle.name} emphasize />
+          <KeyValueRow label="Thông số xe mới" value={[review.vehicle.name,review.vehicle.brand,review.vehicle.color,review.vehicle.year].filter(Boolean).join(' · ')||'—'} />
+          <KeyValueRow label="Kho xuất xe" value={review.vehicle.storeName||('#'+review.vehicle.storeId)} />
+        </View>
+        {!!review.vehicle.draftHolds?.length&&<Text style={{color:theme.warning,fontSize:13.5,lineHeight:20}}>Xe đang được giữ trong hợp đồng nháp: {review.vehicle.draftHolds.map(hold=>hold.code).join(', ')}. Kiểm tra trước khi xác nhận đổi xe.</Text>}
+        <Text style={{color:theme.muted,fontSize:13.5,lineHeight:20}}>Giữ nguyên kỳ thuê, giá, tiền cọc và các khoản đã thu/hoàn. Lượt đổi này không ghi thêm khoản tiền.</Text>
       </Card>
       <Button label="Ghi đổi xe trong hợp đồng" loading={action.busy} disabled={locked||!input} onPress={()=>setConfirm(true)}/>
-      <Button label="Xem lại danh sách xe" secondary disabled={locked} onPress={()=>{setStep(1);clearReview();top();}}/>
-      <Button label="Tải lại để chọn lại xe" secondary disabled={locked} onPress={()=>setReload(true)}/>
+      <View style={{flexDirection:'row',gap:10}}>
+        <Button size="sm" equalWidth label="Xem lại danh sách xe" secondary disabled={locked} onPress={()=>{setStep(1);clearReview();top();}}/>
+        <Button size="sm" equalWidth label="Tải lại để chọn lại xe" secondary disabled={locked} onPress={()=>setReload(true)}/>
+      </View>
     </>}
   </>);
 }

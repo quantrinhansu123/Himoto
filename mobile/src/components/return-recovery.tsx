@@ -7,7 +7,7 @@ import type {MobileReturnReceipt} from '../../../shared/mobile-return-write';
 import {useSession} from '@/providers/session';
 import {pendingWrites} from '@/lib/pending-writes';
 import {dateTime,money,useTheme} from '@/theme';
-import {Button,Card,InlineError,StateView} from './ui';
+import {Button,Card,InlineError,KeyValueRow,StateView} from './ui';
 import {ConfirmEdit} from './editor-sheet';
 
 const kindLabel={late_fee:'Thu phí trễ',repair_fee:'Thu sửa chữa',rental_debt:'Thu công nợ',rental_refund:'Hoàn tiền thuê',deposit_refund:'Hoàn cọc'};
@@ -62,14 +62,17 @@ function Recovery({id}:{id:string}) {
     }catch(cause){if(alive.current&&epoch.current===current)setError((cause as Error).message);}
     finally{running.current=false;if(alive.current&&epoch.current===current)setBusy(false);}
   }
-  async function acknowledge(itemId?:string){
+  async function acknowledge(target?:{itemId?:string;telegram?:boolean;refundItemId?:string;cashbook?:boolean}){
     if(!key||!receipt||receipt.requestId!==key||running.current)return;
     running.current=true;setBusy(true);setError('');const current=epoch.current;
     try{
       await pendingWrites.complete(scope,operation,key);
       if(!alive.current||epoch.current!==current)return;
-      for(const queryKey of [['record'],['catalogue'],['overview'],['contract-finance'],['return-preparation']])void cache.invalidateQueries({queryKey});
-      if(itemId)router.replace({pathname:'/return-correction/[id]',params:{id,itemId}});
+      for(const queryKey of [['record'],['catalogue'],['overview'],['finance'],['cashbook'],['cashbook-accounts'],['contract-history'],['return-preparation'],['vehicle-profile'],['vehicle-history'],['fleet-inventory']])void cache.invalidateQueries({queryKey});
+      if(target?.itemId)router.replace({pathname:'/return-correction/[id]',params:{id,itemId:target.itemId}});
+      else if(target?.telegram)router.replace({pathname:'/contract-telegram/[id]',params:{id,eventKind:'return'}});
+      else if(target?.refundItemId)router.replace({pathname:'/deposit-refund/[id]/[itemId]',params:{id,itemId:target.refundItemId}});
+      else if(target?.cashbook)router.replace('/cashbook');
       else router.dismissTo({pathname:'/record/[kind]/[id]',params:{kind:'contracts',id}});
     }catch(cause){if(alive.current&&epoch.current===current)setError((cause as Error).message);}
     finally{running.current=false;if(alive.current&&epoch.current===current)setBusy(false);}
@@ -116,16 +119,16 @@ function Recovery({id}:{id:string}) {
             ['Tiền thuê đã thu',money(receipt.review.after.rentalPaid)],
             ['Còn thiếu',money(receipt.review.after.rentalRemaining)],
             ['Cọc còn giữ',money(receipt.review.after.depositHeld)],
-            ['Xe còn thuê',receipt.review.after.remainingItems],
-          ].map(([label,value])=><Text key={label} style={{color:theme.text,fontSize:17,lineHeight:27}}>{label}: {value}</Text>)}
+            ['Xe còn thuê',String(receipt.review.after.remainingItems)],
+          ].map(([label,value])=><KeyValueRow key={label} label={String(label)} value={String(value)}/>)}
         </Card>
         <Button label="Xác nhận đã kiểm tra phiếu trả xe" loading={busy} onPress={()=>{void acknowledge();}}/>
         {!!receipt.review.fees.items[0]&&<Button label="Mở hồ sơ trả xe" secondary disabled={busy}
-          onPress={()=>{void acknowledge(String(receipt.review.fees.items[0].id));}}/>}
+          onPress={()=>{void acknowledge({itemId:String(receipt.review.fees.items[0].id)});}}/>}
         <View style={{flexDirection:'row',flexWrap:'wrap',gap:8}}>
-          <Button secondary label="Gửi Telegram trả xe" disabled={busy} onPress={()=>router.push({pathname:'/contract-telegram/[id]',params:{id,eventKind:'return'}})}/>
-          {!!receipt.review.fees.items[0]&&receipt.review.after.depositHeld>0&&<Button secondary label="Yêu cầu hoàn cọc" disabled={busy} onPress={()=>router.push({pathname:'/deposit-refund/[id]/[itemId]',params:{id,itemId:String(receipt.review.fees.items[0].id)}})}/>}
-          <Button secondary label="Mở Sổ quỹ" disabled={busy} onPress={()=>router.push('/cashbook')}/>
+          <Button size="sm" secondary label="Gửi Telegram trả xe" disabled={busy} onPress={()=>{void acknowledge({telegram:true});}}/>
+          {!!receipt.review.fees.items[0]&&receipt.review.after.depositHeld>0&&<Button size="sm" secondary label="Yêu cầu hoàn cọc" disabled={busy} onPress={()=>{void acknowledge({refundItemId:String(receipt.review.fees.items[0].id)});}}/>}
+          <Button size="sm" secondary label="Mở Sổ quỹ" disabled={busy} onPress={()=>{void acknowledge({cashbook:true});}}/>
         </View>
         <Button label="Tải lại phiếu trả xe" secondary loading={busy} onPress={()=>{void load();}}/>
       </>}

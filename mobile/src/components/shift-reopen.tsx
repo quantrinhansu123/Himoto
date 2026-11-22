@@ -1,5 +1,5 @@
 import { useCallback,useEffect,useRef,useState } from "react";
-import { Text } from "react-native";
+import { Text,View } from "react-native";
 import { useQuery,useQueryClient } from "@tanstack/react-query";
 import { uuid } from "expo";
 import { useSession } from "@/providers/session";
@@ -8,7 +8,7 @@ import { dateTime,useTheme } from "@/theme";
 import type { ShiftReopenInput,ShiftReport } from "../../../shared/mobile-shift-reports";
 import { ConfirmEdit } from "./editor-sheet";
 import { ChoiceField,FormField } from "./form-fields";
-import { Button,Card,InlineError } from "./ui";
+import { Button,Card,InlineError,KeyValueRow } from "./ui";
 
 export function ShiftReopen({report}:{report:ShiftReport}){
   const {api,session}=useSession();
@@ -57,29 +57,29 @@ export function ShiftReopen({report}:{report:ShiftReport}){
   }
 
   if(report.status==="draft"&&!state?.history.length)return null;
-  return <Card style={{gap:12}}>
-    <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:"700"}}>Mở lại báo cáo đã chốt</Text>
-    {query.isPending&&<Text style={{color:theme.muted}}>Đang kiểm tra quyền và trạng thái thu hồi…</Text>}
+  return <Card style={{gap:10,padding:14}}>
+    <Text accessibilityRole="header" style={{color:theme.text,fontSize:16,fontWeight:"800"}}>Mở lại báo cáo đã chốt</Text>
+    {query.isPending&&<Text style={{color:theme.muted,fontSize:13}}>Đang kiểm tra quyền và trạng thái thu hồi…</Text>}
     {!!(error||query.error?.message)&&<InlineError message={error||query.error!.message}/>}
-    {query.isError&&<Button secondary label="Kiểm tra lại trạng thái mở báo cáo" onPress={()=>{void query.refetch();}}/>}
-    {!!state?.blocked_reason&&state.status==="submitted"&&<Text style={{color:theme.muted}}>{state.blocked_reason}</Text>}
-    {waiting&&<Text style={{color:theme.muted}}>Đang thu hồi Telegram. Ứng dụng sẽ cập nhật khi báo cáo trở về bản nháp.</Text>}
-    {canResume&&!state?.blocked_reason&&<Button secondary label="Tiếp tục yêu cầu thu hồi" loading={busy} onPress={()=>{void submit(true);}}/>}
+    {query.isError&&<Button size="sm" secondary label="Kiểm tra lại trạng thái mở báo cáo" onPress={()=>{void query.refetch();}}/>}
+    {!!state?.blocked_reason&&state.status==="submitted"&&<Text style={{color:theme.muted,fontSize:13}}>{state.blocked_reason}</Text>}
+    {waiting&&<Text style={{color:theme.muted,fontSize:13}}>Đang thu hồi Telegram. Ứng dụng sẽ cập nhật khi báo cáo trở về bản nháp.</Text>}
+    {canResume&&!state?.blocked_reason&&<Button size="sm" secondary label="Tiếp tục yêu cầu thu hồi" loading={busy} onPress={()=>{void submit(true);}}/>}
     {request?.state==="failed"&&<InlineError message={request.error||"Chưa thu hồi được Telegram. Kiểm tra tiến độ rồi thử lại."}/>}
     {state?.status==="submitted"&&!state.blocked_reason&&!waiting&&(!open
-      ?<Button secondary label="Thu hồi Telegram và mở lại báo cáo" onPress={()=>{setReason(request?.reason??"");setOpen(true);}}/>
+      ?<Button size="sm" secondary label="Thu hồi Telegram và mở lại báo cáo" onPress={()=>{setReason(request?.reason??"");setOpen(true);}}/>
       :<>
         <FormField label="Lý do mở lại báo cáo" value={reason} onChangeText={setReason} editable={!busy} multiline maxLength={500}/>
         {state.can_manual&&<ChoiceField label="Cách thu hồi Telegram" value={manual?"manual":"automatic"} choices={[
           {value:"automatic",label:"Hệ thống thu hồi tin"},
           {value:"manual",label:"Tôi xác nhận đã gỡ hết tin trong nhóm"},
         ]} disabled={busy} onChange={v=>setManual(v==="manual")}/>}
-        <Button label="Xác nhận mở lại" loading={busy} disabled={!reason.trim()} onPress={()=>setConfirm(true)}/>
-        <Button secondary label="Đóng phần mở lại" disabled={busy} onPress={()=>{setOpen(false);setManual(false);}}/>
+        <View style={{flexDirection:"row",gap:8}}>
+          <Button size="sm" equalWidth label="Xác nhận mở lại" loading={busy} disabled={!reason.trim()} onPress={()=>setConfirm(true)}/>
+          <Button size="sm" equalWidth secondary label="Đóng phần mở lại" disabled={busy} onPress={()=>{setOpen(false);setManual(false);}}/>
+        </View>
       </>)}
-    {state?.history.map(item=><Text key={item.revision} style={{color:theme.muted,lineHeight:22}}>
-      {dateTime(item.reopened_at)} · {item.actor||"Nhân viên"}{item.manual_retraction?" · Đã gỡ tin thủ công":""}{"\n"}{item.reason}
-    </Text>)}
+    {state?.history.map(item=><KeyValueRow key={item.revision} label={`${dateTime(item.reopened_at)} · ${item.actor||"Nhân viên"}${item.manual_retraction?" (Thủ công)":""}`} value={item.reason}/>)}
     {confirm&&<ConfirmEdit title="Thu hồi Telegram và mở lại báo cáo?" message={manual?"Đã xác nhận gỡ hết tin khỏi nhóm. Báo cáo trở về bản nháp để sửa và chốt lại.":"Hệ thống thu hồi tin Telegram đã gửi trước khi đưa báo cáo về bản nháp."} confirmLabel="Thu hồi và mở lại" onCancel={()=>setConfirm(false)} onConfirm={()=>{void submit();}}/>}
   </Card>;
 }

@@ -1,22 +1,22 @@
 import { KeyboardFormScrollView } from "./keyboard-form-scroll-view";
-import {useEffect,useRef,useState} from 'react';
-import {Keyboard,Pressable,RefreshControl,Text,View,type ScrollViewInstance} from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Keyboard, Pressable, RefreshControl, Text, View, type ScrollViewInstance } from 'react-native';
 import { router } from 'expo-router';
-import {keepPreviousData,useQuery} from '@tanstack/react-query';
-import {SafeAreaView} from 'react-native-safe-area-context';
-import {RefundQrReader} from './refund-qr-reader';
-import {mergeMobileRefundRecipient} from '../../../shared/mobile-refund-qr';
-import type {MobileReturnPreview,MobileReturnPreviewInput} from '../../../shared/mobile-returns';
-import type {MobileReturnSettlementInput,MobileReturnSettlementPreview} from '../../../shared/mobile-return-settlement';
-import {useSession} from '@/providers/session';
-import {useReturnWrite} from '@/hooks/use-return-write';
-import {useReducedMotion} from '@/hooks/use-reduced-motion';
-import {emptyReturnMoney,newReturnLine,returnFeeInput,returnSettlementInput,type ReturnLineDraft,type ReturnMoneyDraft,type ReturnReceiptDraft} from '@/lib/return-form';
-import {dateTime,money,useTheme} from '@/theme';
-import {Button,Card,InlineError,StateView} from './ui';
-import {FormField,ChoiceField} from './form-fields';
-import {RentalDateTime} from './rental-date-time';
-import {ConfirmEdit} from './editor-sheet';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { RefundQrReader } from './refund-qr-reader';
+import { mergeMobileRefundRecipient } from '../../../shared/mobile-refund-qr';
+import type { MobileReturnPreview, MobileReturnPreviewInput } from '../../../shared/mobile-returns';
+import type { MobileReturnSettlementInput, MobileReturnSettlementPreview } from '../../../shared/mobile-return-settlement';
+import { useSession } from '@/providers/session';
+import { useReturnWrite } from '@/hooks/use-return-write';
+import { useReducedMotion } from '@/hooks/use-reduced-motion';
+import { emptyReturnMoney, newReturnLine, returnFeeInput, returnSettlementInput, type ReturnLineDraft, type ReturnMoneyDraft, type ReturnReceiptDraft } from '@/lib/return-form';
+import { dateTime, money, useTheme } from '@/theme';
+import { Button, Card, InlineError, StateView } from './ui';
+import { FormField, ChoiceField } from './form-fields';
+import { RentalDateTime } from './rental-date-time';
+import { ConfirmEdit } from './editor-sheet';
 
 const methods = [{ value: 'cash', label: 'Tiền mặt' }, { value: 'transfer', label: 'CK tài khoản cá nhân' }, { value: 'company_transfer', label: 'CK tài khoản công ty' }];
 const kinds = [{ value: 'rental_debt', label: 'Thu công nợ thuê xe' }, { value: 'late_fee', label: 'Thu phí trễ' }, { value: 'repair_fee', label: 'Thu phí sửa chữa' }];
@@ -179,16 +179,20 @@ function ReturnForm({ id }: { id: string }) {
             <FormField label="Đơn giá trễ mỗi giờ (VND)" value={selected.hourlyRate} keyboardType="number-pad" editable={!locked} maxLength={7} onChangeText={hourlyRate=>editLine({hourlyRate})}/>
             <FormField label="Phí trễ đã đối chiếu (VND, tùy chọn)" hint="Để trống để dùng phí gợi ý theo giờ/ngày. Chỉ nhập thay thế khi đã đối chiếu." value={selected.lateOverride} keyboardType="number-pad" editable={!locked} maxLength={13} onChangeText={lateOverride=>editLine({lateOverride})}/>
             <View style={{flexDirection:'row',flexWrap:'wrap',gap:8}}>
-              <Button secondary label={selected.lateOverride==='0'?'Đã miễn phí quá hạn (0đ)':'Không thu phí quá hạn (0đ)'} disabled={locked} onPress={()=>editLine({lateOverride:selected.lateOverride==='0'?'':'0'})}/>
-              <Button secondary label="Ảnh & video trả xe" disabled={locked} onPress={()=>router.push({pathname:'/record-media/[entity]/[id]',params:{entity:'contracts',id}})}/>
+              {(selected.lateOverride==='0'||Boolean(selected.vehicle.returnAt&&Number.isFinite(Date.parse(`${selected.returnedAt}:00+07:00`))&&Date.parse(`${selected.returnedAt}:00+07:00`)>Date.parse(selected.vehicle.returnAt)))&&(
+                <Button size="sm" secondary label={selected.lateOverride==='0'?'Đã miễn phí quá hạn (0đ)':'Không thu phí quá hạn (0đ)'} disabled={locked} onPress={()=>editLine({lateOverride:selected.lateOverride==='0'?'':'0'})}/>
+              )}
+              <Button size="sm" secondary label="Ảnh & video trả xe" disabled={locked} onPress={()=>router.push({pathname:'/record-media/[entity]/[id]',params:{entity:'contracts',id,kind:'return',referenceId:String(selected.vehicle.id)}})}/>
             </View>
             <FormField label="Phí sửa chữa (VND)" value={selected.repairFee} keyboardType="number-pad" editable={!locked} maxLength={13} onChangeText={repairFee=>editLine({repairFee})}/>
             <FormField label="Nội dung sửa chữa" value={selected.repairNote} multiline editable={!locked} maxLength={1000} onChangeText={repairNote=>editLine({repairNote})}/>
             {!data.ownership&&<FormField label="Giảm doanh thu trả sớm (VND)" value={selected.earlyDiscount} keyboardType="number-pad" editable={!locked} maxLength={13} onChangeText={earlyDiscount=>editLine({earlyDiscount})}/>}
             {data.ownership&&<Text style={{color:theme.muted,fontSize:15,lineHeight:24}}>Tiền thuê sở hữu được đối chiếu theo lịch đóng tiền; không tự giảm vào kỳ đầu.</Text>}
           </Card>
-          <Button label="Xe được chọn trước" secondary disabled={lineIndex<=0||locked} onPress={()=>{setLineIndex(i=>i-1);top();}}/>
-          <Button label="Xe được chọn tiếp" secondary disabled={lineIndex>=lines.length-1||locked} onPress={()=>{setLineIndex(i=>i+1);top();}}/>
+          {lines.length>1&&<View style={{flexDirection:'row',gap:8}}>
+            <Button size="sm" equalWidth label="Xe trước" secondary disabled={lineIndex<=0||locked} onPress={()=>{setLineIndex(i=>i-1);top();}}/>
+            <Button size="sm" equalWidth label="Xe tiếp" secondary disabled={lineIndex>=lines.length-1||locked} onPress={()=>{setLineIndex(i=>i+1);top();}}/>
+          </View>}
           <Button label="Tính phí và số dư" loading={previewing} disabled={locked&&!previewing||!data.available||query.isError} onPress={()=>{void calculateFees();}}/>
           <Button label="Sửa lựa chọn xe" secondary disabled={locked} onPress={()=>{setStep(0);top();}}/>
         </>}

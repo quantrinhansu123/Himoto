@@ -57,6 +57,7 @@ import { ManagementDrawer } from "@/components/management-drawer";
 import { RecordActionsModal } from "@/components/record-actions-modal";
 import { backfillActions } from '../../../shared/mobile-backfill';
 import { isAdminAccount } from '../../../shared/mobile-managed-accounts';
+import { requiresOwnershipApproval } from '../../../shared/contract-approval';
 
 const GPS_CARD_LABELS: Record<string, string> = {
   online: "GPS trực tuyến",
@@ -64,6 +65,7 @@ const GPS_CARD_LABELS: Record<string, string> = {
   stale: "GPS chưa cập nhật",
   warning: "GPS cảnh báo",
   offline: "GPS mất kết nối",
+  unavailable: "Chưa có định vị",
   none: "Chưa gắn GPS",
 };
 
@@ -71,11 +73,13 @@ const RecordCard = memo(function RecordCard({
   record,
   kind,
   scope,
+  operationAction,
   onOpenActions,
 }: {
   record: MobileRecord;
   kind: CatalogueKind;
   scope: MobileContractScope;
+  operationAction?: "return" | "renew" | "active" | "overdue";
   onOpenActions?: (record: MobileRecord) => void;
 }) {
   const theme = useTheme();
@@ -84,6 +88,14 @@ const RecordCard = memo(function RecordCard({
 
   const handlePress = () => {
     if (session && api) rememberRecordPreview(cache, api.origin, session.user, kind, record);
+    if (kind === "contracts" && operationAction === "return") {
+      router.push({ pathname: "/return-editor/[id]", params: { id: String(record.id) } });
+      return;
+    }
+    if (kind === "contracts" && operationAction === "renew") {
+      router.push({ pathname: "/renewal/[id]", params: { id: String(record.id) } });
+      return;
+    }
     if (kind === "vehicles") {
       if (api && session) void cache.prefetchQuery({
         queryKey: ['vehicle-profile', session.user.id, String(record.id)],
@@ -103,7 +115,9 @@ const RecordCard = memo(function RecordCard({
 
   const perms = session?.user.permissions || [];
   const canReceiveTransfer = kind === "vehicles" && record.status === "in_transit" && Boolean(perms.includes("vehicles.receive") || perms.includes("vehicles.transfer"));
-  const canApproveContract = kind === "contracts" && record.status !== "draft" && record.status !== "cancelled" && !record.approvedAt && perms.includes("contracts.approve");
+  const needsApproval = kind === "contracts" && record.status !== "draft" && record.status !== "cancelled" && requiresOwnershipApproval(record.monitoring?.rentalType);
+  const canApproveRole = Boolean(isAdminAccount(session?.user) || session?.user.role === "ownership_manager" || session?.user.role === "branch_manager");
+  const canApproveContract = needsApproval && !record.approvedAt && perms.includes("contracts.finalize") && canApproveRole;
   const showContractTelegram = kind === "contracts" && record.status !== "draft";
   const contractBalance =
     kind === "contracts" && record.totalAmount !== null && record.paidAmount !== null
@@ -234,7 +248,7 @@ const RecordCard = memo(function RecordCard({
             status={kind === "vehicles" && record.missingOpenContract ? "warning" : record.status}
             label={kind === 'contracts' && scope === 'drafts' && record.status === 'draft' ? 'Lưu nháp' : contextualStatusLabel(kind, record.status)}
           />
-          {kind === "contracts" && record.status !== "draft" && record.status !== "cancelled" && (
+          {kind === "contracts" && record.status !== "draft" && record.status !== "cancelled" && (needsApproval || !!record.approvedAt) && (
             <StatusBadge
               status={record.approvedAt ? "approved" : "unapproved"}
               label={record.approvedAt ? "Đã duyệt" : "Chờ duyệt"}
@@ -340,6 +354,7 @@ export function CatalogueScreen({
   initialCustomerId,
   customerName,
   operationsCatalogue = false,
+  operationAction,
   showManagementMenu = true,
 }: {
   kind: CatalogueKind;
@@ -350,6 +365,7 @@ export function CatalogueScreen({
   initialCustomerId?: string;
   customerName?: string;
   operationsCatalogue?: boolean;
+  operationAction?: "return" | "renew" | "active" | "overdue";
   showManagementMenu?: boolean;
 }) {
   const theme = useTheme();
@@ -478,9 +494,10 @@ export function CatalogueScreen({
       record={item}
       kind={kind}
       scope={scope}
+      operationAction={operationAction}
       onOpenActions={setActionRecord}
     />
-  ), [kind, scope]);
+  ), [kind, scope, operationAction]);
   const statusCountsMap = useMemo(() => {
     const map = new Map<string, number>();
     const counts = kind === 'contracts' ? statistics.data?.statusCounts : query.data?.pages[0]?.statusCounts;
@@ -594,9 +611,7 @@ export function CatalogueScreen({
             {settings.title}
           </Text>
 
-          {kind === 'customers' ? <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={{ color: theme.muted, fontSize: 12, flexShrink: 1 }}>
-            {query.data ? `${query.data.pages[0].total.toLocaleString('vi-VN')} khách hàng` : 'Đang tải…'}
-          </Text> : <Pressable
+          <Pressable
             accessibilityRole="button"
             accessibilityLabel="Chọn cơ sở"
             onPress={() => setStoreModalOpen(true)}
@@ -614,11 +629,11 @@ export function CatalogueScreen({
               {storeName}
             </Text>
             <ChevronDown size={13} color={theme.muted} />
-          </Pressable>}
+          </Pressable>
         </View>
       )}
 
-      {!compact && kind !== 'customers' && (
+      {!compact && (
         <View style={styles.row}>
           <Text style={{ color: theme.muted, fontSize: 12.5, flex: 1 }}>
             {query.data
@@ -648,15 +663,17 @@ export function CatalogueScreen({
           />
         </View>
       )}
-      {kind === "vehicles" && session?.user.permissions.includes("vehicles.write") && (
+      {kind === "vehicles" && (session?.user.permissions.includes("vehicles.write") || session?.user.permissions.includes("vehicles.transfer")) && (
         <View style={{ flexDirection: "row", gap: 8 }}>
-          <Button
-            size="sm"
-            equalWidth
-            label="Thêm xe"
-            icon={<Plus size={15} color={theme.primaryText} />}
-            onPress={() => router.push({ pathname: "/vehicle-editor/[id]", params: { id: "new", store } })}
-          />
+          {session?.user.permissions.includes("vehicles.write") && (
+            <Button
+              size="sm"
+              equalWidth
+              label="Thêm xe"
+              icon={<Plus size={15} color={theme.primaryText} />}
+              onPress={() => router.push({ pathname: "/vehicle-editor/[id]", params: { id: "new", store } })}
+            />
+          )}
           {session?.user.permissions.includes("vehicles.transfer") && (
             <Button
               size="sm"
@@ -1041,7 +1058,7 @@ export function CatalogueScreen({
       edges={showManagementMenu ? ["top", "left", "right"] : ["bottom", "left", "right"]}
       style={{ flex: 1, backgroundColor: theme.background }}
     >
-      {kind === 'contracts' && !!initialScope && <Stack.Screen options={{ title: settings.title }} />}
+      {kind === 'contracts' && !!initialScope && !operationsCatalogue && <Stack.Screen options={{ title: settings.title }} />}
       <FlatList
         ref={list}
         style={{ flex: 1 }}
@@ -1211,10 +1228,11 @@ export function CatalogueScreen({
         animationType="fade"
         onRequestClose={() => setStoreModalOpen(false)}
       >
-        <Pressable
-          style={styles.modalBackdrop}
-          onPress={() => setStoreModalOpen(false)}
-        >
+        <View style={styles.modalBackdrop}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => setStoreModalOpen(false)}
+          />
           <View
             style={[
               styles.modalSheet,
@@ -1302,7 +1320,7 @@ export function CatalogueScreen({
               })}
             </ScrollView>
           </View>
-        </Pressable>
+        </View>
       </Modal>
     </SafeAreaView>
   );

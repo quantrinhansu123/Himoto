@@ -12,7 +12,7 @@ import { renewalLocalTime } from "@/lib/renewal-form";
 import { reviewRenewalCollection } from "@/lib/renewal-collection-form";
 import { pendingWrites } from "@/lib/pending-writes";
 import { dateTime, money, useTheme } from "@/theme";
-import { Button, Card, InlineError, StateView } from "./ui";
+import { Button, Card, InlineError, KeyValueRow, StateView, StatusBadge } from "./ui";
 import { FormField, ChoiceField } from "./form-fields";
 import { RentalDateTime } from "./rental-date-time";
 import { ConfirmEdit } from "./editor-sheet";
@@ -78,15 +78,22 @@ function CollectionForm({ id, version }: { id: string; version?: string }) {
   if (action.receipt) {
     const saved = action.receipt;
     return <SafeAreaView edges={["left", "right", "bottom"]} style={{ flex: 1, backgroundColor: theme.background }}>
-      <ScrollView contentContainerStyle={{ padding: 20, gap: 18, maxWidth: 760, width: "100%", alignSelf: "center" }}><Card style={{ gap: 16 }}>
-        <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 25, fontWeight: "800" }}>Khoản thu theo kỳ đã được ghi nhận</Text>
-        <Text style={{ color: theme.text, fontSize: 18 }}>Kỳ gia hạn #{saved.version}</Text>
-        <Text selectable style={{ color: theme.text, fontSize: 18 }}>Phiếu thu #{saved.transactionId} · {money(saved.amount)}</Text>
-        <Text style={{ color: theme.text, fontSize: 16, lineHeight: 25 }}>Thời hạn của kỳ: {dateTime(saved.beforeReturnAt ?? saved.periodCreatedAt ?? "")} → {dateTime(saved.returnAt)}</Text>
-        <Text style={{ color: theme.text, fontSize: 16 }}>Phí kỳ còn thiếu sau lần thu này: {money(saved.remainingAfter)}</Text>
-        <Text style={{ color: theme.muted, fontSize: 15, lineHeight: 24 }}>Tổng tiền hợp đồng và ngày hẹn trả được giữ nguyên. {methods.find(row => row.value === saved.method)?.label} · tài khoản #{saved.accountId} · {dateTime(saved.paidAt)}.</Text>
+      <ScrollView contentContainerStyle={{ padding: 20, gap: 18, maxWidth: 760, width: "100%", alignSelf: "center" }}><Card style={{ gap: 14 }}>
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+          <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 20, fontWeight: "800", flex: 1 }}>Khoản thu theo kỳ đã được ghi nhận</Text>
+          <StatusBadge status="paid" label={`Kỳ #${saved.version}`} />
+        </View>
+        <View style={{ gap: 2 }}>
+          <KeyValueRow label="Phiếu thu" value={`#${saved.transactionId}`} />
+          <KeyValueRow label="Số tiền đã thu" value={money(saved.amount)} emphasize />
+          <KeyValueRow label="Thời hạn của kỳ" value={`${dateTime(saved.beforeReturnAt ?? saved.periodCreatedAt ?? "")} → ${dateTime(saved.returnAt)}`} />
+          <KeyValueRow label="Phí kỳ còn thiếu" value={money(saved.remainingAfter)} emphasize />
+          <KeyValueRow label="Hình thức & tài khoản" value={`${methods.find(row => row.value === saved.method)?.label ?? saved.method} · TK #${saved.accountId}`} />
+          <KeyValueRow label="Thời điểm thu" value={dateTime(saved.paidAt)} />
+        </View>
+        <Text style={{ color: theme.muted, fontSize: 13.5, lineHeight: 20 }}>Tổng tiền hợp đồng và ngày hẹn trả được giữ nguyên.</Text>
         {!saved.current && <InlineError message="Kỳ hoặc phiếu thu đã được chỉnh sau lần ghi này. Đây là kết quả gốc; kiểm tra hồ sơ hiện tại trước khi thao tác tiếp." />}
-        {!saved.billCurrent && <Text style={{ color: theme.warning, fontSize: 15, lineHeight: 24 }}>Ảnh bill trong hồ sơ đã thay đổi sau lần thu. Kết quả khoản thu gốc vẫn được giữ.</Text>}
+        {!saved.billCurrent && <Text style={{ color: theme.warning, fontSize: 13.5, lineHeight: 20 }}>Ảnh bill trong hồ sơ đã thay đổi sau lần thu. Kết quả khoản thu gốc vẫn được giữ.</Text>}
         {!!action.error && <InlineError message={action.error} />}
         <Button label="Xác nhận đã kiểm tra khoản thu theo kỳ" loading={action.checking} onPress={() => { void action.acknowledge(); }} />
       </Card></ScrollView>
@@ -107,20 +114,22 @@ function CollectionForm({ id, version }: { id: string; version?: string }) {
   return <SafeAreaView edges={["left", "right", "bottom"]} style={{ flex: 1, backgroundColor: theme.background }}>
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
       <ScrollView ref={scroll} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 20, gap: 18, maxWidth: 760, width: "100%", alignSelf: "center" }}>
-        <View style={{ gap: 8 }}><Text accessibilityRole="header" style={{ color: theme.text, fontSize: 25, fontWeight: "800" }}>{data.code}</Text>
-          <Text style={{ color: theme.muted, fontSize: 16 }}>Thu tiền cho kỳ gia hạn #{data.period.version}</Text></View>
+        <View style={{ gap: 4 }}><Text accessibilityRole="header" style={{ color: theme.text, fontSize: 20, fontWeight: "800" }}>{data.code}</Text>
+          <Text style={{ color: theme.muted, fontSize: 14 }}>Thu tiền cho kỳ gia hạn #{data.period.version}</Text></View>
         {!!(localError || action.error) && <InlineError message={localError || action.error} />}
-        {!!action.notice && <Text accessibilityLiveRegion="polite" style={{ color: theme.text, fontSize: 15, lineHeight: 24 }}>{action.notice}</Text>}
+        {!!action.notice && <Text accessibilityLiveRegion="polite" style={{ color: theme.text, fontSize: 14, lineHeight: 21 }}>{action.notice}</Text>}
         {query.isError && <InlineError message="Chưa cập nhật được số tiền còn thu. Nội dung đang nhập được giữ; tải lại trước khi xác nhận." />}
         {!data.available && <InlineError message={data.blockedReason || "Kỳ này chưa thể ghi thêm khoản thu."} />}
-        {!!action.key && <Text style={{ color: theme.warning, fontSize: 15, lineHeight: 24 }}>Có khoản thu chưa rõ kết quả. Đối chiếu trước khi sửa hoặc gửi lại tiền.</Text>}
+        {!!action.key && <Text style={{ color: theme.warning, fontSize: 14, lineHeight: 21 }}>Có khoản thu chưa rõ kết quả. Đối chiếu trước khi sửa hoặc gửi lại tiền.</Text>}
         <Card style={{ gap: 10 }}>
-          <Text style={{ color: theme.text, fontSize: 18, fontWeight: "700" }}>{data.period.license} · {data.period.vehicleName}</Text>
-          <Text style={{ color: theme.muted, fontSize: 15, lineHeight: 24 }}>{dateTime(data.period.beforeReturnAt ?? data.period.createdAt ?? "")} → {dateTime(data.period.returnAt)}</Text>
-          <Text style={{ color: theme.text, fontSize: 17 }}>Phí đã thỏa thuận: {money(data.period.amount)}</Text>
-          <Text style={{ color: theme.text, fontSize: 17 }}>Đã thu cho kỳ: {money(data.period.collected)}</Text>
-          <Text style={{ color: theme.text, fontSize: 18, fontWeight: "700" }}>Kỳ còn thiếu: {money(data.period.remaining)}</Text>
-          <Text style={{ color: theme.muted, fontSize: 15, lineHeight: 24 }}>Khoản này thu cho kỳ đã lưu, không cộng lại phí hoặc đổi ngày hẹn trả.</Text>
+          <Text style={{ color: theme.text, fontSize: 17, fontWeight: "700" }}>{data.period.license} · {data.period.vehicleName}</Text>
+          <View style={{ gap: 2 }}>
+            <KeyValueRow label="Thời hạn kỳ" value={`${dateTime(data.period.beforeReturnAt ?? data.period.createdAt ?? "")} → ${dateTime(data.period.returnAt)}`} />
+            <KeyValueRow label="Phí đã thỏa thuận" value={money(data.period.amount)} />
+            <KeyValueRow label="Đã thu cho kỳ" value={money(data.period.collected)} />
+            <KeyValueRow label="Kỳ còn thiếu" value={money(data.period.remaining)} emphasize />
+          </View>
+          <Text style={{ color: theme.muted, fontSize: 13.5, lineHeight: 20 }}>Khoản này thu cho kỳ đã lưu, không cộng lại phí hoặc đổi ngày hẹn trả.</Text>
         </Card>
         <Card style={{ gap: 16 }}>
           <FormField label="Số tiền thu cho kỳ (VND)" value={amount} onChangeText={setAmount} editable={!locked && data.available} keyboardType="number-pad" maxLength={20} />
@@ -130,15 +139,17 @@ function CollectionForm({ id, version }: { id: string; version?: string }) {
           <FormField label="Nội dung thu theo kỳ" value={note} onChangeText={setNote} editable={!locked} multiline maxLength={2000} />
         </Card>
         <Card style={{ gap: 16 }}>
-          <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 18, fontWeight: "700" }}>Bill cho kỳ gia hạn #{data.period.version}</Text>
+          <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 17, fontWeight: "700" }}>Bill cho kỳ gia hạn #{data.period.version}</Text>
           {(billLedger.pending||!!billLedger.error)&&<InlineError message={billLedger.error||"Có lần lưu bill chưa được xác nhận. Mở bước bill và kiểm tra kết quả trước khi ghi khoản thu."}/>}
           {bill.isError && <InlineError message={bill.error.message} />}
           {source ? <BillPhoto key={billKey} source={source} label="Bill khoản thu theo kỳ" onReady={ready => setReadyBill(ready ? billKey : "")} /> : <Text style={{ color: theme.muted }}>{bill.isPending ? "Đang kiểm tra bill…" : "Chưa có bill chính cho kỳ này."}</Text>}
           <Button secondary label={billLedger.pending?"Đối chiếu bill đang chờ xác nhận":"Chọn hoặc thay bill khoản thu theo kỳ"} disabled={locked} onPress={() => { Keyboard.dismiss(); router.push({ pathname: "/collection-bill/[id]", params: { id, version: String(data.period.version), returnTo: "collection" } }); }} />
           <Button secondary label={billKey && reviewedBill === billKey ? "Đã rà soát bill khoản thu theo kỳ" : "Xác nhận bill đúng khoản thu theo kỳ"} disabled={locked || !billKey || readyBill !== billKey || bill.isError || bill.isFetching} onPress={() => setReviewedBill(billKey)} />
         </Card>
-        <Button secondary label="Ẩn bàn phím" onPress={Keyboard.dismiss} />
-        <Button secondary label="Tải lại số liệu thu theo kỳ" loading={query.isFetching || bill.isFetching} disabled={action.busy || action.checking} onPress={() => { setReviewedBill(""); setImageEpoch(value => value + 1); void query.refetch(); void bill.refetch(); }} />
+        <View style={{ flexDirection: "row", gap: 10 }}>
+          <Button size="sm" equalWidth secondary label="Ẩn bàn phím" onPress={Keyboard.dismiss} />
+          <Button size="sm" equalWidth secondary label="Tải lại số liệu thu theo kỳ" loading={query.isFetching || bill.isFetching} disabled={action.busy || action.checking} onPress={() => { setReviewedBill(""); setImageEpoch(value => value + 1); void query.refetch(); void bill.refetch(); }} />
+        </View>
       </ScrollView>
       <View style={{ padding: 16, borderTopWidth: 1, borderColor: theme.border, backgroundColor: theme.surface }}><View style={{ maxWidth: 724, width: "100%", alignSelf: "center" }}>
         {action.key ? <Button label={action.busy ? "Đang ghi khoản thu theo kỳ" : "Đối chiếu khoản thu theo kỳ"} loading={action.busy || action.checking} onPress={() => setResolving(true)} /> :

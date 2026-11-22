@@ -114,7 +114,7 @@ export function DepositRefundScreen({ id, itemId, event }: { id: string; itemId:
   }
 
   function refreshBalances() {
-    for (const key of ['deposit-refund', 'deposit-refund-queue', 'return-correction-profile', 'record', 'catalogue', 'contract-finance', 'cashbook', 'cashbook-accounts', 'contract-history', 'telegram']) {
+    for (const key of ['deposit-refund', 'deposit-refund-queue', 'return-correction-profile', 'record', 'catalogue', 'finance', 'cashbook', 'cashbook-accounts', 'contract-history', 'telegram']) {
       void cache.invalidateQueries({ queryKey: [key] });
     }
   }
@@ -196,7 +196,7 @@ export function DepositRefundScreen({ id, itemId, event }: { id: string; itemId:
     }
   }
 
-  return <SafeAreaView edges={['left', 'right', 'bottom']} style={{ flex: 1 }}>
+  return <SafeAreaView edges={['left', 'right', 'bottom']} style={{ flex: 1, backgroundColor: theme.background }}>
     <Stack.Screen options={{ title: data ? `Bổ sung hoàn cọc · ${data.code}` : 'Bổ sung hoàn cọc' }} />
     <KeyboardFormScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40, gap: 16, maxWidth: 760, width: '100%', alignSelf: 'center' }}>
       {!!notice && <Text style={text} accessibilityLiveRegion="polite">{notice}</Text>}

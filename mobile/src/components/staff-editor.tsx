@@ -3,7 +3,7 @@ import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
 import { Text, type ScrollViewInstance, type TextInputInstance } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { STAFF_PROFILE_STATUSES, staffProfileValues, validateStaffProfile, type MobileStaffProfile, type MobileStaffOptions, type MobileStaffInput } from "../../../shared/mobile-staff";
 import { useSession } from "@/providers/session";
 import { useStaffWrite } from "@/hooks/use-staff-write";
@@ -35,8 +35,8 @@ function StaffForm({ profile, options, defaultStore }: { profile: MobileStaffPro
     if (Object.keys(next).length) { scroll.current?.scrollTo({ y: 0 }); requestAnimationFrame(() => inputs.current[Object.keys(next)[0]]?.focus()); return; }
     setConfirm(true);
   }
-  return <><KeyboardFormScrollView ref={scroll} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 20, paddingBottom: 24 + insets.bottom, gap: 18, maxWidth: 760, width: "100%", alignSelf: "center" }}>
-      <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 26, fontWeight: "800" }}>{profile ? "Sửa nhân sự" : "Thêm nhân sự"}</Text>
+  return <SafeAreaView edges={["bottom", "left", "right"]} style={{ flex: 1, backgroundColor: theme.background }}><KeyboardFormScrollView ref={scroll} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, paddingBottom: 24 + insets.bottom, gap: 14, maxWidth: 760, width: "100%", alignSelf: "center" }}>
+      <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 20, fontWeight: "800" }}>{profile ? "Sửa nhân sự" : "Thêm nhân sự"}</Text>
       <Text style={{ color: theme.muted, lineHeight: 23 }}>{profile ? `${profile.code} · Thay đổi cơ sở hoặc trạng thái sẽ đồng bộ với tài khoản đăng nhập đã liên kết.` : "Mã nhân sự được hệ thống tự cấp. Mặc định trạng thái Bình thường."}</Text>
       {!!Object.keys(errors).length && <InlineError message="Kiểm tra các trường được đánh dấu trước khi lưu nhân sự." />}
       {write.pending && !write.issued && <InlineError message="Nhân sự còn yêu cầu chưa rõ kết quả. Mở Tài khoản để đối chiếu trước khi lưu tiếp." />}
@@ -58,7 +58,7 @@ function StaffForm({ profile, options, defaultStore }: { profile: MobileStaffPro
     {confirm && <ConfirmEdit title={profile ? "Lưu thay đổi nhân sự?" : "Thêm nhân sự?"} message={`${form.name.trim()}\n${form.phone.trim()}\n${input().position || "Chưa ghi chức vụ"}\n${stores.find(row => row.value === form.store_id)?.label}\n${STAFF_PROFILE_STATUSES.find(row => row.value === form.status)?.label}`} onCancel={() => setConfirm(false)} onConfirm={() => { setConfirm(false); void write.save(input()); }} />}
     {write.issued && <StaffIssuedCredentials value={write.issued.value} onClose={write.closeIssued} />}
     {write.exit && <ConfirmEdit title="Rời biểu mẫu nhân sự?" message="Thông tin chưa gửi trong biểu mẫu sẽ mất. Yêu cầu đã gửi vẫn giữ mã để đối chiếu trong Tài khoản." confirmLabel="Rời biểu mẫu" onCancel={write.cancelExit} onConfirm={write.leave} busy={write.busy} />}
-  </>;
+  </SafeAreaView>;
 }
 export function StaffEditor({ id, store }: { id: string | null; store?: string }) {
   const { api, session } = useSession(), allowed = !!api && session!.user.permissions.includes("hr.write"), valid = id === null || /^[1-9]\d{0,14}$/.test(id);

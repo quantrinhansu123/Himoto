@@ -29,8 +29,11 @@ export function useReturnWrite(id:string,dirty:boolean) {
     catch(cause){if(alive.current)setError((cause as Error).message);}
     finally{running.current=false;if(alive.current)setChecking(false);}
   },[api,scope,operation]);
+  function invalidate(){
+    for(const queryKey of [['return-preparation'],['record'],['finance'],['catalogue'],['cashbook'],['cashbook-accounts'],['contract-history']])void cache.invalidateQueries({queryKey});
+  }
   function openReceipt(){
-    disablePrevention();router.replace({pathname:'/return/[id]',params:{id}});
+    invalidate();disablePrevention();router.replace({pathname:'/return/[id]',params:{id}});
   }
   async function submit(input:MobileReturnRecordInput){
     if(!api||!scope||!checked||key||running.current)return;
@@ -53,7 +56,7 @@ export function useReturnWrite(id:string,dirty:boolean) {
       if(result.status==='committed'){openReceipt();return;}
       await pendingWrites.complete(scope,operation,key);if(!alive.current)return;
       setKey(null);setNotice('Máy chủ xác nhận chưa ghi và đã khóa mã cũ. Nội dung được giữ; rà soát phí và tiền lại trước khi gửi.');
-      for(const queryKey of [['return-preparation'],['record'],['finance']])void cache.invalidateQueries({queryKey});
+      invalidate();
     }catch(cause){if(alive.current)setError((cause as Error).message);}
     finally{running.current=false;if(alive.current)setBusy(false);}
   }

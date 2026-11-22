@@ -95,8 +95,8 @@ function RenewalForm({ id,backfill }: { id: string;backfill:boolean }) {
           {!!action.error && <InlineError message={action.error} />}
           <Button label="Xác nhận đã kiểm tra gia hạn" loading={action.checking} onPress={() => { void action.acknowledge(); }} />
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-            <Button secondary label="Mở Telegram gia hạn" onPress={() => router.push({ pathname: "/contract-telegram/[id]", params: { id } })} />
-            <Button secondary label="Mở Sổ quỹ" onPress={() => router.push("/cashbook")} />
+            <Button size="sm" equalWidth secondary label="Mở Telegram gia hạn" loading={action.checking} onPress={() => { void action.acknowledge(() => router.replace({ pathname: "/contract-telegram/[id]", params: { id, event: `renewal:${id}:${result.version}`, onlyEvent: "1" } })); }} />
+            <Button size="sm" equalWidth secondary label="Mở Sổ quỹ" loading={action.checking} onPress={() => { void action.acknowledge(() => router.replace("/cashbook")); }} />
           </View>
         </Card>
       </ScrollView>

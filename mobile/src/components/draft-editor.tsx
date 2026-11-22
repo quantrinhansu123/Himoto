@@ -56,15 +56,15 @@ import { PrintPaper } from './print-paper';
 import { canFinalizeRentalContract, requiresOwnershipApproval } from '../../../shared/contract-approval';
 import { DraftCustomerPicker, DraftVehiclePicker } from "./draft-pickers";
 import { CustomerCreateSheet } from "./customer-editor";
-import {useDraftWorkLifecycle} from '@/hooks/use-draft-work-lifecycle';
-import {DraftWorkGate} from './draft-work-gate';
-import type {DraftWorkController,WorkLocalPhoto} from '@/lib/draft-work-controller';
-import {useContractPhotos} from '@/hooks/use-contract-photos';
-import {ContractPhotoFields} from './contract-photo-fields';
-import {ContractPhotoSave} from './contract-photo-save';
-import {CustomerPhotoCopyStage} from './customer-photo-copy';
+import { useDraftWorkLifecycle } from '@/hooks/use-draft-work-lifecycle';
+import { DraftWorkGate } from './draft-work-gate';
+import type { DraftWorkController, WorkLocalPhoto } from '@/lib/draft-work-controller';
+import { useContractPhotos } from '@/hooks/use-contract-photos';
+import { ContractPhotoFields } from './contract-photo-fields';
+import { ContractPhotoSave } from './contract-photo-save';
+import { CustomerPhotoCopyStage } from './customer-photo-copy';
 import { addRentalDays, addRentalDuration, rentalDayCount } from "../../../shared/rental-time";
-import {plateSelectionIndex} from '../../../shared/mobile-plate-ocr';
+import { plateSelectionIndex } from '../../../shared/mobile-plate-ocr';
 import {
   DraftFees,
   DraftRequirements,
@@ -75,7 +75,7 @@ import {
   DraftVehicleLines,
 } from "./draft-document-fields";
 
-export function DraftEditor({ id,workId,backfill=false,reservation=false,defaultStore }: { id: string | null;workId?:string;backfill?:boolean;reservation?:boolean;defaultStore?:string }) {
+export function DraftEditor({ id, workId, backfill = false, reservation = false, defaultStore }: { id: string | null; workId?: string; backfill?: boolean; reservation?: boolean; defaultStore?: string }) {
   const { api, session } = useSession();
   const allowed =
     !!session?.user.permissions.includes("contracts.draft") &&
@@ -140,9 +140,9 @@ export function DraftEditor({ id,workId,backfill=false,reservation=false,default
       />
     );
   return (
-    <DraftWorkGate key={`${api?.origin}:${session?.token}:${session?.user.permissions.join(',')}:${scope.join(":")}:${id||"new"}:${workId||""}:${reservation?"res":""}`} id={id} workId={workId} backfill={backfill}>{(work,initialPhotos)=><DraftForm
-      key={`${api?.origin}:${session?.token}:${session?.user.permissions.join(',')}:${scope.join(":")}:${id || "new"}:${work?.id||"memory"}:${reservation?"res":""}`}
-      id={work?.getHead()?work.getHead()!.work.baseDraftId===null?null:String(work.getHead()!.work.baseDraftId):id} work={work} initialPhotos={initialPhotos}
+    <DraftWorkGate key={`${api?.origin}:${session?.token}:${session?.user.permissions.join(',')}:${scope.join(":")}:${id || "new"}:${workId || ""}:${reservation ? "res" : ""}`} id={id} workId={workId} backfill={backfill}>{(work, initialPhotos) => <DraftForm
+      key={`${api?.origin}:${session?.token}:${session?.user.permissions.join(',')}:${scope.join(":")}:${id || "new"}:${work?.id || "memory"}:${reservation ? "res" : ""}`}
+      id={work?.getHead() ? work.getHead()!.work.baseDraftId === null ? null : String(work.getHead()!.work.baseDraftId) : id} work={work} initialPhotos={initialPhotos}
       options={options.data!} backfill={backfill} reservation={reservation} defaultStore={defaultStore}
       profile={id === null ? undefined : profile.data}
     />}</DraftWorkGate>
@@ -151,22 +151,23 @@ export function DraftEditor({ id,workId,backfill=false,reservation=false,default
 function DraftForm({
   id,
   options,
-  profile,work,initialPhotos,backfill=false,reservation=false,defaultStore,
+  profile, work, initialPhotos, backfill = false, reservation = false, defaultStore,
 }: {
   id: string | null;
   options: MobileDraftOptions;
-  profile?: MobileDraftProfile;work:DraftWorkController|null;initialPhotos:WorkLocalPhoto[];backfill?:boolean;reservation?:boolean;defaultStore?:string;
+  profile?: MobileDraftProfile; work: DraftWorkController | null; initialPhotos: WorkLocalPhoto[]; backfill?: boolean; reservation?: boolean; defaultStore?: string;
 }) {
   const theme = useTheme(),
     reduced = useReducedMotion(),
     { api, session } = useSession();
   const [input, setInput] = useState(() =>
-    work?.initialInput??(profile ? restoreDraftType(profile.input, options) : (()=>{const value=newDraftInput(options);if(defaultStore&&options.stores.some(s=>String(s.id)===defaultStore)){value.draft.store_id=defaultStore;value.draft.vehicle_store_id=defaultStore;}if(backfill)value.draft.backfill={note:""};else if(reservation){value.draft.reservation=true;const nextStart=addRentalDuration(value.draft.start_date,1,"day")||value.draft.start_date,nextEnd=addRentalDuration(nextStart,1,"day")||value.draft.end_date;value.draft=alignDraftWindow({...value.draft,start_date:nextStart,end_date:nextEnd});}return value;})()),
+    work?.initialInput ?? (profile ? restoreDraftType(profile.input, options) : (() => { const value = newDraftInput(options); if (defaultStore && options.stores.some(s => String(s.id) === defaultStore)) { value.draft.store_id = defaultStore; value.draft.vehicle_store_id = defaultStore; } if (backfill) value.draft.backfill = { note: "" }; else if (reservation) { value.draft.reservation = true; const nextStart = addRentalDuration(value.draft.start_date, 1, "day") || value.draft.start_date, nextEnd = addRentalDuration(nextStart, 1, "day") || value.draft.end_date; value.draft = alignDraftWindow({ ...value.draft, start_date: nextStart, end_date: nextEnd }); } return value; })()),
   );
   const [baseline, setBaseline] = useState(() => JSON.stringify(input)),
-    [step, setStep] = useState(work?.initialStep??0),
+    [step, setStep] = useState(work?.initialStep ?? 0),
     [errors, setErrors] = useState<DraftErrors>({});
   const [typeManager,setTypeManager]=useState(false);
+  const [daysDraft,setDaysDraft]=useState<string|null>(null);
   const [lookup,setLookup]=useState(''),[submittedLookup,setSubmittedLookup]=useState('');
   const [printHtml,setPrintHtml]=useState(''),[previewBusy,setPreviewBusy]=useState(false);
   const previewRequest=useRef<AbortController|null>(null);
@@ -179,11 +180,11 @@ function DraftForm({
     [pendingCustomer, setPendingCustomer] =
       useState<MobileDraftCustomer | null>(null);
   const [availabilityRequest, setAvailabilityRequest] = useState<{
-      vehicleIds: number[];
-      startsAt: string;
-      endsAt: string;
-      draftId?: number;
-    } | null>(null),
+    vehicleIds: number[];
+    startsAt: string;
+    endsAt: string;
+    draftId?: number;
+  } | null>(null),
     [localError, setLocalError] = useState("");
   const scroll = useRef<ScrollViewInstance>(null);
   const { width, height } = useWindowDimensions();
@@ -219,26 +220,28 @@ function DraftForm({
           140,
           true,
         );
-      } catch {}
+      } catch { }
     }, 80);
   }, []);
   const d = input.draft,
-    inputRef=useRef(input);
-  useEffect(()=>{inputRef.current=input;},[input]);
-  const [photoStage,setPhotoStage]=useState(false),[copyStage,setCopyStage]=useState(false);
-  const photos=useContractPhotos({work,initialPhotos,getVehicleIds:()=>inputRef.current.draft.vehicles.map(v=>v.id),onVehicle:(vehicle,before,scan)=>{
-    const value=inputRef.current,index=plateSelectionIndex(before,value.draft.vehicles.map(v=>v.id),vehicle.id,scan);
-    if(value.draft.vehicles[index]?.id===vehicle.id)return;
-    const line=addDraftVehicle({...value,draft:{...value.draft,vehicles:[value.draft.vehicles[index]]}},vehicle).draft.vehicles[0];
-    change({...value,draft:{...value.draft,vehicles:value.draft.vehicles.map((v,i)=>i===index?line:v)}});
-  }});
-  const dirty=JSON.stringify(input)!==baseline||photos.photos.length>0;
-  useDraftWorkLifecycle(!!work,photos.prepareTransition,cause=>setLocalError((cause as Error).message));
-  const stepRef=useRef(step),[localSave,setLocalSave]=useState(()=>work?.getState()??{saving:false,error:'',scopeChanged:false,waiting:false});
-  useEffect(()=>{stepRef.current=step;},[step]);
-  useEffect(()=>{if(!work)return;work.setReader(()=>({input:inputRef.current,step:stepRef.current}));return work.subscribe(()=>setLocalSave(work.getState()));},[work]);
-  useEffect(()=>{if(work&&dirty&&!work.metadataReceipt())work.schedule();},[work,input,step,dirty]);
-  useEffect(()=>()=>{if(work)void work.detach().catch(()=>{});},[work]);
+    inputRef = useRef(input);
+  useEffect(() => { inputRef.current = input; }, [input]);
+  const [photoStage, setPhotoStage] = useState(false), [copyStage, setCopyStage] = useState(false);
+  const photos = useContractPhotos({
+    work, initialPhotos, getVehicleIds: () => inputRef.current.draft.vehicles.map(v => v.id), onVehicle: (vehicle, before, scan) => {
+      const value = inputRef.current, index = plateSelectionIndex(before, value.draft.vehicles.map(v => v.id), vehicle.id, scan);
+      if (value.draft.vehicles[index]?.id === vehicle.id) return;
+      const line = addDraftVehicle({ ...value, draft: { ...value.draft, vehicles: [value.draft.vehicles[index]] } }, vehicle).draft.vehicles[0];
+      change({ ...value, draft: { ...value.draft, vehicles: value.draft.vehicles.map((v, i) => i === index ? line : v) } });
+    }
+  });
+  const dirty = JSON.stringify(input) !== baseline || photos.photos.length > 0;
+  useDraftWorkLifecycle(!!work, photos.prepareTransition, cause => setLocalError((cause as Error).message));
+  const stepRef = useRef(step), [localSave, setLocalSave] = useState(() => work?.getState() ?? { saving: false, error: '', scopeChanged: false, waiting: false });
+  useEffect(() => { stepRef.current = step; }, [step]);
+  useEffect(() => { if (!work) return; work.setReader(() => ({ input: inputRef.current, step: stepRef.current })); return work.subscribe(() => setLocalSave(work.getState())); }, [work]);
+  useEffect(() => { if (work && dirty && !work.metadataReceipt()) work.schedule(); }, [work, input, step, dirty]);
+  useEffect(() => () => { if (work) void work.detach().catch(() => { }); }, [work]);
   function reset(next: MobileDraftInput) {
     const normalized = restoreDraftType(next, options);
     setInput(normalized);
@@ -260,29 +263,29 @@ function DraftForm({
     );
   }
   const write = useDraftWrite({
-    id,work,beforeLeave:photos.prepareTransition,
+    id, work, beforeLeave: photos.prepareTransition,
     input,
     dirty,
     onReload: reset,
     onReset: () => reset(newDraftInput(options)),
     onError: reveal,
-    onCommitted:result=>{if(photos.getPhotos().some(row=>row.savedTo!==result.id)){setPhotoStage(true);return true;}if(inputRef.current.draft.customer_id&&!work?.getHead()?.work.attempts.some(a=>a.kind==='copy'&&a.state==='committed'&&a.acknowledged)){setCopyStage(true);return true;}return false;},
-    onOpen:result=>{
-      const action=nextAction.current;
-      if(!action)return false;
-      router.replace({pathname:'/contract/[id]',params:{id:String(result.id)}});
+    onCommitted: result => { if (photos.getPhotos().some(row => row.savedTo !== result.id)) { setPhotoStage(true); return true; } if (inputRef.current.draft.customer_id && !work?.getHead()?.work.attempts.some(a => a.kind === 'copy' && a.state === 'committed' && a.acknowledged)) { setCopyStage(true); return true; } return false; },
+    onOpen: result => {
+      const action = nextAction.current;
+      if (!action) return false;
+      router.replace({ pathname: '/contract/[id]', params: { id: String(result.id) } });
       return true;
     },
   });
   const disabled = write.busy || !!write.receipt || !!pendingCustomer || customerCreate || localSave.scopeChanged || localSave.waiting;
-  const canReadCustomers=!!session?.user.permissions.includes('customers.read');
-  const canIssue=canFinalizeRentalContract(session?{access_role:session.user.role,permissions:session.user.permissions}:null,input.rental_type);
-  const needsApproval=requiresOwnershipApproval(input.rental_type);
-  const exactCustomer=useQuery({
-    queryKey:['draft-inline-customer',api?.origin,session?.user.id,session?.user.storeId,submittedLookup],
-    queryFn:({signal})=>api!.draftCustomer({query:submittedLookup},signal),
-    enabled:!!api&&canReadCustomers&&step===1&&!!submittedLookup,
-    retry:false,gcTime:0,staleTime:0,
+  const canReadCustomers = !!session?.user.permissions.includes('customers.read');
+  const canIssue = canFinalizeRentalContract(session ? { access_role: session.user.role, permissions: session.user.permissions } : null, input.rental_type);
+  const needsApproval = requiresOwnershipApproval(input.rental_type);
+  const exactCustomer = useQuery({
+    queryKey: ['draft-inline-customer', api?.origin, session?.user.id, session?.user.storeId, submittedLookup],
+    queryFn: ({ signal }) => api!.draftCustomer({ query: submittedLookup }, signal),
+    enabled: !!api && canReadCustomers && step === 1 && !!submittedLookup,
+    retry: false, gcTime: 0, staleTime: 0,
   });
   const staff = useQuery({
     queryKey: ["draft-staff", session?.user.id],
@@ -315,7 +318,7 @@ function DraftForm({
     JSON.stringify(availabilityRequest) === currentSignature;
   function change(next: MobileDraftInput) {
     if (disabled) return;
-    inputRef.current=next;
+    inputRef.current = next;
     setInput(next);
     setErrors({});
     setLocalError("");
@@ -327,17 +330,17 @@ function DraftForm({
   ) => change({ ...input, draft: { ...d, [key]: value } });
   function jump(index: number) {
     Keyboard.dismiss();
-    stepRef.current=index;setStep(index);
-    if(work&&dirty)void work.flush(inputRef.current,index).catch(cause=>setLocalError((cause as Error).message));
+    stepRef.current = index; setStep(index);
+    if (work && dirty) void work.flush(inputRef.current, index).catch(cause => setLocalError((cause as Error).message));
     scroll.current?.scrollTo({ y: 0, animated: !reduced });
     AccessibilityInfo.announceForAccessibility(
       `Bước ${index + 1}: ${draftSteps[index]}`,
     );
   }
-  function save(action: 'issue'|'approve'|null = null) {
-    if(photos.picking||photos.reading)return;
-    if(photos.getPhotos().some(p=>p.slot.startsWith('scan_plate')||p.slot.startsWith('plate-')&&!d.vehicles.some(v=>p.slot===`plate-${v.id}`||p.slot.startsWith(`plate-${v.id}-extra-`)))){
-      setLocalError('Có ảnh biển số chưa gắn đúng xe đang chọn. Rà soát, gắn xe hoặc bỏ ảnh này trước khi lưu nháp.');setStep(2);return;
+  function save(action: 'issue' | 'approve' | null = null) {
+    if (photos.picking || photos.reading) return;
+    if (photos.getPhotos().some(p => p.slot.startsWith('scan_plate') || p.slot.startsWith('plate-') && !d.vehicles.some(v => p.slot === `plate-${v.id}` || p.slot.startsWith(`plate-${v.id}-extra-`)))) {
+      setLocalError('Có ảnh biển số chưa gắn đúng xe đang chọn. Rà soát, gắn xe hoặc bỏ ảnh này trước khi lưu nháp.'); setStep(2); return;
     }
     Keyboard.dismiss();
     const fields = draftErrors(input);
@@ -345,27 +348,27 @@ function DraftForm({
       reveal(fields);
       return;
     }
-    if(action && !d.customer_id){reveal({id_card:'Tra cứu hoặc tạo hồ sơ khách trước khi hoàn tất.'});return;}
-    nextAction.current=action;
-    void photos.ensurePersistent().then(()=>write.submit()).catch(cause=>setLocalError((cause as Error).message));
+    if (action && !d.customer_id) { reveal({ id_card: 'Tra cứu hoặc tạo hồ sơ khách trước khi hoàn tất.' }); return; }
+    nextAction.current = action;
+    void photos.ensurePersistent().then(() => write.submit()).catch(cause => setLocalError((cause as Error).message));
   }
   async function previewPrint() {
-    if(!api||previewRequest.current)return;
-    const controller=new AbortController();
-    previewRequest.current=controller;
+    if (!api || previewRequest.current) return;
+    const controller = new AbortController();
+    previewRequest.current = controller;
     setPreviewBusy(true);
     setLocalError('');
     Keyboard.dismiss();
     try {
-      const preview=await api.draftPrintPreview(inputRef.current,controller.signal,id);
-      if(!controller.signal.aborted)setPrintHtml(preview.html);
-    } catch(cause) {
-      if(controller.signal.aborted)return;
-      if(cause instanceof ApiError&&cause.fields)reveal(cause.fields);
+      const preview = await api.draftPrintPreview(inputRef.current, controller.signal, id);
+      if (!controller.signal.aborted) setPrintHtml(preview.html);
+    } catch (cause) {
+      if (controller.signal.aborted) return;
+      if (cause instanceof ApiError && cause.fields) reveal(cause.fields);
       setLocalError((cause as Error).message);
     } finally {
-      previewRequest.current=null;
-      if(!controller.signal.aborted)setPreviewBusy(false);
+      previewRequest.current = null;
+      if (!controller.signal.aborted) setPreviewBusy(false);
     }
   }
   function check() {
@@ -420,630 +423,72 @@ function DraftForm({
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <KeyboardScrollContext.Provider value={scrollInputIntoView}>
-        {compact && keyboardVisible ? (
-          <View
-            style={{
-              minHeight: 48,
-              paddingHorizontal: 16,
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-between",
-              backgroundColor: theme.surface,
-            }}
-          >
-            <Text style={{ color: theme.text, fontSize: 14 }}>
-              {step + 1}. {draftSteps[step]}
-            </Text>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Ẩn bàn phím"
-              onPress={Keyboard.dismiss}
+          {compact && keyboardVisible ? (
+            <View
               style={{
                 minHeight: 48,
-                minWidth: 48,
-                justifyContent: "center",
-                alignItems: "center",
-              }}
-            >
-              <Text
-                style={{
-                  color: theme.primary,
-                  fontSize: 16,
-                  fontWeight: "600",
-                }}
-              >
-                Xong
-              </Text>
-            </Pressable>
-          </View>
-        ) : (
-          <View
-            style={{
-              backgroundColor: theme.surface,
-              borderBottomWidth: 1,
-              borderBottomColor: theme.border,
-            }}
-          >
-            <View
-              style={{
-                maxWidth: 760,
-                alignSelf: "center",
-                width: "100%",
-                paddingHorizontal: 12,
-                paddingVertical: compact ? 0 : 8,
+                paddingHorizontal: 16,
                 flexDirection: "row",
-                gap: 4,
+                alignItems: "center",
+                justifyContent: "space-between",
+                backgroundColor: theme.surface,
               }}
             >
-              {compact && (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Quay lại"
-                  disabled={write.busy}
-                  onPress={() => router.back()}
+              <Text style={{ color: theme.text, fontSize: 14 }}>
+                {step + 1}. {draftSteps[step]}
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Ẩn bàn phím"
+                onPress={Keyboard.dismiss}
+                style={{
+                  minHeight: 48,
+                  minWidth: 48,
+                  justifyContent: "center",
+                  alignItems: "center",
+                }}
+              >
+                <Text
                   style={{
-                    minWidth: 48,
-                    minHeight: 48,
-                    alignItems: "center",
-                    justifyContent: "center",
+                    color: theme.primary,
+                    fontSize: 16,
+                    fontWeight: "600",
                   }}
                 >
-                  <ChevronLeft
-                    size={22}
-                    color={theme.text}
-                    accessible={false}
-                  />
-                </Pressable>
-              )}
-              {draftSteps.map((name, index) => (
-                <Pressable
-                  key={name}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Bước ${index + 1}: ${name}`}
-                  accessibilityState={{ selected: index === step, disabled }}
-                  disabled={disabled}
-                  onPress={() => jump(index)}
-                  style={{
-                    flex: 1,
-                    minHeight: compact ? 48 : 60,
-                    flexDirection: compact ? "row" : "column",
-                    padding: 6,
-                    gap: 5,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    borderRadius: 12,
-                    backgroundColor:
-                      index === step ? theme.tint : theme.surface,
-                  }}
-                >
-                  <Text
-                    style={{
-                      fontSize: 15,
-                      fontWeight: "800",
-                      color: index === step ? theme.primary : theme.muted,
-                    }}
-                  >
-                    {index + 1}
-                  </Text>
-                  <Text
-                    style={{
-                      fontSize: 12,
-                      fontWeight: "600",
-                      textAlign: "center",
-                      color: index === step ? theme.primary : theme.muted,
-                    }}
-                  >
-                    {name}
-                  </Text>
-                </Pressable>
-              ))}
+                  Xong
+                </Text>
+              </Pressable>
             </View>
-          </View>
-        )}
-        <ScrollView
-          ref={scroll}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode={
-            Platform.OS === "ios" ? "interactive" : "on-drag"
-          }
-          contentContainerStyle={{
-            padding: 18,
-            gap: 16,
-            maxWidth: 760,
-            width: "100%",
-            alignSelf: "center",
-            paddingBottom: keyboardVisible
-              ? keyboardHeight > 0
-                ? keyboardHeight + 80
-                : 320
-              : 36,
-          }}
-          automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
-        >
-          <View style={{ gap: 8 }}>
-            <Text
-              accessibilityRole="header"
-              style={{ color: theme.text, fontSize: 23, fontWeight: "700" }}
-            >
-              {step + 1}. {draftSteps[step]}
-            </Text>
-            {!compact && (
-              <Text
-                style={{ color: theme.muted, fontSize: 14, lineHeight: 22 }}
-              >
-                Có thể lưu nháp ở mỗi bước để bổ sung sau. Ngày giờ sử dụng giờ
-                Việt Nam.
-              </Text>
-            )}
-          </View>
-          {!!Object.keys(errors).length && (
-            <InlineError
-              message={
-                Object.values(errors)[0] || "Kiểm tra các mục được đánh dấu."
-              }
-            />
-          )}
-          {!!localError && <InlineError message={localError} />}
-          {!!write.error && (
-            <View style={{ gap: 12 }}>
-              <InlineError message={write.error} />
-              <Button
-                secondary
-                label="Kiểm tra lần lưu trước"
-                loading={write.checking}
-                onPress={() => {
-                  void write.checkPrevious();
-                }}
-              />
-              {id && write.code === "DRAFT_CONFLICT" && (
-                <Button
-                  secondary
-                  label="Tải bản nháp mới"
-                  onPress={write.askReload}
-                />
-              )}
-            </View>
-          )}
-          {write.receipt && (
-            <Card style={{ gap: 14, borderColor: theme.primary }}>
-              <Text
-                accessibilityRole="header"
-                style={{ color: theme.text, fontSize: 19, fontWeight: "700" }}
-              >
-                Lần lưu trước đã thành công
-              </Text>
-              <Text
-                style={{ color: theme.muted, fontSize: 14, lineHeight: 22 }}
-              >
-                Mở hồ sơ đã lưu để kiểm tra và tiếp tục bản nháp.
-              </Text>
-              <Button
-                label={photos.photos.some(row=>row.savedTo!==write.receipt?.id)?'Hoàn tất ảnh bản nháp đã lưu':d.customer_id?'Hoàn tất giấy tờ bản nháp đã lưu':'Xem bản nháp đã lưu'}
-                loading={write.checking}
-                onPress={() => {
-                  void write.openReceipt();
-                }}
-              />
-              {id === null && !work && !photos.photos.length && !d.customer_id && (
-                <Button
-                  secondary
-                  label="Tạo bản nháp mới"
-                  loading={write.checking}
-                  onPress={() => {
-                    void write.startAnother();
-                  }}
-                />
-              )}
-            </Card>
-          )}
-          {step === 0 && (
-            <>
-              <DraftSection title="Hợp đồng và cơ sở">
-                {!d.backfill && (
-                  <ChoiceField
-                    label="Hình thức lập hồ sơ"
-                    value={d.reservation ? "reservation" : "rental"}
-                    choices={[
-                      { value: "rental", label: "Nhập hợp đồng thuê xe" },
-                      { value: "reservation", label: "Nhận cọc giữ xe (chưa giao xe)" },
-                    ]}
-                    disabled={disabled}
-                    onChange={(value) => set("reservation", value === "reservation")}
-                  />
-                )}
-                <ChoiceField
-                  label="Loại hợp đồng"
-                  value={d.contract_type_id || ""}
-                  choices={typeChoices}
-                  disabled={disabled}
-                  error={errors.contract_type_id}
-                  onChange={(value) => {
-                    const type = options.types.find((row) => row.id === value);
-                    if (type) change(chooseDraftType(input, type));
-                  }}
-                />
-                {session?.user.permissions.includes("settings.write")&&session.user.permissions.includes("finance.write")&&<Button secondary label="Quản lý loại hợp đồng ngay khi soạn" disabled={disabled} onPress={()=>setTypeManager(true)} />}
-                <ChoiceField
-                  label="Liên kết nguồn khách"
-                  value={d.store_id}
-                  choices={options.stores.map((row) => ({
-                    value: String(row.id),
-                    label: row.name,
-                  }))}
-                  disabled={disabled || !session?.user.allStores}
-                  error={errors.store_id}
-                  onChange={(value) => change({...input,draft:{...d,store_id:value,
-                    customer_source_url:options.stores.find(row=>String(row.id)===value)?.name??''}})}
-                  searchable
-                />
-                <FormField
-                  label="Số hợp đồng giấy"
-                  value={d.contract_number}
-                  editable={!disabled}
-                  maxLength={32}
-                  onChangeText={(value) => set("contract_number", value)}
-                  hint="Để trống nếu chưa có số hợp đồng giấy."
-                  error={errors.contract_number}
-                />
-              </DraftSection>
-              {staff.isError && (
-                <View style={{ gap: 12 }}>
-                  <InlineError message="Chưa tải được danh sách nhân sự. Có thể nhập tên hoặc thử tải lại." />
-                  <Button
-                    secondary
-                    label="Tải lại nhân sự"
-                    onPress={() => {
-                      void staff.refetch();
-                    }}
-                  />
-                </View>
-              )}
-              <DraftPeople
-                input={input}
-                change={change}
-                disabled={disabled}
-                staff={staff.data?.rows || []}
-                stores={options.vehicleStores}
-                representative={false}
-              />
-              <DraftRequirements {...props} />
-              <DraftSection title="Ngày và thông tin bổ sung">
-                <DateField
-                  label="Ngày tạo / nhập hợp đồng"
-                  value={d.created_on}
-                  onChange={(value) => set("created_on", value)}
-                  disabled={disabled}
-                  error={errors.created_on}
-                />
-                <DateField
-                  label="Ngày ký hợp đồng"
-                  value={d.signed_on}
-                  onChange={(value) => set("signed_on", value)}
-                  disabled={disabled}
-                  error={errors.signed_on}
-                />
-                {d.backfill && (
-                  <>
-                    <Text
-                      style={{
-                        color: theme.warning,
-                        fontSize: 14,
-                        lineHeight: 22,
-                      }}
-                    >
-                      Bản nháp nhập bổ sung lịch sử. Kiểm tra thời gian thực tế
-                      trước khi phát hành.
-                    </Text>
-                    <ChoiceField label="Tình trạng thực tế của hợp đồng bổ sung" value={d.backfill.returned_at===undefined?'ongoing':'returned'} choices={[{value:'ongoing',label:'Khách còn đang thuê'},{value:'returned',label:'Khách đã trả xe từ trước'}]} disabled={disabled} onChange={v=>set("backfill",{note:d.backfill!.note,...(v==='returned'?{returned_at:''}:{})})} />
-                    <FormField
-                      label="Lý do nhập bổ sung"
-                      value={d.backfill.note}
-                      editable={!disabled}
-                      maxLength={1000}
-                      multiline
-                      onChangeText={(value) =>
-                        set("backfill", { ...d.backfill!, note: value })
-                      }
-                    />
-                    {d.backfill.returned_at !== undefined && (
-                      <RentalDateTime
-                        label="trả xe thực tế"
-                        value={d.backfill.returned_at}
-                        disabled={disabled}
-                        onChange={(value) =>
-                          set("backfill", {
-                            ...d.backfill!,
-                            returned_at: value,
-                          })
-                        }
-                      />
-                    )}
-                  </>
-                )}
-              </DraftSection>
-            </>
-          )}
-          {step === 1 && (
-            <>
-              <DraftSection title="Thông tin khách hàng (Bên B)">
-                <ChoiceField label="Cửa hàng xe" value={d.vehicle_store_id || d.store_id}
-                  choices={options.vehicleStores.map(row=>({value:String(row.id),label:row.name}))}
-                  disabled={disabled} error={errors.vehicle_store_id} searchable onChange={value=>set('vehicle_store_id',value)} />
-                <DraftRepresentative input={input} change={change} disabled={disabled}
-                  staff={staff.data?.rows??[]} error={errors.staff_id} />
-                {staff.isError&&<Button secondary label="Tải lại gợi ý nhân sự" onPress={()=>{void staff.refetch();}} />}
-              </DraftSection>
-              {canReadCustomers && <DraftSection title="Tra cứu khách hàng">
-                <FormField label="Tra cứu theo CCCD / hộ chiếu / SĐT / liên hệ"
-                  value={lookup} editable={!disabled} maxLength={100} autoCapitalize="none" returnKeyType="search"
-                  onChangeText={value=>{setLookup(value);setSubmittedLookup('');}}
-                  onSubmitEditing={()=>{Keyboard.dismiss();setSubmittedLookup(lookup.trim());}} />
-                <Button secondary label="Tra cứu" loading={exactCustomer.isFetching} disabled={disabled||!lookup.trim()}
-                  onPress={()=>{Keyboard.dismiss();const value=lookup.trim();if(value===submittedLookup)void exactCustomer.refetch();else setSubmittedLookup(value);}} />
-                {!!submittedLookup&&exactCustomer.isError&&<InlineError message={exactCustomer.error.message} />}
-                {!!submittedLookup&&exactCustomer.data?.rows.length===0&&<Text accessibilityLiveRegion="polite" style={{color:theme.muted}}>
-                  {session?.user.permissions.includes('customers.write') ? 'Chưa tìm thấy hồ sơ. Kiểm tra thông tin hoặc bấm Thêm mới khách hàng.' : 'Chưa tìm thấy hồ sơ. Kiểm tra lại thông tin tra cứu.'}
-                </Text>}
-                {!!submittedLookup&&exactCustomer.data?.rows.map(customer=><Button key={customer.id} secondary
-                  label={`${customer.details.name} · ${customer.details.phone || customer.details.id_card || customer.id}`}
-                  disabled={disabled} onPress={()=>{setPendingCustomer(customer);setSubmittedLookup('');}} />)}
-              </DraftSection>}
-              {canReadCustomers && (
-                <Button
-                  secondary
-                  label="Chọn hồ sơ khách"
-                  disabled={disabled}
-                  onPress={() => {
-                    Keyboard.dismiss();
-                    setCustomerPicker(true);
-                  }}
-                />
-              )}
-              {session?.user.permissions.includes("customers.read") && session.user.permissions.includes("customers.write") && (
-                <Button
-                  secondary
-                  label="Thêm mới khách hàng"
-                  disabled={disabled||!d.store_id}
-                  onPress={() => {
-                    Keyboard.dismiss();
-                    setCustomerCreate(true);
-                  }}
-                />
-              )}
-              {pendingCustomer && (
-                <Card style={{ gap: 14, borderColor: theme.warning }}>
-                  <Text
-                    style={{
-                      color: theme.text,
-                      fontWeight: "700",
-                      fontSize: 18,
-                    }}
-                  >
-                    Dùng hồ sơ {pendingCustomer.details.name}?
-                  </Text>
-                  <Text
-                    style={{ color: theme.muted, fontSize: 14, lineHeight: 22 }}
-                  >
-                    Thông tin khách và người thân trên bản nháp sẽ được cập
-                    nhật.
-                    {id
-                      ? " Khi lưu, giấy tờ gắn với khách cũ sẽ được gỡ khỏi hợp đồng."
-                      : ""}
-                  </Text>
-                  <Button
-                    label="Dùng hồ sơ đã chọn"
-                    onPress={() => {
-                      setInput(chooseDraftCustomer(input, pendingCustomer));
-                      setPendingCustomer(null);
-                      setErrors({});
-                      write.clearError();
-                    }}
-                  />
-                  <Button
-                    secondary
-                    label="Giữ thông tin hiện tại"
-                    onPress={() => setPendingCustomer(null)}
-                  />
-                </Card>
-              )}
-              <DraftParty {...props} disabled={disabled||!d.customer_id} />
-            </>
-          )}
-          {step === 2 && (
-            <>
-              <DraftSection title="Thời gian thuê">
-                <RentalDateTime
-                  label="nhận xe"
-                  value={d.start_date}
-                  onChange={(value) =>
-                    change(changeDraftTime(input, "start_date", value))
-                  }
-                  disabled={disabled}
-                  error={errors.start_date}
-                />
-                <FormField
-                  label="Số ngày thuê"
-                  value={rentalDayCount(d.start_date, d.end_date)}
-                  keyboardType="number-pad"
-                  maxLength={4}
-                  editable={!disabled}
-                  onChangeText={(value) => {
-                    const nextEnd = addRentalDays(d.start_date, value.trim());
-                    if (nextEnd) change(changeDraftTime(input, "end_date", nextEnd));
-                  }}
-                  hint="Nhập số ngày để tự tính ngày hẹn trả."
-                />
-                <RentalDateTime
-                  label="hẹn trả xe"
-                  value={d.end_date}
-                  onChange={(value) =>
-                    change(changeDraftTime(input, "end_date", value))
-                  }
-                  disabled={disabled}
-                  error={errors.end_date}
-                />
-              </DraftSection>
-
-              <Button
-                secondary
-                label="Thêm xe vào bản nháp"
-                disabled={disabled || selected.length >= 50}
-                onPress={() => {
-                  Keyboard.dismiss();
-                  setVehiclePicker(true);
-                }}
-              />
-              <DraftSection title="Đối chiếu lịch xe">
-                <Text
-                  style={{ color: theme.muted, fontSize: 14, lineHeight: 22 }}
-                >
-                  {selected.length} xe đã chọn · {dateTime(d.start_date)} →{" "}
-                  {dateTime(d.end_date)}
-                </Text>
-                <Text
-                  style={{ color: theme.muted, fontSize: 13, lineHeight: 20 }}
-                >
-                  Lịch hợp đồng dùng chung cho mọi xe khi tính tiền, in và phát
-                  hành.
-                </Text>
-                {draftWindowDifferences(d).length > 0 && (
-                  <View style={{ gap: 12 }}>
-                    <InlineError message="Có dòng xe còn lưu thời gian khác với lịch hợp đồng. Đối chiếu và đồng bộ trước khi phát hành." />
-                    <Button
-                      secondary
-                      label="Đồng bộ lịch các xe"
-                      disabled={
-                        disabled ||
-                        !validDraftTime(d.start_date) ||
-                        !validDraftTime(d.end_date) ||
-                        d.end_date <= d.start_date
-                      }
-                      onPress={() => setAlignWindow(true)}
-                    />
-                  </View>
-                )}
-                <Button
-                  secondary
-                  label="Kiểm tra lịch thuê"
-                  disabled={disabled}
-                  loading={availability.isFetching && !!availabilityCurrent}
-                  onPress={check}
-                />
-                {availabilityRequest && !availabilityCurrent && (
-                  <Text
-                    accessibilityRole="alert"
-                    style={{
-                      color: theme.warning,
-                      fontSize: 14,
-                      lineHeight: 22,
-                    }}
-                  >
-                    Xe hoặc thời gian đã đổi. Kiểm tra lại lịch trước khi phát
-                    hành.
-                  </Text>
-                )}
-                {availabilityCurrent && availability.isError && (
-                  <InlineError message={availability.error.message} />
-                )}
-                {availabilityCurrent && availability.data && (
-                  <Availability
-                    value={availability.data}
-                    labels={Object.fromEntries(
-                      d.vehicles.map((row) => [
-                        Number(row.id),
-                        `${row.license} · ${row.name}`,
-                      ]),
-                    )}
-                  />
-                )}
-              </DraftSection>
-              <DraftVehicleLines {...props} />
-              {!d.vehicles.some(v=>!v.id)&&<Button label="Thêm dòng xe để quét biển số" secondary disabled={disabled||d.vehicles.length>=50||photos.reading||photos.picking} onPress={()=>change({...input,draft:{...d,vehicles:[...d.vehicles,{...emptyDraftVehicle(),rent_at:d.start_date,return_at:d.end_date}]}})}/>}
-              <ContractPhotoFields photos={photos} vehicles={d.vehicles} disabled={disabled} plates canOcr={!!session?.user.permissions.includes('customers.write')}/>
-            </>
-          )}
-          {step === 3 && <DraftFees {...props} />}
-          {step === 4 && (
-            <>
-              <DraftSection title="Ký kết và ghi chú">
-                <DateField
-                  label="Ngày ủy quyền"
-                  value={d.authorization_date}
-                  onChange={(value) => set("authorization_date", value)}
-                  disabled={disabled}
-                  error={errors.authorization_date}
-                />
-                <FormField
-                  label="Ghi chú bản nháp"
-                  value={input.notes}
-                  onChangeText={(notes) => change({ ...input, notes })}
-                  editable={!disabled}
-                  multiline
-                  maxLength={4000}
-                />
-              </DraftSection>
-              <DraftSection title="Rà soát bản nháp">
-                <ContractPhotoFields photos={photos} vehicles={d.vehicles} disabled={disabled} canOcr={!!session?.user.permissions.includes('customers.write')}/>
-                <Summary
-                  label="Loại hợp đồng"
-                  value={d.contract_type_name || "Chưa chọn"}
-                />
-                <Summary
-                  label="Cơ sở"
-                  value={
-                    options.stores.find((row) => String(row.id) === d.store_id)
-                      ?.name || "Chưa chọn"
-                  }
-                />
-                <Summary
-                  label="Khách thuê"
-                  value={d.customer.name || "Chưa điền"}
-                />
-                <Summary label="Xe đã chọn" value={`${selected.length} xe`} />
-                <Summary label="Nhận xe" value={dateTime(d.start_date)} />
-                <Summary label="Hẹn trả" value={dateTime(d.end_date)} />
-                <Text
-                  style={{ color: theme.muted, fontSize: 14, lineHeight: 22 }}
-                >
-                  Lưu nháp giữ hồ sơ để bổ sung và phát hành theo quy trình
-                  nghiệp vụ.
-                </Text>
-              </DraftSection>
-            </>
-          )}
-        </ScrollView>
-        {!(compact && keyboardVisible) && (
-          <View
-            style={{
-              padding: 16,
-              borderTopWidth: 1,
-              borderTopColor: theme.border,
-              backgroundColor: theme.surface,
-            }}
-          >
+          ) : (
             <View
               style={{
-                maxWidth: 724,
-                width: "100%",
-                alignSelf: "center",
-                gap: 10,
+                backgroundColor: theme.surface,
+                borderBottomWidth: 1,
+                borderBottomColor: theme.border,
               }}
             >
-              <View style={{ flexDirection: "row", gap: 10 }}>
-                {step > 0 && (
+              <View
+                style={{
+                  maxWidth: 760,
+                  alignSelf: "center",
+                  width: "100%",
+                  paddingHorizontal: 12,
+                  paddingVertical: compact ? 0 : 8,
+                  flexDirection: "row",
+                  gap: 4,
+                }}
+              >
+                {compact && (
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel="Bước trước"
-                    disabled={disabled}
-                    onPress={() => jump(step - 1)}
+                    accessibilityLabel="Quay lại"
+                    disabled={write.busy}
+                    onPress={() => router.back()}
                     style={{
-                      minHeight: 52,
                       minWidth: 48,
+                      minHeight: 48,
                       alignItems: "center",
                       justifyContent: "center",
-                      borderWidth: 1,
-                      borderColor: theme.controlBorder,
-                      borderRadius: 14,
                     }}
                   >
                     <ChevronLeft
@@ -1053,53 +498,621 @@ function DraftForm({
                     />
                   </Pressable>
                 )}
+                {draftSteps.map((name, index) => (
+                  <Pressable
+                    key={name}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Bước ${index + 1}: ${name}`}
+                    accessibilityState={{ selected: index === step, disabled }}
+                    disabled={disabled}
+                    onPress={() => jump(index)}
+                    style={{
+                      flex: 1,
+                      minHeight: compact ? 48 : 60,
+                      flexDirection: compact ? "row" : "column",
+                      padding: 6,
+                      gap: 5,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      borderRadius: 12,
+                      backgroundColor:
+                        index === step ? theme.tint : theme.surface,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 15,
+                        fontWeight: "800",
+                        color: index === step ? theme.primary : theme.muted,
+                      }}
+                    >
+                      {index + 1}
+                    </Text>
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        fontWeight: "600",
+                        textAlign: "center",
+                        color: index === step ? theme.primary : theme.muted,
+                      }}
+                    >
+                      {name}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+          )}
+          <ScrollView
+            ref={scroll}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode={
+              Platform.OS === "ios" ? "interactive" : "on-drag"
+            }
+            contentContainerStyle={{
+              padding: 18,
+              gap: 16,
+              maxWidth: 760,
+              width: "100%",
+              alignSelf: "center",
+              paddingBottom: keyboardVisible
+                ? keyboardHeight > 0
+                  ? keyboardHeight + 80
+                  : 320
+                : 36,
+            }}
+            automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
+          >
+            <View style={{ gap: 8 }}>
+              <Text
+                accessibilityRole="header"
+                style={{ color: theme.text, fontSize: 23, fontWeight: "700" }}
+              >
+                {step + 1}. {draftSteps[step]}
+              </Text>
+              {!compact && (
+                <Text
+                  style={{ color: theme.muted, fontSize: 14, lineHeight: 22 }}
+                >
+                  Có thể lưu nháp ở mỗi bước để bổ sung sau. Ngày giờ sử dụng giờ
+                  Việt Nam.
+                </Text>
+              )}
+            </View>
+            {!!Object.keys(errors).length && (
+              <InlineError
+                message={
+                  Object.values(errors)[0] || "Kiểm tra các mục được đánh dấu."
+                }
+              />
+            )}
+            {!!localError && <InlineError message={localError} />}
+            {!!write.error && (
+              <View style={{ gap: 12 }}>
+                <InlineError message={write.error} />
                 <Button
-                  equalWidth
-                  label="Lưu nháp"
-                  loading={write.busy}
-                  disabled={
-                    !write.checked || !!write.receipt || !!pendingCustomer || customerCreate || photos.picking || photos.reading || localSave.scopeChanged || localSave.waiting
-                  }
-                  onPress={()=>save()}
+                  secondary
+                  label="Kiểm tra lần lưu trước"
+                  loading={write.checking}
+                  onPress={() => {
+                    void write.checkPrevious();
+                  }}
                 />
-                {step < draftSteps.length - 1 && (
+                {id && write.code === "DRAFT_CONFLICT" && (
+                  <Button
+                    secondary
+                    label="Tải bản nháp mới"
+                    onPress={write.askReload}
+                  />
+                )}
+              </View>
+            )}
+            {write.receipt && (
+              <Card style={{ gap: 14, borderColor: theme.primary }}>
+                <Text
+                  accessibilityRole="header"
+                  style={{ color: theme.text, fontSize: 19, fontWeight: "700" }}
+                >
+                  Lần lưu trước đã thành công
+                </Text>
+                <Text
+                  style={{ color: theme.muted, fontSize: 14, lineHeight: 22 }}
+                >
+                  Mở hồ sơ đã lưu để kiểm tra và tiếp tục bản nháp.
+                </Text>
+                <Button
+                  label={photos.photos.some(row => row.savedTo !== write.receipt?.id) ? 'Hoàn tất ảnh bản nháp đã lưu' : d.customer_id ? 'Hoàn tất giấy tờ bản nháp đã lưu' : 'Xem bản nháp đã lưu'}
+                  loading={write.checking}
+                  onPress={() => {
+                    void write.openReceipt();
+                  }}
+                />
+                {id === null && !work && !photos.photos.length && !d.customer_id && (
+                  <Button
+                    secondary
+                    label="Tạo bản nháp mới"
+                    loading={write.checking}
+                    onPress={() => {
+                      void write.startAnother();
+                    }}
+                  />
+                )}
+              </Card>
+            )}
+            {step === 0 && (
+              <>
+                <DraftSection title="Hợp đồng và cơ sở">
+                  {!d.backfill && (
+                    <ChoiceField
+                      label="Hình thức lập hồ sơ"
+                      value={d.reservation ? "reservation" : "rental"}
+                      choices={[
+                        { value: "rental", label: "Nhập hợp đồng thuê xe" },
+                        { value: "reservation", label: "Nhận cọc giữ xe (chưa giao xe)" },
+                      ]}
+                      disabled={disabled}
+                      onChange={(value) => set("reservation", value === "reservation")}
+                    />
+                  )}
+                  <ChoiceField
+                    label="Loại hợp đồng"
+                    value={d.contract_type_id || ""}
+                    choices={typeChoices}
+                    disabled={disabled}
+                    error={errors.contract_type_id}
+                    onChange={(value) => {
+                      const type = options.types.find((row) => row.id === value);
+                      if (type) change(chooseDraftType(input, type));
+                    }}
+                  />
+                  {session?.user.permissions.includes("settings.write") && session.user.permissions.includes("finance.write") && <Button secondary label="Quản lý loại hợp đồng ngay khi soạn" disabled={disabled} onPress={() => setTypeManager(true)} />}
+                  <ChoiceField
+                    label="Liên kết nguồn khách"
+                    value={d.store_id}
+                    choices={options.stores.map((row) => ({
+                      value: String(row.id),
+                      label: row.name,
+                    }))}
+                    disabled={disabled || !session?.user.allStores}
+                    error={errors.store_id}
+                    onChange={(value) => change({
+                      ...input, draft: {
+                        ...d, store_id: value,
+                        customer_source_url: options.stores.find(row => String(row.id) === value)?.name ?? ''
+                      }
+                    })}
+                    searchable
+                  />
+                  <FormField
+                    label="Số hợp đồng giấy"
+                    value={d.contract_number}
+                    editable={!disabled}
+                    maxLength={32}
+                    onChangeText={(value) => set("contract_number", value)}
+                    hint="Để trống nếu chưa có số hợp đồng giấy."
+                    error={errors.contract_number}
+                  />
+                </DraftSection>
+                {staff.isError && (
+                  <View style={{ gap: 12 }}>
+                    <InlineError message="Chưa tải được danh sách nhân sự. Có thể nhập tên hoặc thử tải lại." />
+                    <Button
+                      secondary
+                      label="Tải lại nhân sự"
+                      onPress={() => {
+                        void staff.refetch();
+                      }}
+                    />
+                  </View>
+                )}
+                <DraftPeople
+                  input={input}
+                  change={change}
+                  disabled={disabled}
+                  staff={staff.data?.rows || []}
+                  stores={options.vehicleStores}
+                  representative={false}
+                />
+                <DraftRequirements {...props} />
+                <DraftSection title="Ngày và thông tin bổ sung">
+                  <DateField
+                    label="Ngày tạo / nhập hợp đồng"
+                    value={d.created_on}
+                    onChange={(value) => set("created_on", value)}
+                    disabled={disabled}
+                    error={errors.created_on}
+                  />
+                  <DateField
+                    label="Ngày ký hợp đồng"
+                    value={d.signed_on}
+                    onChange={(value) => set("signed_on", value)}
+                    disabled={disabled}
+                    error={errors.signed_on}
+                  />
+                  {d.backfill && (
+                    <>
+                      <Text
+                        style={{
+                          color: theme.warning,
+                          fontSize: 14,
+                          lineHeight: 22,
+                        }}
+                      >
+                        Bản nháp nhập bổ sung lịch sử. Kiểm tra thời gian thực tế
+                        trước khi phát hành.
+                      </Text>
+                      <ChoiceField label="Tình trạng thực tế của hợp đồng bổ sung" value={d.backfill.returned_at === undefined ? 'ongoing' : 'returned'} choices={[{ value: 'ongoing', label: 'Khách còn đang thuê' }, { value: 'returned', label: 'Khách đã trả xe từ trước' }]} disabled={disabled} onChange={v => set("backfill", { note: d.backfill!.note, ...(v === 'returned' ? { returned_at: '' } : {}) })} />
+                      <FormField
+                        label="Lý do nhập bổ sung"
+                        value={d.backfill.note}
+                        editable={!disabled}
+                        maxLength={1000}
+                        multiline
+                        onChangeText={(value) =>
+                          set("backfill", { ...d.backfill!, note: value })
+                        }
+                      />
+                      {d.backfill.returned_at !== undefined && (
+                        <RentalDateTime
+                          label="trả xe thực tế"
+                          value={d.backfill.returned_at}
+                          disabled={disabled}
+                          onChange={(value) =>
+                            set("backfill", {
+                              ...d.backfill!,
+                              returned_at: value,
+                            })
+                          }
+                        />
+                      )}
+                    </>
+                  )}
+                </DraftSection>
+              </>
+            )}
+            {step === 1 && (
+              <>
+                <DraftSection title="Thông tin khách hàng (Bên B)">
+                  <ChoiceField label="Cửa hàng xe" value={d.vehicle_store_id || d.store_id}
+                    choices={options.vehicleStores.map(row => ({ value: String(row.id), label: row.name }))}
+                    disabled={disabled} error={errors.vehicle_store_id} searchable onChange={value => set('vehicle_store_id', value)} />
+                  <DraftRepresentative input={input} change={change} disabled={disabled}
+                    staff={staff.data?.rows ?? []} error={errors.staff_id} />
+                  {staff.isError && <Button secondary label="Tải lại gợi ý nhân sự" onPress={() => { void staff.refetch(); }} />}
+                </DraftSection>
+                {canReadCustomers && <DraftSection title="Tra cứu khách hàng">
+                  <FormField label="Tra cứu theo CCCD / hộ chiếu / SĐT / liên hệ"
+                    value={lookup} editable={!disabled} maxLength={100} autoCapitalize="none" returnKeyType="search"
+                    onChangeText={value => { setLookup(value); setSubmittedLookup(''); }}
+                    onSubmitEditing={() => { Keyboard.dismiss(); setSubmittedLookup(lookup.trim()); }} />
+                  <Button secondary label="Tra cứu" loading={exactCustomer.isFetching} disabled={disabled || !lookup.trim()}
+                    onPress={() => { Keyboard.dismiss(); const value = lookup.trim(); if (value === submittedLookup) void exactCustomer.refetch(); else setSubmittedLookup(value); }} />
+                  {!!submittedLookup && exactCustomer.isError && <InlineError message={exactCustomer.error.message} />}
+                  {!!submittedLookup && exactCustomer.data?.rows.length === 0 && <Text accessibilityLiveRegion="polite" style={{ color: theme.muted }}>
+                    {session?.user.permissions.includes('customers.write') ? 'Chưa tìm thấy hồ sơ. Kiểm tra thông tin hoặc bấm Thêm mới khách hàng.' : 'Chưa tìm thấy hồ sơ. Kiểm tra lại thông tin tra cứu.'}
+                  </Text>}
+                  {!!submittedLookup && exactCustomer.data?.rows.map(customer => <Button key={customer.id} secondary
+                    label={`${customer.details.name} · ${customer.details.phone || customer.details.id_card || customer.id}`}
+                    disabled={disabled} onPress={() => { setPendingCustomer(customer); setSubmittedLookup(''); }} />)}
+                </DraftSection>}
+                {canReadCustomers && (
+                  <Button
+                    secondary
+                    label="Chọn hồ sơ khách"
+                    disabled={disabled}
+                    onPress={() => {
+                      Keyboard.dismiss();
+                      setCustomerPicker(true);
+                    }}
+                  />
+                )}
+                {session?.user.permissions.includes("customers.read") && session.user.permissions.includes("customers.write") && (
+                  <Button
+                    secondary
+                    label="Thêm mới khách hàng"
+                    disabled={disabled || !d.store_id}
+                    onPress={() => {
+                      Keyboard.dismiss();
+                      setCustomerCreate(true);
+                    }}
+                  />
+                )}
+                {pendingCustomer && (
+                  <Card style={{ gap: 14, borderColor: theme.warning }}>
+                    <Text
+                      style={{
+                        color: theme.text,
+                        fontWeight: "700",
+                        fontSize: 18,
+                      }}
+                    >
+                      Dùng hồ sơ {pendingCustomer.details.name}?
+                    </Text>
+                    <Text
+                      style={{ color: theme.muted, fontSize: 14, lineHeight: 22 }}
+                    >
+                      Thông tin khách và người thân trên bản nháp sẽ được cập
+                      nhật.
+                      {id
+                        ? " Khi lưu, giấy tờ gắn với khách cũ sẽ được gỡ khỏi hợp đồng."
+                        : ""}
+                    </Text>
+                    <Button
+                      label="Dùng hồ sơ đã chọn"
+                      onPress={() => {
+                        setInput(chooseDraftCustomer(input, pendingCustomer));
+                        setPendingCustomer(null);
+                        setErrors({});
+                        write.clearError();
+                      }}
+                    />
+                    <Button
+                      secondary
+                      label="Giữ thông tin hiện tại"
+                      onPress={() => setPendingCustomer(null)}
+                    />
+                  </Card>
+                )}
+                <DraftParty {...props} disabled={disabled || !d.customer_id} />
+              </>
+            )}
+            {step === 2 && (
+              <>
+                <DraftSection title="Thời gian thuê">
+                  <RentalDateTime
+                    label="nhận xe"
+                    value={d.start_date}
+                    onChange={(value) => {
+                      setDaysDraft(null);
+                      change(changeDraftTime(input, "start_date", value));
+                    }}
+                    disabled={disabled}
+                    error={errors.start_date}
+                  />
+                  <FormField
+                    label="Số ngày thuê"
+                    value={daysDraft ?? rentalDayCount(d.start_date, d.end_date)}
+                    keyboardType="number-pad"
+                    maxLength={4}
+                    editable={!disabled}
+                    onChangeText={(value) => {
+                      setDaysDraft(value);
+                      const nextEnd = addRentalDays(d.start_date, value.trim());
+                      if (nextEnd) {
+                        setDaysDraft(null);
+                        change(changeDraftTime(input, "end_date", nextEnd));
+                      }
+                    }}
+                    hint="Nhập số ngày để tự tính ngày hẹn trả."
+                  />
+                  <RentalDateTime
+                    label="hẹn trả xe"
+                    value={d.end_date}
+                    onChange={(value) => {
+                      setDaysDraft(null);
+                      change(changeDraftTime(input, "end_date", value));
+                    }}
+                    disabled={disabled}
+                    error={errors.end_date}
+                  />
+                </DraftSection>
+
+                <Button
+                  secondary
+                  label="Thêm xe vào bản nháp"
+                  disabled={disabled || selected.length >= 50}
+                  onPress={() => {
+                    Keyboard.dismiss();
+                    setVehiclePicker(true);
+                  }}
+                />
+                <DraftSection title="Đối chiếu lịch xe">
+                  <Text
+                    style={{ color: theme.muted, fontSize: 14, lineHeight: 22 }}
+                  >
+                    {selected.length} xe đã chọn · {dateTime(d.start_date)} →{" "}
+                    {dateTime(d.end_date)}
+                  </Text>
+                  <Text
+                    style={{ color: theme.muted, fontSize: 13, lineHeight: 20 }}
+                  >
+                    Lịch hợp đồng dùng chung cho mọi xe khi tính tiền, in và phát
+                    hành.
+                  </Text>
+                  {draftWindowDifferences(d).length > 0 && (
+                    <View style={{ gap: 12 }}>
+                      <InlineError message="Có dòng xe còn lưu thời gian khác với lịch hợp đồng. Đối chiếu và đồng bộ trước khi phát hành." />
+                      <Button
+                        secondary
+                        label="Đồng bộ lịch các xe"
+                        disabled={
+                          disabled ||
+                          !validDraftTime(d.start_date) ||
+                          !validDraftTime(d.end_date) ||
+                          d.end_date <= d.start_date
+                        }
+                        onPress={() => setAlignWindow(true)}
+                      />
+                    </View>
+                  )}
+                  <Button
+                    secondary
+                    label="Kiểm tra lịch thuê"
+                    disabled={disabled}
+                    loading={availability.isFetching && !!availabilityCurrent}
+                    onPress={check}
+                  />
+                  {availabilityRequest && !availabilityCurrent && (
+                    <Text
+                      accessibilityRole="alert"
+                      style={{
+                        color: theme.warning,
+                        fontSize: 14,
+                        lineHeight: 22,
+                      }}
+                    >
+                      Xe hoặc thời gian đã đổi. Kiểm tra lại lịch trước khi phát
+                      hành.
+                    </Text>
+                  )}
+                  {availabilityCurrent && availability.isError && (
+                    <InlineError message={availability.error.message} />
+                  )}
+                  {availabilityCurrent && availability.data && (
+                    <Availability
+                      value={availability.data}
+                      labels={Object.fromEntries(
+                        d.vehicles.map((row) => [
+                          Number(row.id),
+                          `${row.license} · ${row.name}`,
+                        ]),
+                      )}
+                    />
+                  )}
+                </DraftSection>
+                <DraftVehicleLines {...props} />
+                {!d.vehicles.some(v => !v.id) && <Button label="Thêm dòng xe để quét biển số" secondary disabled={disabled || d.vehicles.length >= 50 || photos.reading || photos.picking} onPress={() => change({ ...input, draft: { ...d, vehicles: [...d.vehicles, { ...emptyDraftVehicle(), rent_at: d.start_date, return_at: d.end_date }] } })} />}
+                <ContractPhotoFields photos={photos} vehicles={d.vehicles} disabled={disabled} plates canOcr={!!session?.user.permissions.includes('customers.write')} />
+              </>
+            )}
+            {step === 3 && <DraftFees {...props} />}
+            {step === 4 && (
+              <>
+                <DraftSection title="Ký kết và ghi chú">
+                  <DateField
+                    label="Ngày ủy quyền"
+                    value={d.authorization_date}
+                    onChange={(value) => set("authorization_date", value)}
+                    disabled={disabled}
+                    error={errors.authorization_date}
+                  />
+                  <FormField
+                    label="Ghi chú bản nháp"
+                    value={input.notes}
+                    onChangeText={(notes) => change({ ...input, notes })}
+                    editable={!disabled}
+                    multiline
+                    maxLength={4000}
+                  />
+                </DraftSection>
+                <DraftSection title="Rà soát bản nháp">
+                  <ContractPhotoFields photos={photos} vehicles={d.vehicles} disabled={disabled} canOcr={!!session?.user.permissions.includes('customers.write')} />
+                  <Summary
+                    label="Loại hợp đồng"
+                    value={d.contract_type_name || "Chưa chọn"}
+                  />
+                  <Summary
+                    label="Cơ sở"
+                    value={
+                      options.stores.find((row) => String(row.id) === d.store_id)
+                        ?.name || "Chưa chọn"
+                    }
+                  />
+                  <Summary
+                    label="Khách thuê"
+                    value={d.customer.name || "Chưa điền"}
+                  />
+                  <Summary label="Xe đã chọn" value={`${selected.length} xe`} />
+                  <Summary label="Nhận xe" value={dateTime(d.start_date)} />
+                  <Summary label="Hẹn trả" value={dateTime(d.end_date)} />
+                  <Text
+                    style={{ color: theme.muted, fontSize: 14, lineHeight: 22 }}
+                  >
+                    Lưu nháp giữ hồ sơ để bổ sung và phát hành theo quy trình
+                    nghiệp vụ.
+                  </Text>
+                </DraftSection>
+              </>
+            )}
+          </ScrollView>
+          {!(compact && keyboardVisible) && (
+            <View
+              style={{
+                padding: 16,
+                borderTopWidth: 1,
+                borderTopColor: theme.border,
+                backgroundColor: theme.surface,
+              }}
+            >
+              <View
+                style={{
+                  maxWidth: 724,
+                  width: "100%",
+                  alignSelf: "center",
+                  gap: 10,
+                }}
+              >
+                <View style={{ flexDirection: "row", gap: 10 }}>
+                  {step > 0 && (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Bước trước"
+                      disabled={disabled}
+                      onPress={() => jump(step - 1)}
+                      style={{
+                        minHeight: 52,
+                        minWidth: 48,
+                        alignItems: "center",
+                        justifyContent: "center",
+                        borderWidth: 1,
+                        borderColor: theme.controlBorder,
+                        borderRadius: 14,
+                      }}
+                    >
+                      <ChevronLeft
+                        size={22}
+                        color={theme.text}
+                        accessible={false}
+                      />
+                    </Pressable>
+                  )}
+                  <Button
+                    equalWidth
+                    label="Lưu nháp"
+                    loading={write.busy}
+                    disabled={
+                      !write.checked || !!write.receipt || !!pendingCustomer || customerCreate || photos.picking || photos.reading || localSave.scopeChanged || localSave.waiting
+                    }
+                    onPress={() => save()}
+                  />
+                  {step < draftSteps.length - 1 && (
+                    <Button
+                      equalWidth
+                      secondary
+                      label="Tiếp theo"
+                      disabled={disabled}
+                      onPress={() => jump(step + 1)}
+                    />
+                  )}
+                </View>
+                <View style={{ flexDirection: "row", gap: 10 }}>
                   <Button
                     equalWidth
                     secondary
-                    label="Tiếp theo"
-                    disabled={disabled}
-                    onPress={() => jump(step + 1)}
+                    label="Xem mẫu in"
+                    loading={previewBusy}
+                    disabled={disabled || photos.picking || photos.reading}
+                    onPress={() => { void previewPrint(); }}
                   />
-                )}
-              </View>
-              <View style={{ flexDirection: "row", gap: 10 }}>
-                <Button
-                  equalWidth
-                  secondary
-                  label="Xem mẫu in"
-                  loading={previewBusy}
-                  disabled={disabled || photos.picking || photos.reading}
-                  onPress={() => { void previewPrint(); }}
-                />
-                {canIssue && (
-                  <Button
-                    equalWidth
-                    label={needsApproval ? "Duyệt hợp đồng" : d.reservation ? "Ghi nhận cọc giữ xe" : "Hoàn tất & thanh toán"}
-                    disabled={disabled || !write.checked || photos.picking || photos.reading || previewBusy}
-                    onPress={() => save(needsApproval ? "approve" : "issue")}
-                  />
-                )}
+                  {canIssue && (
+                    <Button
+                      equalWidth
+                      label={needsApproval ? "Duyệt hợp đồng" : d.reservation ? "Ghi nhận cọc giữ xe" : "Hoàn tất & thanh toán"}
+                      disabled={disabled || !write.checked || photos.picking || photos.reading || previewBusy}
+                      onPress={() => save(needsApproval ? "approve" : "issue")}
+                    />
+                  )}
+                </View>
               </View>
             </View>
-          </View>
-        )}
+          )}
         </KeyboardScrollContext.Provider>
       </KeyboardAvoidingView>
-      {!!printHtml&&<EditorSheet title="Xem mẫu in" onClose={()=>setPrintHtml('')}><View style={{flex:1}}>
+      {!!printHtml && <EditorSheet title="Xem mẫu in" onClose={() => setPrintHtml('')}><View style={{ flex: 1 }}>
         <PrintPaper html={printHtml} />
-      </View>{Platform.OS!=='web'&&<View style={{padding:14,flexDirection:'row',gap:10,borderTopWidth:1,borderTopColor:theme.border,backgroundColor:theme.surface}}>
-        <Button size="sm" equalWidth label="Mở hộp thoại in" onPress={()=>{void (async()=>{try{const Print=await import('expo-print');await Print.printAsync({html:printHtml,width:841.89,height:595.28,orientation:Print.Orientation.landscape});}catch(e){setLocalError((e as Error).message);}})();}} />
-        <Button size="sm" equalWidth secondary label="Chia sẻ PDF" onPress={()=>{void (async()=>{try{const Print=await import('expo-print'),Sharing=await import('expo-sharing');const generated=await Print.printToFileAsync({html:printHtml,width:841.89,height:595.28,margins:{top:0,left:0,right:0,bottom:0}});if(await Sharing.isAvailableAsync())await Sharing.shareAsync(generated.uri,{mimeType:'application/pdf',UTI:'com.adobe.pdf',dialogTitle:'Himoto · Mẫu in hợp đồng'});}catch(e){setLocalError((e as Error).message);}})();}} />
+      </View>{Platform.OS !== 'web' && <View style={{ padding: 14, flexDirection: 'row', gap: 10, borderTopWidth: 1, borderTopColor: theme.border, backgroundColor: theme.surface }}>
+        <Button size="sm" equalWidth label="Mở hộp thoại in" onPress={() => { void (async () => { try { const Print = await import('expo-print'); await Print.printAsync({ html: printHtml, width: 841.89, height: 595.28, orientation: Print.Orientation.landscape }); } catch (e) { setLocalError((e as Error).message); } })(); }} />
+        <Button size="sm" equalWidth secondary label="Chia sẻ PDF" onPress={() => { void (async () => { try { const Print = await import('expo-print'), Sharing = await import('expo-sharing'); const generated = await Print.printToFileAsync({ html: printHtml, width: 841.89, height: 595.28, margins: { top: 0, left: 0, right: 0, bottom: 0 } }); if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(generated.uri, { mimeType: 'application/pdf', UTI: 'com.adobe.pdf', dialogTitle: 'Himoto · Mẫu in hợp đồng' }); } catch (e) { setLocalError((e as Error).message); } })(); }} />
       </View>}</EditorSheet>}
       {customerCreate && (
         <CustomerCreateSheet
@@ -1114,7 +1127,7 @@ function DraftForm({
           }}
         />
       )}
-      {typeManager&&<ContractTypeManager onClose={()=>setTypeManager(false)} onCreated={type=>{change(chooseDraftType(inputRef.current,{id:type.id,label:type.label,rentalType:type.rental_type,termMonths:type.term_months,active:type.active}));setTypeManager(false);}} />}
+      {typeManager && <ContractTypeManager onClose={() => setTypeManager(false)} onCreated={type => { change(chooseDraftType(inputRef.current, { id: type.id, label: type.label, rentalType: type.rental_type, termMonths: type.term_months, active: type.active })); setTypeManager(false); }} />}
       {customerPicker && (
         <DraftCustomerPicker
           onClose={() => setCustomerPicker(false)}
@@ -1162,9 +1175,9 @@ function DraftForm({
           }}
         />
       )}
-      {work&&<View style={{paddingHorizontal:18,paddingBottom:8}}><Text accessibilityLiveRegion="polite" style={{color:localSave.error?theme.danger:theme.muted}}>{localSave.error|| (localSave.saving?'Đang giữ bản trên thiết bị…':work.getHead()?'Đã giữ bản trên thiết bị':'Bản chưa có thay đổi')}</Text></View>}
-      {photoStage&&write.receipt&&<ContractPhotoSave contractId={write.receipt.id} revision={write.receipt.revision} copyAfter={!!d.customer_id} documents={photos} vehicles={d.vehicles} onClose={()=>setPhotoStage(false)} onComplete={async()=>{await write.completePhotos();}}/>}
-      {copyStage&&write.receipt&&<CustomerPhotoCopyStage id={write.receipt.id} revision={write.receipt.revision} work={work} onClose={()=>setCopyStage(false)} onComplete={async()=>{await write.completePhotos();}}/>}
+      {work && <View style={{ paddingHorizontal: 18, paddingBottom: 8 }}><Text accessibilityLiveRegion="polite" style={{ color: localSave.error ? theme.danger : theme.muted }}>{localSave.error || (localSave.saving ? 'Đang giữ bản trên thiết bị…' : work.getHead() ? 'Đã giữ bản trên thiết bị' : 'Bản chưa có thay đổi')}</Text></View>}
+      {photoStage && write.receipt && <ContractPhotoSave contractId={write.receipt.id} revision={write.receipt.revision} copyAfter={!!d.customer_id} documents={photos} vehicles={d.vehicles} onClose={() => setPhotoStage(false)} onComplete={async () => { await write.completePhotos(); }} />}
+      {copyStage && write.receipt && <CustomerPhotoCopyStage id={write.receipt.id} revision={write.receipt.revision} work={work} onClose={() => setCopyStage(false)} onComplete={async () => { await write.completePhotos(); }} />}
       {(write.exit || write.reload) && (
         <ConfirmEdit
           title={
@@ -1179,15 +1192,15 @@ function DraftForm({
               ? "Chờ máy chủ xác nhận kết quả lưu."
               : write.reload
                 ? "Thông tin đang nhập sẽ được thay bằng bản mới từ máy chủ."
-                : work?"Bản đang soạn và ảnh sẽ được giữ trên thiết bị. Mở lại bằng tài khoản này để tiếp tục.":"Thông tin chưa lưu sẽ mất. Nếu vừa gửi lưu, có thể kiểm tra kết quả khi mở lại bản nháp."
+                : work ? "Bản đang soạn và ảnh sẽ được giữ trên thiết bị. Mở lại bằng tài khoản này để tiếp tục." : "Thông tin chưa lưu sẽ mất. Nếu vừa gửi lưu, có thể kiểm tra kết quả khi mở lại bản nháp."
           }
           busy={write.busy}
           onCancel={write.dismissPrompt}
           onConfirm={
             write.reload
               ? () => {
-                  void write.loadLatest();
-                }
+                void write.loadLatest();
+              }
               : write.leave
           }
           confirmLabel={write.reload ? "Tải bản nháp mới" : "Rời bản nháp"}

@@ -29,7 +29,7 @@ function LiveNotice({ userId }: { userId: number }) {
         void notifySePaySound(userId, controller.signal).catch(() => {});
         void cache.invalidateQueries({ queryKey: ['sepay-events'] });
         if (rows.some(receipt => receipt.mode === 'live')) {
-          for (const name of ['record', 'catalogue', 'contract-finance', 'cashbook']) void cache.invalidateQueries({ queryKey: [name] });
+          for (const name of ['record', 'catalogue', 'finance', 'cashbook', 'cashbook-accounts', 'contract-history']) void cache.invalidateQueries({ queryKey: [name] });
         }
       } catch {
         // The next foreground poll retries the read after a network interruption.
@@ -54,6 +54,6 @@ function LiveNotice({ userId }: { userId: number }) {
 
 export function SePayNotice() {
   const { api, session } = useSession();
-  if (!api || !session?.user.permissions.includes('contracts.read')) return null;
+  if (!api || !session?.user.permissions.some(p => p === 'contracts.read' || p === 'finance.read')) return null;
   return <LiveNotice key={`${api.origin}:${session.user.id}:${session.user.storeId}:${session.user.allStores}`} userId={session.user.id} />;
 }

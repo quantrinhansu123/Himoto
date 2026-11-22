@@ -1,6 +1,7 @@
 import React, { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Stack, router, useLocalSearchParams } from "expo-router";
+import { SafeAreaView } from "react-native-safe-area-context";
 import {
   FlatList,
   Pressable,
@@ -22,7 +23,7 @@ import {
 } from "lucide-react-native";
 import { VEHICLE_HISTORY_ACTIONS } from "../../../../shared/mobile-vehicles";
 import { useSession } from "@/providers/session";
-import { Button, Card, InlineError, StateView, StatusBadge } from "@/components/ui";
+import { Button, Card, InlineError, KeyValueRow, PaginationBar, SkeletonList, StateView, StatusBadge } from "@/components/ui";
 import { SectionTabs } from "@/components/section-tabs";
 import { VehicleProfileCard } from "@/components/vehicle-profile-card";
 import { FormField, ChoiceField } from "@/components/form-fields";
@@ -41,6 +42,7 @@ const TABS = [
 
 function VehicleProfile({ id }: { id: string }) {
   const { api, session } = useSession();
+  const cache = useQueryClient();
   const theme = useTheme();
   const [activeTab, setActiveTab] = useState<VehicleTab>("details");
 
@@ -107,9 +109,12 @@ function VehicleProfile({ id }: { id: string }) {
   const row = query.data!;
   const title = row.values.license || row.values.name || "Hồ sơ xe";
 
-  // Filter open / relevant rentals
+  // Filter open / relevant rentals (excluding drafts so drafts never appear as active contracts)
+  const draftContracts = (contractsQuery.data?.rows || []).filter((item) =>
+    item.status.toLowerCase() === "draft",
+  );
   const openRentals = (contractsQuery.data?.rows || []).filter((item) =>
-    ["renting", "overdue", "wait_payment", "deposit_contract", "draft"].includes(item.status.toLowerCase()),
+    ["renting", "overdue", "wait_payment", "deposit_contract", "pending"].includes(item.status.toLowerCase()),
   );
   const primaryRental = openRentals[0];
 
@@ -122,7 +127,7 @@ function VehicleProfile({ id }: { id: string }) {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.background }}>
+    <SafeAreaView edges={["bottom", "left", "right"]} style={{ flex: 1, backgroundColor: theme.background }}>
       <Stack.Screen options={{ title }} />
 
       <View style={styles.tabBarWrapper}>
@@ -171,14 +176,22 @@ function VehicleProfile({ id }: { id: string }) {
           )}
 
           {/* Draft Contract Warning Banner */}
-          {(row.hasDraftContract || openRentals.some((r) => r.status.toLowerCase() === "draft")) && (
+          {(row.hasDraftContract || draftContracts.length > 0) && (
             <Card style={[styles.alertCard, { borderColor: theme.warning, backgroundColor: theme.warningBackground }]}>
               <Text style={[styles.alertTitle, { color: theme.warning }]}>
-                Xe đang nằm trong hợp đồng nháp
+                Xe đang nằm trong hợp đồng nháp{draftContracts[0] ? ` (${draftContracts[0].code})` : ""}
               </Text>
               <Text style={{ color: theme.text, fontSize: 14, lineHeight: 20 }}>
                 Kiểm tra danh sách hợp đồng của xe trước khi tạo hợp đồng mới hoặc điều chuyển để tránh giữ trùng xe.
               </Text>
+              {draftContracts[0] && session!.user.permissions.includes("contracts.read") && (
+                <Button
+                  size="sm"
+                  secondary
+                  label={`Mở bản nháp ${draftContracts[0].code}`}
+                  onPress={() => router.push({ pathname: "/record/[kind]/[id]", params: { kind: "contracts", id: String(draftContracts[0].id) } })}
+                />
+              )}
             </Card>
           )}
 
@@ -267,21 +280,23 @@ function VehicleProfile({ id }: { id: string }) {
                 </Pressable>
               )}
 
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Điều chuyển xe"
-                onPress={() => router.push({ pathname: "/vehicle-transfer-editor/[id]", params: { id } })}
-                style={({ pressed }) => [
-                  styles.gridBtn,
-                  { backgroundColor: theme.surface, borderColor: theme.border },
-                  pressed && { opacity: 0.75 },
-                ]}
-              >
-                <ArrowLeftRight size={22} color={theme.text} />
-                <Text style={[styles.gridBtnText, { color: theme.text }]}>
-                  Điều chuyển xe
-                </Text>
-              </Pressable>
+              {(session!.user.permissions.includes("vehicles.transfer") || session!.user.permissions.includes("vehicles.receive")) && row.values.status !== "sold" && (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Điều chuyển xe"
+                  onPress={() => router.push({ pathname: "/vehicle-transfer-editor/[id]", params: { id } })}
+                  style={({ pressed }) => [
+                    styles.gridBtn,
+                    { backgroundColor: theme.surface, borderColor: theme.border },
+                    pressed && { opacity: 0.75 },
+                  ]}
+                >
+                  <ArrowLeftRight size={22} color={theme.text} />
+                  <Text style={[styles.gridBtnText, { color: theme.text }]}>
+                    {row.inTransit || row.values.status === "in_transit" ? "Xử lý luân chuyển" : "Điều chuyển xe"}
+                  </Text>
+                </Pressable>
+              )}
 
               <Pressable
                 accessibilityRole="button"
@@ -347,6 +362,7 @@ function VehicleProfile({ id }: { id: string }) {
             {row.canDelete && !row.hasOpenContract && !row.inTransit && (
               <Button
                 secondary
+                danger
                 label="Xóa xe khỏi hệ thống"
                 loading={deleteBusy}
                 onPress={() => {
@@ -424,9 +440,9 @@ function VehicleProfile({ id }: { id: string }) {
             </View>
           }
           renderItem={({ item }) => (
-            <Card style={{ gap: 10, padding: 16 }}>
-              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 17, fontWeight: "700" }}>
+            <Card style={{ gap: 8, padding: 14 }}>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 16, fontWeight: "800", flex: 1 }}>
                   {item.label}
                 </Text>
                 <Text style={{ color: theme.muted, fontSize: 12 }}>
@@ -434,58 +450,61 @@ function VehicleProfile({ id }: { id: string }) {
                 </Text>
               </View>
 
-              <Text style={{ color: theme.muted, fontSize: 13 }}>
-                Thực hiện bởi: <Text style={{ color: theme.text, fontWeight: "600" }}>{item.actor || "Hệ thống"}</Text>
-              </Text>
+              <KeyValueRow label="Người thực hiện" value={item.actor || "Hệ thống"} />
 
               {!!(item.responsible_store || item.beneficiary_store) && (
-                <Text style={{ color: theme.primary, fontSize: 13, fontWeight: "600" }}>
-                  {item.responsible_store || "Cơ sở đi"} → {item.beneficiary_store || "Cơ sở đến"}
-                </Text>
+                <KeyValueRow label="Tuyến cơ sở" value={`${item.responsible_store || "Cơ sở đi"} → ${item.beneficiary_store || "Cơ sở đến"}`} valueColor={theme.primary} emphasize />
               )}
 
               {!!item.location && (
-                <Text style={{ color: theme.text, fontSize: 13 }}>Vị trí: {item.location}</Text>
+                <KeyValueRow label="Vị trí" value={item.location} />
               )}
 
               {!!item.note && (
-                <Text selectable style={{ color: theme.text, fontSize: 14, lineHeight: 21 }}>
+                <Text selectable style={{ color: theme.text, fontSize: 13.5, lineHeight: 20 }}>
                   {item.note}
                 </Text>
               )}
 
               <VehicleChanges changes={item.changes} />
 
-              {item.telegram_event_id && (
-                <Button
-                  secondary
-                  label={`Xem Telegram điều chuyển #${item.telegram_event_id}`}
-                  onPress={() =>
-                    router.push({
-                      pathname: "/transfer-telegram/[id]/[eventId]",
-                      params: { id, eventId: String(item.telegram_event_id) },
-                    })
-                  }
-                />
-              )}
-
-              {!!item.order_id && session!.user.permissions.includes("contracts.read") && (
-                <Button
-                  secondary
-                  label={`Mở hợp đồng #${item.order_id}`}
-                  onPress={() =>
-                    router.push({
-                      pathname: "/record/[kind]/[id]",
-                      params: { kind: "contracts", id: String(item.order_id) },
-                    })
-                  }
-                />
+              {(!!item.telegram_event_id || (!!item.order_id && session!.user.permissions.includes("contracts.read"))) && (
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, paddingTop: 2 }}>
+                  {!!item.telegram_event_id && (
+                    <Button
+                      size="sm"
+                      equalWidth
+                      secondary
+                      label={`Telegram #${item.telegram_event_id}`}
+                      onPress={() =>
+                        router.push({
+                          pathname: "/transfer-telegram/[id]/[eventId]",
+                          params: { id, eventId: String(item.telegram_event_id) },
+                        })
+                      }
+                    />
+                  )}
+                  {!!item.order_id && session!.user.permissions.includes("contracts.read") && (
+                    <Button
+                      size="sm"
+                      equalWidth
+                      secondary
+                      label={`Mở HĐ #${item.order_id}`}
+                      onPress={() =>
+                        router.push({
+                          pathname: "/record/[kind]/[id]",
+                          params: { kind: "contracts", id: String(item.order_id) },
+                        })
+                      }
+                    />
+                  )}
+                </View>
               )}
             </Card>
           )}
           ListEmptyComponent={
             historyQuery.isPending ? (
-              <StateView title="Đang tải lịch sử xe..." loading />
+              <SkeletonList count={3} lines={3} />
             ) : historyQuery.isError ? (
               <StateView
                 title="Chưa tải được lịch sử"
@@ -499,27 +518,14 @@ function VehicleProfile({ id }: { id: string }) {
           }
           ListFooterComponent={
             historyQuery.data && historyQuery.data.pages > 1 ? (
-              <View style={{ gap: 10, paddingVertical: 14 }}>
-                <Text style={{ color: theme.muted, textAlign: "center", fontSize: 13 }}>
-                  Trang {historyQuery.data.page} / {historyQuery.data.pages}
-                </Text>
-                <View style={{ flexDirection: "row", gap: 10 }}>
-                  <Button
-                    equalWidth
-                    secondary
-                    label="Trang trước"
-                    disabled={historyQuery.data.page <= 1}
-                    onPress={() => setHistoryPage((p) => Math.max(1, p - 1))}
-                  />
-                  <Button
-                    equalWidth
-                    secondary
-                    label="Trang sau"
-                    disabled={historyQuery.data.page >= historyQuery.data.pages}
-                    onPress={() => setHistoryPage((p) => p + 1)}
-                  />
-                </View>
-              </View>
+              <PaginationBar
+                page={historyQuery.data.page}
+                pages={historyQuery.data.pages}
+                total={historyQuery.data.total}
+                unit="sự kiện"
+                disabled={historyQuery.isFetching}
+                onChange={setHistoryPage}
+              />
             ) : undefined
           }
         />
@@ -537,7 +543,12 @@ function VehicleProfile({ id }: { id: string }) {
             setDeleteError("");
             void api!
               .deleteVehicle(id)
-              .then(() => {
+              .then(async () => {
+                await Promise.all([
+                  cache.invalidateQueries({ queryKey: ["catalogue"] }),
+                  cache.invalidateQueries({ queryKey: ["fleet-inventory"] }),
+                  cache.invalidateQueries({ queryKey: ["overview"] }),
+                ]);
                 router.replace("/(tabs)/vehicles");
               })
               .catch((err: unknown) => {
@@ -547,7 +558,7 @@ function VehicleProfile({ id }: { id: string }) {
           }}
         />
       )}
-    </View>
+    </SafeAreaView>
   );
 }
 

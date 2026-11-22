@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ScrollView, RefreshControl, Text, View, type ScrollViewInstance } from "react-native";
 import { SlidersHorizontal } from "lucide-react-native";
 import { SALES_REPORTS, REPORT_PRESETS, salesReportPeriod, type SalesReportKind } from "../../../shared/mobile-reports";
+import { useGlobalBranch } from "@/providers/branch";
 import { useSession } from "@/providers/session";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useTheme } from "@/theme";
@@ -16,9 +17,13 @@ const contractKinds: SalesReportKind[] = ["contracts", "by-staff", "by-store", "
 export function SalesReportScreen() {
   const { api, session } = useSession(), theme = useTheme(), scroll = useRef<ScrollViewInstance>(null);
   const canReadAll = Boolean(session!.user.allStores || session!.user.allStoresRead);
+  const defaultStore = canReadAll ? "all" : String(session!.user.storeId || "all");
+  const { selectedStore: globalStore, selectStore: setGlobalStore } = useGlobalBranch(defaultStore);
+  const store = canReadAll ? (globalStore || "all") : defaultStore;
+  const setStore = (next: string) => { if (canReadAll) setGlobalStore(next); };
   const [today, setToday] = useState(() => new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 10));
   useFocusEffect(useCallback(() => { setToday(new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 10)); }, []));
-  const [kind, setKind] = useState<SalesReportKind>("actual"), [from, setFrom] = useState(`${today.slice(0, 7)}-01`), [to, setTo] = useState(today), [store, setStore] = useState(session!.user.allStores ? "all" : String(session!.user.storeId || "all"));
+  const [kind, setKind] = useState<SalesReportKind>("actual"), [from, setFrom] = useState(`${today.slice(0, 7)}-01`), [to, setTo] = useState(today);
   const [preset, setPreset] = useState("month"), [input, setInput] = useState(""), search = useDebouncedValue(input);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [category, setCategory] = useState(""), [method, setMethod] = useState(""), [side, setSide] = useState("in"), [view, setView] = useState("stores"), [department, setDepartment] = useState(""), [source, setSource] = useState(""), [presence, setPresence] = useState("");
@@ -77,8 +82,8 @@ export function SalesReportScreen() {
     {filtersOpen && (
       <Card style={{ gap: 10 }}>
         <View style={{ flexDirection: "row", gap: 8 }}>
-          <View style={{ flex: 1 }}><DateField label="Từ ngày" value={from} onChange={value => { setPreset("custom"); setFrom(value); if (value > to) setTo(value); }} error={from > today ? "Không sau hôm nay." : undefined} /></View>
-          <View style={{ flex: 1 }}><DateField label="Đến ngày" value={to} onChange={value => { setPreset("custom"); setTo(value); if (value < from) setFrom(value); }} error={to > today ? "Không sau hôm nay." : undefined} /></View>
+          <View style={{ flex: 1 }}><DateField label="Từ ngày" value={from} onChange={value => { setPreset("custom"); setFrom(value); if (value && to && value > to) setTo(value); }} error={from > today ? "Không sau hôm nay." : undefined} /></View>
+          <View style={{ flex: 1 }}><DateField label="Đến ngày" value={to} onChange={value => { setPreset("custom"); setTo(value); if (value && from && value < from) setFrom(value); }} error={to > today ? "Không sau hôm nay." : undefined} /></View>
         </View>
         <ChoiceField label={kind === "fleet" ? "Cơ sở chủ quản" : "Cơ sở báo cáo"} value={store} choices={[...(canReadAll ? [{ value: "all", label: "Tất cả cơ sở" }] : []), ...(options.data?.stores || []).filter(row => canReadAll || row.id === session!.user.storeId).map(row => ({ value: String(row.id), label: row.name }))]} onChange={setStore} searchable />
         {report.data?.canExport && <FileExportButton key={`${kind}:${params}`} disabled={!valid || report.isFetching || report.isError} load={signal => api!.salesReportExport(kind, params, signal)} />}
@@ -89,7 +94,7 @@ export function SalesReportScreen() {
     {kind === "ledger" && <Card style={{ gap: 10 }}><ChoiceField label="Sổ thu / chi" value={side} choices={[{ value: "in", label: "Phiếu thu" }, { value: "out", label: "Phiếu chi" }]} onChange={setSide} /><ChoiceField label="Nghiệp vụ" value={category} choices={options.data?.ledgerCategories || [{ value: "", label: "Tất cả nghiệp vụ" }]} onChange={setCategory} /><ChoiceField label="Hình thức" value={method} choices={options.data?.ledgerMethods || [{ value: "", label: "Tất cả hình thức" }]} onChange={setMethod} /></Card>}
     {kind === "overview" && <ChoiceField label="Xem tổng quan theo" value={view} choices={[{ value: "stores", label: "Theo cơ sở" }, { value: "days", label: "Theo ngày" }]} onChange={setView} />}
     {kind === "assigned" && <ChoiceField label="Bộ phận" value={department} choices={[{ value: "", label: "Tất cả" }, { value: "NVKD", label: "NVKD" }, { value: "TLS", label: "TLS" }]} onChange={setDepartment} />}
-    {kind === "new-customers" && <Card style={{ gap: 10 }}><ChoiceField label="Tình trạng nguồn khách" value={presence} choices={[{ value: "", label: "Tất cả" }, { value: "with", label: "Đã có nguồn" }, { value: "without", label: "Chưa ghi nguồn" }]} onChange={setPresence} /><ChoiceField label="Nguồn khách cụ thể" value={source} choices={[{ value: "", label: "Tất cả nguồn" }, ...report.data?.sources || []]} onChange={setSource} searchable /></Card>}
+    {kind === "new-customers" && <Card style={{ gap: 10 }}><ChoiceField label="Tình trạng nguồn khách" value={presence} choices={[{ value: "", label: "Tất cả" }, { value: "with", label: "Đã có nguồn" }, { value: "without", label: "Chưa ghi nguồn" }]} onChange={v => { setPresence(v); if (v === "without") setSource(""); }} /><ChoiceField label="Nguồn khách cụ thể" value={source} choices={[{ value: "", label: "Tất cả nguồn" }, ...report.data?.sources || []]} disabled={presence === "without"} onChange={v => { setSource(v); if (v && presence === "without") setPresence("with"); }} searchable /></Card>}
     {kind === "vehicles" && <Card style={{ gap: 10 }}><ChoiceField label="Sắp xếp theo" value={sort} choices={[{ value: "revenue", label: "Doanh thu" }, { value: "rentals", label: "Lượt thuê" }, { value: "license", label: "Biển số" }]} onChange={setSort} /><ChoiceField label="Chiều sắp xếp" value={direction} choices={[{ value: "desc", label: "Giảm dần" }, { value: "asc", label: "Tăng dần" }]} onChange={setDirection} /></Card>}
     {(kind === "vehicles" || kind === "ledger") && <ChoiceField label="Số dòng mỗi trang" value={size} choices={(kind === "ledger" ? [10, 20, 50, 100] : [10, 20, 50]).map(value => ({ value: String(value), label: String(value) }))} onChange={value => changePage(1, Number(value))} />}
     {options.isError && <InlineError message={options.error.message} />}

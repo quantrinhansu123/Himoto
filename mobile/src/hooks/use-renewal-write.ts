@@ -24,7 +24,7 @@ export function useRenewalWrite(id: string, dirty: boolean) {
   const disablePrevention = usePreventRemove(!receipt && (dirty || busy || !!key), ({ repeat }) => setExit(() => repeat));
   const current = (at: string | undefined) => alive.current && at === token.current;
   function invalidate() {
-    for (const queryKey of [["renewal-preparation"], ["renewal-bill"], ["finance"], ["record"], ["catalogue"], ["overview"], ["contract-preparation"]])
+    for (const queryKey of [["renewal-preparation"], ["renewal-bill"], ["finance"], ["record"], ["catalogue"], ["overview"], ["contract-preparation"], ["cashbook"], ["cashbook-accounts"], ["contract-history"]])
       void cache.invalidateQueries({ queryKey });
   }
   function accept(found: MobileRenewalReceipt) {
@@ -79,12 +79,14 @@ export function useRenewalWrite(id: string, dirty: boolean) {
     } catch (cause) { if (current(at)) setError((cause as Error).message); }
     finally { running.current = false; if (alive.current) setChecking(false); }
   }
-  async function acknowledge() {
+  async function acknowledge(after?: () => void) {
     if (!scope || !key || !receipt || running.current) return;
     running.current = true; setChecking(true); setError(""); const at = token.current;
     try {
       await pendingWrites.complete(scope, operation, key); if (!current(at)) return;
-      disablePrevention(); router.dismissTo({ pathname: "/record/[kind]/[id]", params: { kind: "contracts", id } });
+      disablePrevention();
+      if (after) after();
+      else router.dismissTo({ pathname: "/record/[kind]/[id]", params: { kind: "contracts", id } });
     } catch (cause) { if (current(at)) setError((cause as Error).message); }
     finally { running.current = false; if (alive.current) setChecking(false); }
   }

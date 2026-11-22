@@ -53,4 +53,4 @@ function Dashboard(){
     </>}
   </ScrollView></SafeAreaView>;
 }
-export default function Screen(){const{api,session}=useSession();if(!api||!session||!session.user.permissions.includes('contracts.read'))return <StateView title="Không có quyền xem Tổng quan giao dịch"/>;return <Dashboard key={[api.origin,session.token,session.user.storeId,session.user.allStores].join('|')}/>;}
+export default function Screen(){const{api,session}=useSession();if(!api||!session||!session.user.permissions.includes('contracts.read'))return <StateView title="Không có quyền xem Tổng quan giao dịch"/>;return <Dashboard key={[api.origin,session.token,session.user.storeId,session.user.allStores,session.user.allStoresRead].join('|')}/>;}

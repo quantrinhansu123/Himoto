@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Keyboard, Text } from 'react-native';
+import { Keyboard, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import {
@@ -9,7 +9,7 @@ import {
 } from '../../../../../shared/mobile-contract-operations';
 import { PAYMENT_METHODS, vietnamPaymentTime, type PaymentMethod } from '../../../../../shared/payment-methods';
 import { validDraftTime } from '@himoto/mobile-draft-validation';
-import { Button, Card, InlineError, StateView } from '@/components/ui';
+import { Button, Card, InlineError, KeyValueRow, StateView, StatusBadge } from '@/components/ui';
 import { ChoiceField, FormField } from '@/components/form-fields';
 import { KeyboardFormScrollView } from '@/components/keyboard-form-scroll-view';
 import { RentalDateTime } from '@/components/rental-date-time';
@@ -41,7 +41,10 @@ function Reservation({ data, write }: { data: Context<'no_show' | 'delete_reserv
   const deletion = data.action === 'delete_reservation';
   const label = deletion ? 'Xóa hợp đồng cọc' : 'Chốt khách không đến';
   return <Card style={{ gap: 14 }}>
-    <Text style={{ color: theme.text, lineHeight: 24 }}>Tiền giữ xe đã nhận {money(data.paid)}{data.appointment ? ` · Hẹn nhận ${dateTime(data.appointment)}` : ''}</Text>
+    <View style={{ gap: 2 }}>
+      <KeyValueRow label="Tiền giữ xe đã nhận" value={money(data.paid)} emphasize />
+      {!!data.appointment && <KeyValueRow label="Hẹn nhận xe" value={dateTime(data.appointment)} />}
+    </View>
     <Text style={{ color: theme.muted, lineHeight: 22 }}>{deletion
       ? 'Ẩn hợp đồng giữ xe, giải phóng xe đủ điều kiện và giữ các phiếu đã ghi trong Sổ quỹ.'
       : 'Khoản giữ xe đã nhận được tính vào doanh thu cơ sở. Hệ thống đóng hợp đồng và giải phóng xe đủ điều kiện.'}</Text>
@@ -69,11 +72,18 @@ function Swap({ data, write, initialSwap }: { data: Context<'battery_swap'>; wri
   const eligible = swap && data.items.some(row => row.id === swap.item_id);
   return <>
     {swap ? <Card style={{ gap: 14 }}>
-      <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 21, fontWeight: '700' }}>Lượt #{swap.id} · {swap.license}</Text>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+        <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 18, fontWeight: '700' }}>Lượt #{swap.id} · {swap.license}</Text>
+        <StatusBadge status={swap.status === 'confirmed' ? 'completed' : 'draft'} label={swap.status === 'confirmed' ? 'Đã xác nhận' : 'Bản nháp'} />
+      </View>
       <Button secondary label="Ảnh biển số, pin và video đổi pin" disabled={write.busy}
         onPress={() => router.push({ pathname: '/record-media/[entity]/[id]', params: { entity: 'contracts', id, kind: 'battery_swap', referenceId: String(swap.id) } })} />
       {swap.status === 'confirmed' ? <>
-        <Text style={{ color: theme.text }}>{swap.battery_percent}% · Phí {money(swap.fee)} · {dateTime(swap.confirmed_at ?? '')}</Text>
+        <View style={{ gap: 2 }}>
+          <KeyValueRow label="Phần trăm pin" value={`${swap.battery_percent}%`} />
+          <KeyValueRow label="Phí đổi pin" value={money(swap.fee)} emphasize />
+          <KeyValueRow label="Xác nhận lúc" value={dateTime(swap.confirmed_at ?? '')} />
+        </View>
         <Button label="Kiểm tra và gửi Telegram đổi pin" disabled={write.busy}
           onPress={() => router.push({ pathname: '/contract-telegram/[id]', params: { id, event: `battery-swap:${id}:${swap.id}`, onlyEvent: '1' } })} />
       </> : data.can_write && eligible ? <SwapForm key={swap.id} data={data} swap={swap} write={write} />
@@ -87,8 +97,11 @@ function Swap({ data, write, initialSwap }: { data: Context<'battery_swap'>; wri
       </Card>}
       {!data.items.length && <Text style={{ color: theme.muted, lineHeight: 24 }}>Có thể đổi pin cho xe điện hoặc xe có hợp đồng pin liên kết đang thuê.</Text>}
       {data.swaps.map(row => <Card key={row.id} style={{ gap: 10 }}>
-        <Text style={{ color: theme.text, fontWeight: '700' }}>Lượt #{row.id} · {row.license}</Text>
-        <Text style={{ color: theme.muted }}>{row.status === 'confirmed' ? `${row.battery_percent}% · Phí ${money(row.fee)}` : 'Chưa xác nhận'}</Text>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+          <Text style={{ color: theme.text, fontWeight: '700' }}>Lượt #{row.id} · {row.license}</Text>
+          <StatusBadge status={row.status === 'confirmed' ? 'completed' : 'draft'} label={row.status === 'confirmed' ? 'Đã xác nhận' : 'Chưa xác nhận'} />
+        </View>
+        {row.status === 'confirmed' && <KeyValueRow label="Pin & phí" value={`${row.battery_percent}% · Phí ${money(row.fee)}`} />}
         <Button secondary label={row.status === 'draft' && data.can_write ? 'Tiếp tục lượt đổi pin' : 'Xem lượt đổi pin'} disabled={write.busy}
           onPress={() => { write.clearReceipt(); setSelected(String(row.id)); }} />
       </Card>)}
@@ -171,8 +184,12 @@ function Settlement({ data, write, initialMode }: { data: Context<'payment_settl
   const text = { color: theme.text, lineHeight: 24 };
   return <>
     <Card style={{ gap: 8 }}>
-      <Text style={text}>Giá trị hợp đồng {money(data.total)} · Đã thu {money(data.paid)}</Text>
-      <Text style={text}>Công nợ {money(data.remaining)} · Cọc đang giữ {money(data.held)}</Text>
+      <View style={{ gap: 2 }}>
+        <KeyValueRow label="Giá trị hợp đồng" value={money(data.total)} />
+        <KeyValueRow label="Đã thu" value={money(data.paid)} />
+        <KeyValueRow label="Công nợ" value={money(data.remaining)} emphasize />
+        <KeyValueRow label="Cọc đang giữ" value={money(data.held)} />
+      </View>
       {closed && data.items.length > 0 && <Button secondary label="Ghi nhận xe đã thu hồi"
         onPress={() => router.push({ pathname: '/recovery-editor/[id]', params: { id } })} />}
     </Card>
@@ -208,7 +225,7 @@ function Settlement({ data, write, initialMode }: { data: Context<'payment_settl
 function Operation({ id, action, swapId, initialMode }: { id: string; action: ContractOperation; swapId?: string; initialMode?: ContractSettlementMode }) {
   const theme = useTheme(), write = useContractOperation(id, action), data = write.query.data;
   const receipt = write.receipt && action !== 'battery_swap';
-  return <SafeAreaView edges={['left', 'right', 'bottom']} style={{ flex: 1 }}>
+  return <SafeAreaView edges={['left', 'right', 'bottom']} style={{ flex: 1, backgroundColor: theme.background }}>
     <Stack.Screen options={{ title: CONTRACT_OPERATIONS[action] }} />
     <KeyboardFormScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40, gap: 16, width: '100%', maxWidth: 760, alignSelf: 'center' }}>
       {!!data && <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 21, fontWeight: '800' }}>HĐ {data.code}</Text>}

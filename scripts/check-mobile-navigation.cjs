@@ -27,6 +27,7 @@ const base = { react: hooks, 'react/jsx-runtime': jsx, 'react-native': native, '
   '../../../shared/mobile-backfill': loadDomain(path.join(root, 'shared/mobile-backfill')),
   '../../../../shared/mobile-backfill': loadDomain(path.join(root, 'shared/mobile-backfill')),
   '../../../shared/mobile-managed-accounts': loadDomain(path.join(root, 'shared/mobile-managed-accounts')),
+  '../../../shared/contract-approval': loadDomain(path.join(root, 'shared/contract-approval')),
   '../../../shared/access-permissions': loadDomain(path.join(root, 'shared/access-permissions')),
   '../../../../shared/mobile-contract-workspaces': workspaces,
   '@/providers/session': { useSession: () => ({ session: { user }, api, logout: async () => {}, restore: async () => {} }) },

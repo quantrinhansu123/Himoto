@@ -1,5 +1,6 @@
 import {useEffect,useMemo,useRef,useState} from 'react';
 import {FlatList,Modal,Platform,Pressable,RefreshControl,ScrollView,Text,View} from 'react-native';
+import {SafeAreaView} from 'react-native-safe-area-context';
 import {useQuery} from '@tanstack/react-query';
 import {uuid} from 'expo';
 import {Image} from 'expo-image';
@@ -81,7 +82,7 @@ function FaqList({onZoom}:{onZoom:(uri:string,headers?:Record<string,string>)=>v
         {!!row.answer&&<Text selectable style={{color:theme.text,fontSize:14.5,lineHeight:22}}>{row.answer}</Text>}
         {!!row.answerer_name&&<Text style={{color:theme.muted,fontSize:12.5}}>Trả lời: {row.answerer_name}</Text>}
         {row.images.map(id=>{const src=api!.supportPhoto('guide-faq',String(id));return <Pressable key={id} accessibilityRole="button" accessibilityLabel={`Phóng to ảnh minh họa câu trả lời #${id}`} onPress={()=>onZoom(src.uri,src.headers)}><Image cachePolicy="memory" source={{...src,cacheKey:JSON.stringify([session!.user.id,session!.sessionId||session!.expiresAt,src.uri])}} style={{width:'100%',aspectRatio:4/3,borderRadius:10}} contentFit="contain" accessibilityLabel={`Ảnh minh họa câu trả lời #${id}`}/></Pressable>;})}
-        {query.data?.can_answer&&<Button size="sm" secondary label="Trả lời câu hỏi" onPress={()=>setEditor({row})}/>}
+        {query.data?.can_answer&&<Button size="sm" secondary label={row.answer||row.images.length?'Sửa trả lời':'Trả lời câu hỏi'} onPress={()=>setEditor({row})}/>}
       </Card>}
       ListEmptyComponent={!query.isPending&&!query.isError?<StateView title="Chưa có câu hỏi phù hợp" />:undefined}
       ListFooterComponent={query.data?<PaginationBar page={query.data.page} total={query.data.total} unit="câu hỏi" hasNext={query.data.hasMore} disabled={query.isFetching} onChange={setPage} />:undefined}/>
@@ -107,7 +108,8 @@ export default function Guide() {
   const current=selected.steps[Math.min(step,selected.steps.length-1)];
   const chapters=manualQuery.data?.chapters||[];
   const activeChapter=chapters.find(c=>c.id===chapterId)||chapters[0];
-  return <View style={{flex:1,backgroundColor:theme.background}}>
+  const cleanInline=(raw:string)=>raw.replace(/\*\*([^*]+)\*\*/g,'$1').replace(/`([^`]+)`/g,'$1');
+  return <SafeAreaView edges={['bottom','left','right']} style={{flex:1,backgroundColor:theme.background}}>
     <View style={{paddingHorizontal:16,paddingTop:14,paddingBottom:6,gap:10,maxWidth:760,width:'100%',alignSelf:'center'}}>
       <Text accessibilityRole="header" style={{color:theme.text,fontSize:22,fontWeight:'800'}}>Hướng dẫn & Hỏi đáp</Text>
       <SegmentedBar value={tab} onChange={setTab} options={[{value:'guide',label:'Quy trình'},{value:'manual',label:'Sổ tay (17)'},{value:'faq',label:'Hỏi đáp'}]} />
@@ -118,16 +120,47 @@ export default function Guide() {
         {activeChapter&&<Card style={{gap:12}}>
           <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'800'}}>{activeChapter.title}</Text>
           {activeChapter.body.split(/\r?\n\r?\n/).map((block,idx)=>{
-            const img=/^!\[([^\]]*)\]\(([^)]+)\)$/.exec(block.trim());
+            const trimmed=block.trim();
+            if(!trimmed||/^---+$/.test(trimmed))return null;
+            const img=/^!\[([^\]]*)\]\(([^)]+)\)$/.exec(trimmed);
             if(img){
               const uri=img[2].startsWith('images/')?`${api!.origin}/help/${img[2]}`:img[2];
               return <Pressable key={idx} accessibilityRole="button" accessibilityLabel={`Phóng to ảnh ${img[1]}`} onPress={()=>setZoomImage({uri})}><View style={{gap:4}}><Image cachePolicy="memory-disk" source={{uri}} style={{width:'100%',aspectRatio:16/10,borderRadius:12,backgroundColor:theme.background}} contentFit="contain"/><Text style={{color:theme.muted,fontSize:12,textAlign:'center'}}>{img[1]} (Chạm để phóng to)</Text></View></Pressable>;
             }
-            return <Text key={idx} selectable style={{color:theme.text,fontSize:15,lineHeight:23}}>{block.replace(/\*\*([^*]+)\*\*/g,'$1')}</Text>;
+            const heading=/^(#{1,4})\s+(.+)$/.exec(trimmed);
+            if(heading){
+              const level=heading[1].length;
+              return <Text key={idx} accessibilityRole="header" style={{color:theme.text,fontSize:level===1?19:level===2?17:15.5,fontWeight:'800',marginTop:4}}>{cleanInline(heading[2])}</Text>;
+            }
+            if(trimmed.startsWith('```')&&trimmed.endsWith('```')){
+              const code=trimmed.replace(/^```[^\n]*\n?/,'').replace(/\n?```$/,'');
+              return <View key={idx} style={{padding:12,borderRadius:10,backgroundColor:theme.background,borderWidth:1,borderColor:theme.border}}><Text selectable style={{color:theme.text,fontSize:13,lineHeight:19,fontFamily:Platform.OS==='ios'?'Menlo':'monospace'}}>{code}</Text></View>;
+            }
+            const lines=trimmed.split(/\r?\n/);
+            if(lines.length>=2&&lines.every(l=>l.trim().startsWith('|'))){
+              const tableRows=lines.filter(l=>!/^\|[\s\-:|]+\|$/.test(l.trim())).map(l=>l.trim().replace(/^\||\|$/g,'').split('|').map(c=>cleanInline(c.trim())));
+              const headers=tableRows[0]||[];
+              return <View key={idx} style={{borderWidth:1,borderColor:theme.border,borderRadius:10,overflow:'hidden'}}>
+                {tableRows.slice(1).map((r,rIdx)=><View key={rIdx} style={{padding:10,borderTopWidth:rIdx>0?1:0,borderTopColor:theme.border,backgroundColor:rIdx%2===0?theme.surface:theme.background,gap:3}}>
+                  {r.map((cell,cIdx)=><Text key={cIdx} selectable style={{color:theme.text,fontSize:13.5,lineHeight:20}}><Text style={{color:theme.muted,fontWeight:'700'}}>{headers[cIdx]?`${headers[cIdx]}: `:''}</Text>{cell}</Text>)}
+                </View>)}
+              </View>;
+            }
+            if(lines.every(l=>/^(\s*[-*•]|\s*\d+\.)\s+/.test(l))){
+              return <View key={idx} style={{gap:5}}>
+                {lines.map((l,lIdx)=><Text key={lIdx} selectable style={{color:theme.text,fontSize:14.5,lineHeight:22}}>• {cleanInline(l.replace(/^(\s*[-*•]|\s*\d+\.)\s+/,''))}</Text>)}
+              </View>;
+            }
+            if(lines.every(l=>l.trim().startsWith('>'))){
+              return <View key={idx} style={{paddingLeft:12,borderLeftWidth:3,borderLeftColor:theme.primary,gap:4}}>
+                {lines.map((l,lIdx)=><Text key={lIdx} selectable style={{color:theme.muted,fontSize:14,lineHeight:21}}>{cleanInline(l.replace(/^\s*>\s?/,''))}</Text>)}
+              </View>;
+            }
+            return <Text key={idx} selectable style={{color:theme.text,fontSize:14.5,lineHeight:22}}>{cleanInline(trimmed)}</Text>;
           })}
         </Card>}
       </>}
-    </ScrollView>:<ScrollView contentContainerStyle={{padding:20,gap:18,maxWidth:800,width:'100%',alignSelf:'center'}}>
+    </ScrollView>:<ScrollView contentContainerStyle={{padding:16,gap:14,maxWidth:760,width:'100%',alignSelf:'center'}}>
       <FormField label="Tìm nhanh quy trình / bước thao tác" value={guideSearch} onChangeText={v=>{setGuideSearch(v);setStep(0);}} placeholder="Nhập từ khóa: thuê xe, gia hạn, trả xe, chấm công…" maxLength={120}/>
       <ChoiceField label="Nghiệp vụ cần hướng dẫn" value={selected.id} choices={matchingWorkflows.map(item=>({value:item.id,label:item.name}))} onChange={value=>{setWorkflow(value);setStep(0);}}/>
       <Text style={{color:theme.muted,fontSize:15,lineHeight:24}}>{selected.description}</Text>
@@ -154,5 +187,5 @@ export default function Guide() {
         <Button secondary label="Đóng ảnh phóng to" onPress={()=>setZoomImage(null)}/>
       </View>
     </Modal>}
-  </View>;
+  </SafeAreaView>;
 }

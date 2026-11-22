@@ -144,7 +144,7 @@ export function AttendanceScreen({ historyOnly = false }: { historyOnly?: boolea
             {serverNow && <Text style={{ color: theme.muted, fontSize: 13 }}>Giờ máy chủ (VN): {dateTime(serverNow)}</Text>}
           </View>
           {/* Hero Check-In / Check-Out Card FIRST above the fold */}
-          <Card style={{ gap: 12, padding: 16 }}>
+          {query.isPending && !query.data ? <SkeletonList count={1} lines={4} /> : <Card style={{ gap: 12, padding: 16 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
               <View style={{ flex: 1, gap: 2 }}>
                 <Text style={{ color: theme.text, fontSize: 18, fontWeight: '800' }}>{query.data?.staff?.name || session!.user.name}</Text>
@@ -172,7 +172,7 @@ export function AttendanceScreen({ historyOnly = false }: { historyOnly?: boolea
             {query.data && !query.data.staff && <InfoBanner tone="warning" message="Tài khoản chưa liên kết với một nhân viên đang hoạt động. Liên hệ quản lý nhân sự." />}
             {query.data?.staff && query.data.staff.store_id === null && !query.data.open && <InfoBanner tone="warning" message="Nhân viên chưa được gắn cơ sở. Liên hệ quản lý nhân sự trước khi chấm công." />}
             <Text style={{ color: theme.muted, fontSize: 12, lineHeight: 17 }}>Chấm công cần mạng, ảnh chụp trực tiếp và GPS. Giờ ghi theo máy chủ.</Text>
-          </Card>
+          </Card>}
           {/* Compact Horizontal Shortcut Strip */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
             <Chip label="Lịch sử chấm công" icon={<History size={14} color={theme.text} />} disabled={busy} onPress={() => router.push('/attendance-history')} />
@@ -207,20 +207,20 @@ export function AttendanceScreen({ historyOnly = false }: { historyOnly?: boolea
           </Card>}
         </>}
         {query.isError && <StateView title="Chưa tải được chấm công" message={query.error.message} retry={() => { void query.refetch(); }} />}
-        {query.isPending && from <= to && <SkeletonList count={historyOnly ? 4 : 1} lines={3} />}
+        {historyOnly && query.isPending && from <= to && <SkeletonList count={4} lines={3} />}
       </View>}
       renderItem={({ item: row }) => <Card style={{ gap: 8 }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
           <Text style={{ color: theme.text, fontSize: 16, fontWeight: '800', flex: 1 }}>{row.staff_name}</Text>
           <StatusBadge status={row.clock_out_at ? 'completed' : 'active'} label={row.clock_out_at ? 'Đã ra ca' : 'Đang trong ca'} />
         </View>
-        <View style={{flexDirection:'row',flexWrap:'wrap',alignItems:'center',gap:6}}>
-          <Text style={{color:theme.muted,fontSize:12.5}}>{row.store_name||'Chưa có cơ sở'}</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
+          <Text style={{ color: theme.muted, fontSize: 12.5 }}>{row.store_name || 'Chưa có cơ sở'}</Text>
           {row.can_manage && (row.in_gps_alert || row.out_gps_alert) && (
             <StatusBadge status="overdue" label="Lệch vị trí GPS (>200m)" />
           )}
         </View>
-        <View style={{gap:2}}>
+        <View style={{ gap: 2 }}>
           <KeyValueRow label="Vào ca" value={dateTime(row.clock_in_at)} />
           <KeyValueRow label="Ra ca" value={row.clock_out_at ? dateTime(row.clock_out_at) : 'Chưa chấm ra'} />
           <KeyValueRow label="Ca đăng ký" value={`${row.shift_name === 'O' ? 'Nghỉ' : row.shift_name || 'Chưa đăng ký'}${row.scheduled_in && row.scheduled_out ? ` (${dateTime(row.scheduled_in)} → ${dateTime(row.scheduled_out)})` : ''}`} />
@@ -230,16 +230,16 @@ export function AttendanceScreen({ historyOnly = false }: { historyOnly?: boolea
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingTop: 2 }}>
           <Button size="sm" equalWidth secondary label={`${evidence === String(row.id) ? 'Ẩn' : 'Xem'} ảnh & GPS`} onPress={() => setEvidence(current => current === String(row.id) ? null : String(row.id))} />
           {row.can_manage && <Button size="sm" equalWidth secondary label="Sửa giờ" onPress={() => setEditing(row)} />}
-          {!row.shift_name && canReview && <Button size="sm" equalWidth secondary label="Đăng ký ca" onPress={() => router.push({ pathname: '/shift-registrations', params: { date: row.clock_in_at.slice(0, 10), staff: row.staff_name } })} />}
+          {!row.shift_name && canReview && <Button size="sm" equalWidth secondary label="Đăng ký ca" onPress={() => router.push({ pathname: '/shift-registrations', params: { date: dutyToday(new Date(row.clock_in_at)), staff: row.staff_name } })} />}
         </View>
-        {evidence===String(row.id)&&<View style={{gap:6,borderTopWidth:1,borderTopColor:theme.border,paddingTop:8}}>
+        {evidence === String(row.id) && <View style={{ gap: 6, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 8 }}>
           {row.can_manage && (
             <>
-              <KeyValueRow label="Khoảng cách vào" valueColor={row.in_gps_alert ? theme.danger : undefined} strong={row.in_gps_alert} value={row.in_distance_m!=null?`${row.in_distance_m.toLocaleString('vi-VN')} m${row.in_gps_alert?' (Ngoài phạm vi)':''}`:row.has_store_location?'Chưa có GPS':'Cơ sở chưa có tọa độ'} />
-              {row.clock_out_at&&<KeyValueRow label="Khoảng cách ra" valueColor={row.out_gps_alert ? theme.danger : undefined} strong={row.out_gps_alert} value={row.out_distance_m!=null?`${row.out_distance_m.toLocaleString('vi-VN')} m${row.out_gps_alert?' (Ngoài phạm vi)':''}`:row.has_store_location?'Chưa có GPS':'Cơ sở chưa có tọa độ'} />}
+              <KeyValueRow label="Khoảng cách vào" valueColor={row.in_gps_alert ? theme.danger : undefined} strong={row.in_gps_alert} value={row.in_distance_m != null ? `${row.in_distance_m.toLocaleString('vi-VN')} m${row.in_gps_alert ? ' (Ngoài phạm vi)' : ''}` : row.has_store_location ? 'Chưa có GPS' : 'Cơ sở chưa có tọa độ'} />
+              {row.clock_out_at && <KeyValueRow label="Khoảng cách ra" valueColor={row.out_gps_alert ? theme.danger : undefined} strong={row.out_gps_alert} value={row.out_distance_m != null ? `${row.out_distance_m.toLocaleString('vi-VN')} m${row.out_gps_alert ? ' (Ngoài phạm vi)' : ''}` : row.has_store_location ? 'Chưa có GPS' : 'Cơ sở chưa có tọa độ'} />}
             </>
           )}
-          {row.clock_out_at&&row.has_out_photo===false&&copy('Không có ảnh ra ca.')}
+          {row.clock_out_at && row.has_out_photo === false && copy('Không có ảnh ra ca.')}
         </View>}
         {evidence === String(row.id) && (['in', 'out'] as const).map(side => { const hasSide = side === 'in' || Boolean(row.clock_out_at); if (!hasSide) return null; const loc = side === 'in' ? row.in_location : row.out_location; const hasPhoto = side === 'in' || row.has_out_photo !== false; const photoSource = hasPhoto ? api!.supportPhoto('attendance', String(row.id), side) : null; return <View key={side} style={{ gap: 8 }}><Text style={{ color: theme.text, fontWeight: '700', fontSize: 14 }}>{side === 'in' ? 'Ảnh vào ca' : 'Ảnh ra ca'}</Text>{photoSource ? <Image cachePolicy="memory" source={{ ...photoSource, cacheKey: JSON.stringify([session!.user.id, session!.user.storeId, session!.user.allStores, session!.sessionId || session!.expiresAt, photoSource.uri]) }} style={{ width: '100%', aspectRatio: 4 / 3, borderRadius: 10 }} contentFit="contain" accessibilityLabel={`Ảnh ${side === 'in' ? 'vào' : 'ra'} ca #${row.id}`} /> : copy('Chưa có ảnh chấm công.')}{loc ? <>{copy(`GPS ${loc.latitude.toFixed(6)}, ${loc.longitude.toFixed(6)} · sai số ${Math.round(loc.accuracy)} m`)}<Button size="sm" secondary label="Mở vị trí trên Google Maps" onPress={() => void Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${loc.latitude},${loc.longitude}`)}`)} /></> : copy('Chưa ghi nhận GPS')}</View>; })}
       </Card>}

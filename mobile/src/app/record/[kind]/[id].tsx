@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Stack, router, useLocalSearchParams } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   Linking,
@@ -148,10 +148,10 @@ function CustomerDetailScreen({
     }
   }
 
-  const contracts = contractsQuery.data?.rows || [];
+  const contracts = (contractsQuery.data?.rows || []).filter((c) => c.status !== "draft");
   const totalContractAmount = contracts.reduce((sum, c) => sum + (c.totalAmount ?? 0), 0);
   const totalContractPaid = contracts.reduce((sum, c) => sum + (c.paidAmount ?? 0), 0);
-  const totalContractDebt = Math.max(0, totalContractAmount - totalContractPaid);
+  const totalContractDebt = contracts.reduce((sum, c) => sum + Math.max(0, (c.totalAmount ?? 0) - (c.paidAmount ?? 0)), 0);
 
   const payments = paymentsQuery.data?.rows || [];
   const approvedIncome = payments
@@ -325,7 +325,7 @@ function CustomerDetailScreen({
                 onPress={() =>
                   router.push({
                     pathname: "/record-media/[entity]/[id]",
-                    params: { entity: "customers", id },
+                    params: { entity: "customers", id, kind: "customer", referenceId: id },
                   })
                 }
               />
@@ -333,8 +333,8 @@ function CustomerDetailScreen({
                 <Button
                   size="sm"
                   danger
-                  disabled={busy}
-                  label="Xóa hồ sơ khách hàng"
+                  disabled={busy || Boolean(detail && detail.contract_count > 0)}
+                  label={detail && detail.contract_count > 0 ? `Không thể xóa (đang có ${detail.contract_count} HĐ)` : "Xóa hồ sơ khách hàng"}
                   icon={<Trash2 size={15} color={theme.danger} />}
                   onPress={() => setDeleteConfirm(true)}
                 />
@@ -494,6 +494,12 @@ export default function RecordDetail() {
   const allowed =
     valid && session?.user.permissions.includes(`${params.kind}.read`);
 
+  useEffect(() => {
+    if (allowed && params.kind === "vehicles") {
+      router.replace({ pathname: "/vehicle/[id]", params: { id: params.id } });
+    }
+  }, [allowed, params.kind, params.id]);
+
   const query = useQuery<MobileRecord>({
     queryKey: ["record", session?.user.id, params.kind, params.id],
     queryFn: ({ signal }) =>
@@ -512,7 +518,7 @@ export default function RecordDetail() {
     staleTime: 30_000,
     refetchOnMount: "always",
     gcTime: 300_000,
-    enabled: !!api && !!allowed,
+    enabled: !!api && !!allowed && params.kind !== "vehicles",
   });
 
   if (!allowed) {
@@ -522,6 +528,10 @@ export default function RecordDetail() {
         message="Kiểm tra liên kết và quyền truy cập của tài khoản."
       />
     );
+  }
+
+  if (params.kind === "vehicles") {
+    return <StateView title="Đang chuyển sang hồ sơ xe..." loading />;
   }
 
   if (query.isPending && !query.data) return <StateView title="Đang tải hồ sơ" loading />;
@@ -541,7 +551,7 @@ export default function RecordDetail() {
 
   if (params.kind === "contracts") {
     return (
-      <View style={{ flex: 1, backgroundColor: theme.background }}>
+      <SafeAreaView edges={["bottom", "left", "right"]} style={{ flex: 1, backgroundColor: theme.background }}>
         <Stack.Screen options={{ title: `HĐ ${row.code}` }} />
         <ContractDetailView
           record={row}
@@ -550,13 +560,8 @@ export default function RecordDetail() {
             void query.refetch();
           }}
         />
-      </View>
+      </SafeAreaView>
     );
-  }
-
-  if (params.kind === "vehicles") {
-    router.replace({ pathname: "/vehicle/[id]", params: { id: params.id } });
-    return <StateView title="Đang chuyển sang hồ sơ xe..." loading />;
   }
 
   return (

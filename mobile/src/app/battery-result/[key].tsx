@@ -1,16 +1,16 @@
 import {useEffect,useRef,useState} from 'react';
 import {useQuery,useQueryClient} from '@tanstack/react-query';
 import {router,useLocalSearchParams} from 'expo-router';
-import {ScrollView,Text} from 'react-native';
+import {ScrollView,Text,View} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useSession} from '@/providers/session';
 import {pendingWrites} from '@/lib/pending-writes';
 import {bindStagedPhotos,completeStagedPhotos} from '@/lib/staged-photo-work';
 import {useTheme} from '@/theme';
-import {Button,Card,InlineError,StateView} from '@/components/ui';
+import {Button,Card,InlineError,KeyValueRow,StateView,StatusBadge} from '@/components/ui';
 import {BatterySummary} from '@/components/battery-summary';
 import {BatteryPhotoBatch} from '@/components/battery-photo-batch';
-function Result({requestKey}:{requestKey:string}){
+function Result({requestKey,openPrint}:{requestKey:string;openPrint?:boolean}){
   const{api,session}=useSession(),cache=useQueryClient(),theme=useTheme(),[busy,setBusy]=useState(false),[error,setError]=useState(''),[checked,setChecked]=useState(false),[photosPending,setPhotosPending]=useState(true),alive=useRef(true);
   useEffect(()=>{alive.current=true;return()=>{alive.current=false;};},[]);
   const scope={origin:api!.origin,userId:session!.user.id,storeId:session!.user.allStores?null:session!.user.storeId,allStores:session!.user.allStores};
@@ -33,16 +33,27 @@ function Result({requestKey}:{requestKey:string}){
       else await checkReceipt();
       if(!alive.current)return;
       for(const key of [['batteries'],['battery'],['cashbook'],['cashbook-accounts'],['cashbook-account'],['cashbook-account-transactions']])void cache.invalidateQueries({queryKey:key});
-      if(result.deleted)router.replace('/battery-contracts');else if(!result.photoBatchId&&result.namespace)router.replace({pathname:'/battery-media/[id]/[eventKey]',params:{id:String(result.receipt.id),eventKey:result.eventKey}});else router.replace({pathname:'/battery/[id]',params:{id:String(result.receipt.id)}});
+      if(result.deleted)router.replace('/battery-contracts');
+      else if(openPrint)router.replace({pathname:'/print/[kind]/[id]',params:{kind:'battery-contracts',id:String(result.receipt.id)}});
+      else if(!result.photoBatchId&&result.namespace)router.replace({pathname:'/battery-media/[id]/[eventKey]',params:{id:String(result.receipt.id),eventKey:result.eventKey}});
+      else router.replace({pathname:'/battery/[id]',params:{id:String(result.receipt.id)}});
     }catch(e){if(alive.current)setError((e as Error).message);}finally{if(alive.current)setBusy(false);}
   }
-  return <SafeAreaView edges={['left','right','bottom']} style={{flex:1}}><ScrollView contentContainerStyle={{padding:20,gap:18,maxWidth:760,width:'100%',alignSelf:'center'}}>
-    <Card style={{gap:12}}><Text accessibilityRole="header" style={{color:theme.success,fontSize:23,fontWeight:'800'}}>Đã ghi nhận thao tác pin / sạc</Text><Text selectable style={{color:theme.muted,lineHeight:24}}>Mã gốc: {requestKey}{'\n'}Phiên bản tại lần ghi: {result.receipt.revision}</Text><Text style={{color:theme.muted,lineHeight:24}}>Nghiệp vụ đã lưu một lần. Bước ảnh và Telegram bên dưới không ghi lại tiền, gia hạn hoặc trả pin.</Text></Card>
+  return <SafeAreaView edges={['left','right','bottom']} style={{flex:1,backgroundColor:theme.background}}><ScrollView contentContainerStyle={{padding:16,gap:14,maxWidth:760,width:'100%',alignSelf:'center'}}>
+    <Card style={{gap:10}}>
+      <View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center',gap:8}}>
+        <Text accessibilityRole="header" style={{color:theme.success,fontSize:18,fontWeight:'800',flex:1}}>Đã ghi nhận thao tác pin / sạc</Text>
+        <StatusBadge status="completed" label="Đã lưu"/>
+      </View>
+      <KeyValueRow label="Mã gốc" value={requestKey} selectable/>
+      <KeyValueRow label="Phiên bản ghi nhận" value={String(result.receipt.revision)}/>
+      <Text style={{color:theme.muted,fontSize:13,lineHeight:20}}>Nghiệp vụ đã lưu một lần. Bước ảnh và Telegram bên dưới không ghi lại tiền, gia hạn hoặc trả pin.</Text>
+    </Card>
     {result.current&&<BatterySummary record={result.current}/>}
     {result.photoBatchId&&!metadataChecked&&<Button label="Đã kiểm tra phiếu gốc, tiếp tục ảnh" loading={busy} onPress={()=>{void confirmMetadata();}}/>}
     {result.photoBatchId&&<BatteryPhotoBatch id={String(result.receipt.id)} eventKey={result.eventKey} title="Hoàn tất bộ ảnh và Telegram của lượt pin" queueId={result.photoBatchId} allowSave={metadataChecked} onPendingChange={setPhotosPending}/>}
     {!!error&&<InlineError message={error}/>}
-    <Button label={result.photoBatchId?'Hoàn tất và về hồ sơ pin':'Đã kiểm tra xác nhận pin / sạc'} disabled={!!result.photoBatchId&&(!metadataChecked||photosPending)} loading={busy} onPress={()=>{void finish();}}/>
+    <Button label={openPrint?'Hoàn tất và mở mẫu in hợp đồng pin':result.photoBatchId?'Hoàn tất và về hồ sơ pin':'Đã kiểm tra xác nhận pin / sạc'} disabled={!!result.photoBatchId&&(!metadataChecked||photosPending)} loading={busy} onPress={()=>{void finish();}}/>
   </ScrollView></SafeAreaView>;
 }
-export default function Route(){const{key}=useLocalSearchParams<{key:string}>(),{api,session}=useSession();if(!api||!session||!/^[0-9a-f-]{36}$/.test(key))return <StateView title="Không mở được xác nhận pin"/>;return <Result key={`${key}:${api.origin}:${session.token}:${session.user.storeId}:${session.user.allStores}:${session.user.permissions.join(',')}`} requestKey={key}/>;}
+export default function Route(){const{key,print}=useLocalSearchParams<{key:string;print?:string}>(),{api,session}=useSession();if(!api||!session||!/^[0-9a-f-]{36}$/.test(key))return <StateView title="Không mở được xác nhận pin"/>;return <Result key={`${key}:${print||''}:${api.origin}:${session.token}:${session.user.storeId}:${session.user.allStores}:${session.user.permissions.join(',')}`} requestKey={key} openPrint={print==='1'}/>;}
