@@ -12,7 +12,7 @@ import { useRenewalWrite } from "@/hooks/use-renewal-write";
 import { useSession } from "@/providers/session";
 import { useReducedMotion } from "@/hooks/use-reduced-motion";
 import { money, useTheme } from "@/theme";
-import { Button, Card, InlineError, StateView } from "./ui";
+import { Button, Card, InlineError, KeyValueRow, StateView, StatusBadge } from "./ui";
 import { FormField, ChoiceField } from "./form-fields";
 import { RentalDateTime } from "./rental-date-time";
 import { ConfirmEdit } from "./editor-sheet";
@@ -81,16 +81,21 @@ function RenewalForm({ id,backfill }: { id: string;backfill:boolean }) {
     const result = action.receipt;
     return <SafeAreaView edges={["left", "right", "bottom"]} style={{ flex: 1, backgroundColor: theme.background }}>
       <ScrollView contentContainerStyle={{ padding: 20, gap: 18, maxWidth: 760, width: "100%", alignSelf: "center" }}>
-        <Card style={{ gap: 16 }}>
-          <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 25, fontWeight: "800" }}>Gia hạn đã được ghi nhận</Text>
-          <Text style={{ color: theme.text, fontSize: 18 }}>Phiên bản gia hạn #{result.version}</Text>
-          <Text style={{ color: theme.text, fontSize: 16 }}>Hẹn trả đã lưu: {renewalLocalTime(Date.parse(result.returnAt)).replace("T", " ")}</Text>
-          <Text style={{ color: theme.text, fontSize: 16 }}>Phí gia hạn: {money(result.amount)} · Tổng hợp đồng: {money(result.totalAmount)}</Text>
-          <Text style={{ color: theme.text, fontSize: 16 }}>{result.collected ? `Đã thu ${money(result.amount + result.outsideAmount)}` : "Chưa ghi khoản thu tiền"}</Text>
-          {result.transactionId !== null && <Text selectable style={{ color: theme.text, fontSize: 17 }}>Phiếu tiền thuê #{result.transactionId}</Text>}
-          {result.outsideTransactionId !== null && <Text selectable style={{ color: theme.text, fontSize: 17 }}>Phiếu thu ngoài #{result.outsideTransactionId} · {money(result.outsideAmount)}</Text>}
-          {result.collection && <Text style={{ color: theme.muted, fontSize: 15, lineHeight: 23 }}>{methods.find(row => row.value === result.collection!.method)?.label} · tài khoản #{result.collection.accountId} · {renewalLocalTime(Date.parse(result.collection.paidAt)).replace("T", " ")}</Text>}
-          {!!result.warning && <Text style={{ color: theme.warning, fontSize: 15, lineHeight: 24 }}>{result.warning}</Text>}
+        <Card style={{ gap: 14 }}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+            <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 20, fontWeight: "800", flex: 1 }}>Gia hạn đã được ghi nhận</Text>
+            <StatusBadge status={result.collected ? "paid" : "pending"} label={`Kỳ #${result.version}`} />
+          </View>
+          <View style={{ gap: 2 }}>
+            <KeyValueRow label="Hẹn trả đã lưu" value={renewalLocalTime(Date.parse(result.returnAt)).replace("T", " ")} emphasize />
+            <KeyValueRow label="Phí gia hạn" value={money(result.amount)} emphasize />
+            <KeyValueRow label="Tổng hợp đồng" value={money(result.totalAmount)} />
+            <KeyValueRow label="Tình trạng thu tiền" value={result.collected ? `Đã thu ${money(result.amount + result.outsideAmount)}` : "Chưa ghi khoản thu tiền"} emphasize={result.collected} />
+            {result.transactionId !== null && <KeyValueRow label="Phiếu tiền thuê" value={`#${result.transactionId}`} selectable />}
+            {result.outsideTransactionId !== null && <KeyValueRow label="Phiếu thu ngoài" value={`#${result.outsideTransactionId} · ${money(result.outsideAmount)}`} selectable />}
+            {result.collection && <KeyValueRow label="Hình thức & tài khoản" value={`${methods.find(row => row.value === result.collection!.method)?.label} · TK #${result.collection.accountId} · ${renewalLocalTime(Date.parse(result.collection.paidAt)).replace("T", " ")}`} />}
+          </View>
+          {!!result.warning && <Text style={{ color: theme.warning, fontSize: 13.5, lineHeight: 20 }}>{result.warning}</Text>}
           {!result.current && <InlineError message="Hồ sơ hoặc phiếu thu đã được chỉnh sau lần gia hạn này. Đây là kết quả gốc đã lưu; kiểm tra hồ sơ hiện tại trước khi thao tác tiếp." />}
           {!!action.error && <InlineError message={action.error} />}
           <Button label="Xác nhận đã kiểm tra gia hạn" loading={action.checking} onPress={() => { void action.acknowledge(); }} />
@@ -124,19 +129,19 @@ function RenewalForm({ id,backfill }: { id: string;backfill:boolean }) {
           />
         }
       >
-        <View style={{ gap: 8 }}>
-          <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 25, fontWeight: "800" }}>{data.code}</Text>
-          {backfill&&<Text style={{color:theme.warning,lineHeight:24}}>Nhập bổ sung gia hạn bị quên. Xe đã trả chỉ bổ sung lịch sử và phí, giữ kho hiện tại. Kiểm tra lịch sử để tránh nhập trùng.</Text>}
-          {!backfill&&data.status==="bad_debt"&&<Text style={{color:theme.warning,lineHeight:24}}>Hợp đồng nợ xấu đã thu hồi xe. Bổ sung kỳ gia hạn sẽ cộng phí và lịch sử, giữ trạng thái nợ xấu và kho xe hiện tại.</Text>}
-          <Text style={{ color: theme.muted, fontSize: 16 }}>Gia hạn #{data.nextVersion} · Tiền thuê còn thiếu {money(data.rentalRemaining)}</Text>
+        <View style={{ gap: 6 }}>
+          <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 20, fontWeight: "800" }}>{data.code}</Text>
+          {backfill&&<Text style={{color:theme.warning,fontSize:13.5,lineHeight:20}}>Nhập bổ sung gia hạn bị quên. Xe đã trả chỉ bổ sung lịch sử và phí, giữ kho hiện tại. Kiểm tra lịch sử để tránh nhập trùng.</Text>}
+          {!backfill&&data.status==="bad_debt"&&<Text style={{color:theme.warning,fontSize:13.5,lineHeight:20}}>Hợp đồng nợ xấu đã thu hồi xe. Bổ sung kỳ gia hạn sẽ cộng phí và lịch sử, giữ trạng thái nợ xấu và kho xe hiện tại.</Text>}
+          <Text style={{ color: theme.muted, fontSize: 14 }}>Gia hạn #{data.nextVersion} · Tiền thuê còn thiếu {money(data.rentalRemaining)}</Text>
         </View>
         {!!(localError || action.error) && <InlineError message={localError || action.error} />}
-        {!!action.notice && <Text accessibilityLiveRegion="polite" style={{ color: theme.text, fontSize: 15, lineHeight: 24 }}>{action.notice}</Text>}
-        {!!action.key && <Card><Text style={{ color: theme.warning, fontSize: 15, lineHeight: 24 }}>Lần gửi đang chờ đối chiếu. Giữ nguyên nội dung và mã để tránh gia hạn hoặc thu trùng.</Text></Card>}
+        {!!action.notice && <Text accessibilityLiveRegion="polite" style={{ color: theme.text, fontSize: 14, lineHeight: 21 }}>{action.notice}</Text>}
+        {!!action.key && <Card><Text style={{ color: theme.warning, fontSize: 14, lineHeight: 21 }}>Lần gửi đang chờ đối chiếu. Giữ nguyên nội dung và mã để tránh gia hạn hoặc thu trùng.</Text></Card>}
         {query.isError && <InlineError message="Chưa cập nhật được hợp đồng. Nội dung đang nhập được giữ; tải lại trước khi xác nhận." />}
         {!data.available && <InlineError message={data.blockedReason || "Hợp đồng chưa thể gia hạn."} />}
         <Card style={{ gap: 16 }}>
-          <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 19, fontWeight: "700" }}>1. Xe và hẹn trả mới</Text>
+          <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 18, fontWeight: "700" }}>1. Xe và hẹn trả mới</Text>
           {data.items.total > 1 && <>
             <FormField label="Tìm xe đang thuê" value={searchDraft} editable={!locked} maxLength={80} onChangeText={setSearchDraft} />
             <Button secondary label="Tìm xe gia hạn" disabled={locked || query.isFetching} onPress={() => { Keyboard.dismiss(); setSearch(searchDraft.trim()); changePage(1); }} />
@@ -144,10 +149,12 @@ function RenewalForm({ id,backfill }: { id: string;backfill:boolean }) {
           <ChoiceField label="Xe gia hạn" value={item ? String(item.id) : ""} disabled={locked || query.isFetching}
             choices={data.items.rows.map(row => ({ value: String(row.id), label: `${row.license} · ${row.name}` }))}
             onChange={value => { setItemId(value);setUnit("day");setCount("1");setRate(null); setReturnAt(null); setAmount(null); setLocalError(""); }} />
-          {data.items.pages > 1 && <View style={{ gap: 10 }}>
-            <Text style={{ color: theme.muted }}>Trang {data.items.page}/{data.items.pages}</Text>
-            <Button secondary label="Trang xe trước" disabled={locked || query.isFetching || data.items.page === 1} onPress={() => changePage(data.items.page - 1)} />
-            <Button secondary label="Trang xe sau" disabled={locked || query.isFetching || data.items.page === data.items.pages} onPress={() => changePage(data.items.page + 1)} />
+          {data.items.pages > 1 && <View style={{ gap: 8 }}>
+            <Text style={{ color: theme.muted, fontSize: 13.5 }}>Trang {data.items.page}/{data.items.pages}</Text>
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <Button size="sm" equalWidth secondary label="Trang xe trước" disabled={locked || query.isFetching || data.items.page === 1} onPress={() => changePage(data.items.page - 1)} />
+              <Button size="sm" equalWidth secondary label="Trang xe sau" disabled={locked || query.isFetching || data.items.page === data.items.pages} onPress={() => changePage(data.items.page + 1)} />
+            </View>
           </View>}
           {item && <Text style={{ color: theme.muted, fontSize: 15, lineHeight: 24 }}>Hẹn trả hiện tại: {item.returnAt ? renewalLocalTime(Date.parse(item.returnAt)).replace("T", " ") : "Chưa có"} · Giá ngày: {money(item.dailyPrice)}</Text>}
           <RentalDateTime label="bắt đầu gia hạn" value={occurredAt} onChange={setOccurredAt} disabled={locked} />
@@ -194,8 +201,10 @@ function RenewalForm({ id,backfill }: { id: string;backfill:boolean }) {
             <Button secondary label={billKey && reviewedBill === billKey ? "Đã rà soát bill đúng giao dịch" : "Xác nhận bill đúng giao dịch"} disabled={locked || !billKey || readyBill !== billKey || bill.isError || bill.isFetching} onPress={() => setReviewedBill(billKey)} />
           </> : <Text style={{ color: theme.muted, fontSize: 15, lineHeight: 24 }}>Lưu ngày hẹn trả và phí thỏa thuận. Khoản chưa nhận không được ghi thành phiếu thu.</Text>}
         </Card>
-        <Button secondary label="Ẩn bàn phím" onPress={Keyboard.dismiss} />
-        <Button secondary label="Tải lại số liệu gia hạn" loading={query.isFetching || (collected && bill.isFetching)} disabled={action.busy || action.checking} onPress={() => { setReviewedBill(""); void query.refetch(); if (collected) void bill.refetch(); }} />
+        <View style={{ flexDirection: "row", gap: 10 }}>
+          <Button size="sm" equalWidth secondary label="Ẩn bàn phím" onPress={Keyboard.dismiss} />
+          <Button size="sm" equalWidth secondary label="Tải lại số liệu gia hạn" loading={query.isFetching || (collected && bill.isFetching)} disabled={action.busy || action.checking} onPress={() => { setReviewedBill(""); void query.refetch(); if (collected) void bill.refetch(); }} />
+        </View>
       </ScrollView>
       <View style={{ padding: 16, borderTopWidth: 1, borderColor: theme.border, backgroundColor: theme.surface }}>
         <View style={{ maxWidth: 724, width: "100%", alignSelf: "center" }}>

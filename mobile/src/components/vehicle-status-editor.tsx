@@ -1,6 +1,6 @@
 import { KeyboardFormScrollView } from "./keyboard-form-scroll-view";
 import {useEffect,useRef,useState} from 'react';
-import {Keyboard,Text,type ScrollViewInstance} from 'react-native';
+import {Keyboard,Text,View,type ScrollViewInstance} from 'react-native';
 import {useQuery} from '@tanstack/react-query';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {VEHICLE_INVENTORY_STATUSES,type MobileInventoryStatusInput,type MobileVehicleStatusPreparation,type MobileVehicleStatusReview} from '../../../shared/mobile-vehicle-status';
@@ -8,7 +8,7 @@ import {useSession} from '@/providers/session';
 import {useVehicleStatusWrite} from '@/hooks/use-vehicle-status-write';
 import {useReducedMotion} from '@/hooks/use-reduced-motion';
 import {dateTime,statuses,useTheme} from '@/theme';
-import {Button,Card,InlineError,StateView} from './ui';
+import {Button,Card,InlineError,KeyValueRow,StateView,StatusBadge} from './ui';
 import {ChoiceField,FormField} from './form-fields';
 import {ConfirmEdit} from './editor-sheet';
 
@@ -45,40 +45,50 @@ function StatusForm({id}:{id:string}) {
   return <SafeAreaView edges={['left','right','bottom']} style={{flex:1,backgroundColor:theme.background}}>
 
       <KeyboardFormScrollView ref={scroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={{padding:20,gap:18,maxWidth:760,width:'100%',alignSelf:'center'}}>
-        <Card style={{gap:10}}>
-          <Text accessibilityRole="header" style={{color:theme.text,fontSize:25,fontWeight:'800'}}>Đổi trạng thái xe</Text>
-          <Text style={{color:theme.text,fontSize:20,fontWeight:'700'}}>{vehicle?.license||vehicle?.name||`Xe #${id}`}</Text>
-          {vehicle&&<Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>{statuses[vehicle.status]||vehicle.status} · Kho hiện tại: {vehicle.storeName}</Text>}
-          <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>Đổi trạng thái độc lập trong Danh sách xe, kể cả Nợ xấu → Lưu kho. Cơ sở và hợp đồng hiện có được giữ nguyên.</Text>
-          {!!(data?.inventory||query.data?.inventory)?.hasOpenContract&&<Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>Xe còn hợp đồng liên quan. Đổi trạng thái xe không thay đổi hợp đồng hoặc công nợ.</Text>}
+        <Card style={{gap:8}}>
+          <View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center',gap:8}}>
+            <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'800',flex:1}}>Đổi trạng thái xe</Text>
+            {vehicle&&<StatusBadge status={vehicle.status} label={statuses[vehicle.status]||vehicle.status} />}
+          </View>
+          <View style={{gap:2}}>
+            <KeyValueRow label="Xe" value={vehicle?.license||vehicle?.name||`Xe #${id}`} emphasize />
+            {vehicle&&<KeyValueRow label="Kho hiện tại" value={vehicle.storeName} />}
+          </View>
+          <Text style={{color:theme.muted,fontSize:13.5,lineHeight:20}}>Đổi trạng thái độc lập trong Danh sách xe, kể cả Nợ xấu → Lưu kho. Cơ sở và hợp đồng hiện có được giữ nguyên.</Text>
+          {!!(data?.inventory||query.data?.inventory)?.hasOpenContract&&<Text style={{color:theme.muted,fontSize:13.5,lineHeight:20}}>Xe còn hợp đồng liên quan. Đổi trạng thái xe không thay đổi hợp đồng hoặc công nợ.</Text>}
         </Card>
         {!!(error||write.error)&&<InlineError message={error||write.error}/>}
-        {write.pending.length>0?<Card style={{gap:16}}>
-          <Text accessibilityRole="header" style={{color:theme.text,fontSize:21,fontWeight:'700'}}>Thao tác xe đang chờ đối chiếu</Text>
-          <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>Kiểm tra kết quả gốc trước khi gửi thêm. Nội dung đang nhập được giữ trong màn hình.</Text>
+        {write.pending.length>0?<Card style={{gap:14}}>
+          <Text accessibilityRole="header" style={{color:theme.text,fontSize:18,fontWeight:'700'}}>Thao tác xe đang chờ đối chiếu</Text>
+          <Text style={{color:theme.muted,fontSize:14,lineHeight:21}}>Kiểm tra kết quả gốc trước khi gửi thêm. Nội dung đang nhập được giữ trong màn hình.</Text>
           {write.pending.filter(e=>e.operation===`vehicle.status:${id}`).map(e=><Button key={e.key} label="Mở kết quả đổi trạng thái" disabled={write.busy} onPress={()=>write.open(e.key)}/>)}
           <Button label="Vào Tài khoản để đối chiếu" secondary disabled={write.busy} onPress={write.account}/>
-        </Card>:!write.checked?<Button label="Kiểm tra thao tác trên thiết bị" loading={write.checking} onPress={()=>{void write.check();}}/>:!data?<Card style={{gap:16}}>
+        </Card>:!write.checked?<Button label="Kiểm tra thao tác trên thiết bị" loading={write.checking} onPress={()=>{void write.check();}}/>:!data?<Card style={{gap:14}}>
           {query.isError&&<InlineError message={(query.error as Error).message}/>}
           {!!query.data?.inventory?.blockedReason&&<InlineError message={query.data.inventory.blockedReason}/>}
           {query.data?.inventory?.available&&<Button label="Nhập thông tin đổi trạng thái" disabled={query.isFetching||query.isError} onPress={()=>start(query.data!)}/>}
           <Button label="Tải lại thông tin xe" secondary loading={query.isFetching} onPress={()=>{void query.refetch();}}/>
         </Card>:review?<>
-          <Card style={{gap:14}}>
-            <Text accessibilityRole="header" style={{color:theme.text,fontSize:23,fontWeight:'700'}}>Rà soát trước khi ghi</Text>
-            <Text style={{color:theme.text,fontSize:19,fontWeight:'700'}}>{statuses[review.vehicle.status]||review.vehicle.status} → {statuses[review.input.status]||review.input.status}</Text>
-            <Text style={{color:theme.text,fontSize:16,lineHeight:25}}>Cơ sở hiện tại: {review.store.name}</Text>
-            <Text style={{color:theme.text,fontSize:16,lineHeight:25}}>Người nhập: {review.actor.name}</Text>
-            {!!review.input.note&&<Text style={{color:theme.text,fontSize:16,lineHeight:25}}>Ghi chú: {review.input.note}</Text>}
-            <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>Không cần nhập khách hàng, không tạo hợp đồng nháp, không trả xe hoặc xóa công nợ.</Text>
+          <Card style={{gap:12}}>
+            <View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center',gap:8}}>
+              <Text accessibilityRole="header" style={{color:theme.text,fontSize:18,fontWeight:'700',flex:1}}>Rà soát trước khi ghi</Text>
+              <StatusBadge status={review.input.status} label={statuses[review.input.status]||review.input.status} />
+            </View>
+            <View style={{gap:2}}>
+              <KeyValueRow label="Chuyển trạng thái" value={`${statuses[review.vehicle.status]||review.vehicle.status} → ${statuses[review.input.status]||review.input.status}`} emphasize />
+              <KeyValueRow label="Cơ sở hiện tại" value={review.store.name} />
+              <KeyValueRow label="Người nhập" value={review.actor.name} />
+              {!!review.input.note&&<KeyValueRow label="Ghi chú" value={review.input.note} />}
+            </View>
+            <Text style={{color:theme.muted,fontSize:13.5,lineHeight:20}}>Không cần nhập khách hàng, không tạo hợp đồng nháp, không trả xe hoặc xóa công nợ.</Text>
           </Card>
           <Button label="Lưu đổi trạng thái" disabled={locked} loading={write.busy} onPress={()=>setConfirm(true)}/>
           <Button label="Sửa thông tin" secondary disabled={locked} onPress={()=>{setReview(null);setError('');top();}}/>
         </>:<>
-          <Card style={{gap:18}}>
+          <Card style={{gap:16}}>
             <ChoiceField label="Trạng thái" value={status} choices={VEHICLE_INVENTORY_STATUSES.map(row=>({...row,label:row.label+(row.value===data.inventory?.status?' (hiện tại)':'')}))} onChange={setStatus} disabled={locked}/>
             <FormField label="Ghi chú" value={note} onChangeText={setNote} maxLength={500} multiline editable={!locked}/>
-            <Text style={{color:theme.muted,fontSize:15,lineHeight:24}}>Người nhập: {data.actor.name} · Mở lúc {dateTime(openedAt)}</Text>
+            <KeyValueRow label="Người nhập & thời điểm mở" value={`${data.actor.name} · ${dateTime(openedAt)}`} />
           </Card>
           <Button label="Rà soát đổi trạng thái" loading={previewing} disabled={locked} onPress={()=>{void preview();}}/>
           <Button label="Tải lại để nhập lại" secondary disabled={locked} onPress={()=>setReload(true)}/>

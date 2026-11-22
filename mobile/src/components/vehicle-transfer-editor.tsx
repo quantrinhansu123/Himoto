@@ -1,6 +1,6 @@
 import { KeyboardFormScrollView } from "./keyboard-form-scroll-view";
 import {useEffect,useRef,useState} from 'react';
-import {Keyboard,Pressable,Text,type ScrollViewInstance} from 'react-native';
+import {Keyboard,Pressable,Text,View,type ScrollViewInstance} from 'react-native';
 import {keepPreviousData,useQuery} from '@tanstack/react-query';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import type {MobileVehicleTransferAction,MobileVehicleTransferInput,MobileVehicleTransferPreparation,MobileVehicleTransferPreview,MobileTransferStore} from '../../../shared/mobile-vehicle-transfers';
@@ -9,7 +9,7 @@ import {useVehicleTransferWrite} from '@/hooks/use-vehicle-transfer-write';
 import {useReducedMotion} from '@/hooks/use-reduced-motion';
 import {transferLabels,transferEffects,vehicleTransferInput,type TransferPending} from '@/lib/vehicle-transfer-form';
 import {statuses,useTheme} from '@/theme';
-import {Button,Card,InlineError,StateView} from './ui';
+import {Button,Card,InlineError,KeyValueRow,StateView,StatusBadge} from './ui';
 import {FormField} from './form-fields';
 import {ConfirmEdit} from './editor-sheet';
 
@@ -84,79 +84,96 @@ function TransferForm({id}:{id:string}){
   </Card>);
   const data=selection?.data??query.data,vehicle=data?.vehicle;
   return frame(<>
-    <Card style={{gap:10}}>
-      <Text accessibilityRole="header" style={{color:theme.text,fontSize:25,fontWeight:'800'}}>Điều chuyển và nhận xe</Text>
-      <Text style={{color:theme.text,fontSize:19,fontWeight:'700'}}>{vehicle?.license||vehicle?.name||('#'+id)}</Text>
-      {vehicle&&<>
-        <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>{statuses[vehicle.status]||vehicle.status} · Kho hiện tại: {vehicle.storeName||'Chưa rõ kho hiện tại'}</Text>
-        <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>Cơ sở sở hữu hiện tại: {vehicle.ownerStoreName||'Chưa xác định'}</Text>
-      </>}
-      <Text accessibilityLiveRegion="polite" style={{color:theme.text,fontSize:16}}>Bước {step+1}/3 · {step===0?'Chọn thao tác':step===1?'Thông tin thực tế':'Rà soát trước khi ghi'}</Text>
+    <Card style={{gap:8}}>
+      <View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center',gap:8}}>
+        <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'800',flex:1}}>Điều chuyển và nhận xe</Text>
+        {vehicle&&<StatusBadge status={vehicle.status} label={statuses[vehicle.status]||vehicle.status} />}
+      </View>
+      <View style={{gap:2}}>
+        <KeyValueRow label="Xe" value={vehicle?.license||vehicle?.name||('#'+id)} emphasize />
+        {vehicle&&<>
+          <KeyValueRow label="Kho hiện tại" value={vehicle.storeName||'Chưa rõ kho hiện tại'} />
+          <KeyValueRow label="Cơ sở sở hữu hiện tại" value={vehicle.ownerStoreName||'Chưa xác định'} />
+        </>}
+      </View>
+      <Text accessibilityLiveRegion="polite" style={{color:theme.text,fontSize:14,fontWeight:'700'}}>Bước {step+1}/3 · {step===0?'Chọn thao tác':step===1?'Thông tin thực tế':'Rà soát trước khi ghi'}</Text>
     </Card>
     {!!(error||write.error)&&<InlineError message={error||write.error}/>}
-    {!!write.notice&&<Text accessibilityLiveRegion="polite" style={{color:theme.text,fontSize:16,lineHeight:25}}>{write.notice}</Text>}
-    {step===0&&<Card style={{gap:16}}>
-      <Text accessibilityRole="header" style={{color:theme.text,fontSize:21,fontWeight:'700'}}>1. Chọn thao tác kho</Text>
+    {!!write.notice&&<Text accessibilityLiveRegion="polite" style={{color:theme.text,fontSize:14,lineHeight:21}}>{write.notice}</Text>}
+    {step===0&&<Card style={{gap:14}}>
+      <Text accessibilityRole="header" style={{color:theme.text,fontSize:18,fontWeight:'700'}}>1. Chọn thao tác kho</Text>
       {query.isPending&&<Text style={{color:theme.muted}}>Đang kiểm tra xe và lượt chuyển…</Text>}
       {query.isError&&<InlineError message={(query.error as Error).message}/>}
       {query.data?.actions.map(gate=><Card key={gate.action} style={{gap:8}}>
         <Button label={transferLabels[gate.action]} secondary disabled={locked||query.isFetching||query.isError||!gate.available}
           onPress={()=>{setSelection({action:gate.action,data:query.data!});setDestination(null);setPage(1);clearReview();setStep(1);top();}}/>
-        {!!gate.blockedReason&&<Text style={{color:theme.muted,fontSize:15,lineHeight:23}}>{gate.blockedReason}</Text>}
+        {!!gate.blockedReason&&<Text style={{color:theme.muted,fontSize:13.5,lineHeight:20}}>{gate.blockedReason}</Text>}
       </Card>)}
       <Button label="Tải lại xe và lượt chuyển" secondary loading={query.isFetching} disabled={locked} onPress={()=>selection?setReload(true):void query.refetch()}/>
     </Card>}
     {step===1&&selection&&<>
-      <Card style={{gap:14}}>
-        <Text accessibilityRole="header" style={{color:theme.text,fontSize:21,fontWeight:'700'}}>2. {transferLabels[selection.action]}</Text>
+      <Card style={{gap:12}}>
+        <Text accessibilityRole="header" style={{color:theme.text,fontSize:18,fontWeight:'700'}}>2. {transferLabels[selection.action]}</Text>
         {selection.action==='transfer'?<>
-          <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>{selection.data.vehicle.status==='ready'?transferEffects.awaiting_receipt:transferEffects.immediate_transfer}</Text>
-          <Text style={{color:theme.text,fontSize:16,lineHeight:25}}>Cơ sở sở hữu cũng chuyển sang kho đến ngay khi ghi điều chuyển.</Text>
+          <Text style={{color:theme.muted,fontSize:13.5,lineHeight:20}}>{selection.data.vehicle.status==='ready'?transferEffects.awaiting_receipt:transferEffects.immediate_transfer}</Text>
+          <Text style={{color:theme.text,fontSize:13.5,lineHeight:20}}>Cơ sở sở hữu cũng chuyển sang kho đến ngay khi ghi điều chuyển.</Text>
           <FormField label="Tìm kho đến" value={search} onChangeText={setSearch} maxLength={120} editable={!locked} returnKeyType="search"
             onSubmitEditing={()=>{if(!locked){setApplied(search.trim());setPage(1);Keyboard.dismiss();}}}/>
           <Button label="Tìm cơ sở nhận" secondary disabled={locked} onPress={()=>{setApplied(search.trim());setPage(1);Keyboard.dismiss();}}/>
         </>:<>
-          <Text style={{color:theme.text,fontSize:16,lineHeight:25}}>Kho đi: {selection.data.transfer?.fromStoreName||'Chưa rõ kho đi'}</Text>
-          <Text style={{color:theme.text,fontSize:16,lineHeight:25}}>Kho đến: {selection.data.transfer?.toStoreName||'Chưa rõ kho đến'}</Text>
-          <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>{selection.action==='receive'?transferEffects.received:selection.action==='reject'?transferEffects.rejected:transferEffects.cancelled}</Text>
+          <View style={{gap:2}}>
+            <KeyValueRow label="Kho đi" value={selection.data.transfer?.fromStoreName||'Chưa rõ kho đi'} />
+            <KeyValueRow label="Kho đến" value={selection.data.transfer?.toStoreName||'Chưa rõ kho đến'} emphasize />
+          </View>
+          <Text style={{color:theme.muted,fontSize:13.5,lineHeight:20}}>{selection.action==='receive'?transferEffects.received:selection.action==='reject'?transferEffects.rejected:transferEffects.cancelled}</Text>
         </>}
       </Card>
-      {selection.action==='transfer'&&<Card style={{gap:14}}>
+      {selection.action==='transfer'&&<Card style={{gap:12}}>
         {stores.isError&&<InlineError message={(stores.error as Error).message}/>}
         {stores.isFetching&&<Text style={{color:theme.muted}}>Đang tải kho đến…</Text>}
-        {!stores.isFetching&&!stores.isError&&stores.data?.rows.length===0&&<Text style={{color:theme.muted,fontSize:16}}>Không có kho phù hợp với từ khóa.</Text>}
+        {!stores.isFetching&&!stores.isError&&stores.data?.rows.length===0&&<Text style={{color:theme.muted,fontSize:14}}>Không có kho phù hợp với từ khóa.</Text>}
         {stores.data?.rows.map(store=><Pressable key={store.id} accessibilityRole="radio" accessibilityLabel={'Chọn kho đến '+store.name}
           accessibilityState={{checked:destination?.id===store.id,disabled:locked||stores.isFetching||stores.isError}} disabled={locked||stores.isFetching||stores.isError}
           onPress={()=>{setDestination(store);clearReview();}} style={{minHeight:56,padding:14,borderRadius:12,borderWidth:destination?.id===store.id?2:1,borderColor:destination?.id===store.id?theme.primary:theme.border}}>
-          <Text style={{color:theme.text,fontSize:17,fontWeight:'600'}}>{store.name}</Text>
+          <Text style={{color:theme.text,fontSize:16,fontWeight:'600'}}>{store.name}</Text>
         </Pressable>)}
-        <Text style={{color:theme.muted,fontSize:15}}>Trang kho {page}</Text>
-        <Button label="Trang cơ sở trước" secondary disabled={locked||stores.isFetching||page===1} onPress={()=>{setPage(p=>p-1);top();}}/>
-        <Button label="Trang cơ sở tiếp" secondary disabled={locked||stores.isFetching||!stores.data?.hasMore} onPress={()=>{setPage(p=>p+1);top();}}/>
+        <Text style={{color:theme.muted,fontSize:13.5}}>Trang kho {page}</Text>
+        <View style={{flexDirection:'row',gap:10}}>
+          <Button size="sm" equalWidth label="Trang cơ sở trước" secondary disabled={locked||stores.isFetching||page===1} onPress={()=>{setPage(p=>p-1);top();}}/>
+          <Button size="sm" equalWidth label="Trang cơ sở tiếp" secondary disabled={locked||stores.isFetching||!stores.data?.hasMore} onPress={()=>{setPage(p=>p+1);top();}}/>
+        </View>
         <Button label="Tải lại kho đến" secondary loading={stores.isFetching} disabled={locked} onPress={()=>{void stores.refetch();}}/>
       </Card>}
-      {selection.action==='transfer'&&destination&&<Text style={{color:theme.text,fontSize:17,fontWeight:'700'}}>Kho đã chọn: {destination.name}</Text>}
+      {selection.action==='transfer'&&destination&&<Card><KeyValueRow label="Kho đến đã chọn" value={destination.name} emphasize /></Card>}
       <Card style={{gap:12}}><FormField label="Ghi chú thao tác kho" value={note} onChangeText={value=>{setNote(value);clearReview();}} maxLength={500} multiline editable={!locked}/></Card>
       <Button label="Rà soát thao tác kho" loading={previewing} disabled={locked||selection.action==='transfer'&&(!destination||stores.isFetching||stores.isError)} onPress={()=>{void preview();}}/>
-      <Button label="Chọn thao tác khác" secondary disabled={locked} onPress={()=>{setStep(0);clearReview();top();}}/>
-      <Button label="Tải lại để nhập lại" secondary disabled={locked} onPress={()=>setReload(true)}/>
+      <View style={{flexDirection:'row',gap:10}}>
+        <Button size="sm" equalWidth label="Chọn thao tác khác" secondary disabled={locked} onPress={()=>{setStep(0);clearReview();top();}}/>
+        <Button size="sm" equalWidth label="Tải lại để nhập lại" secondary disabled={locked} onPress={()=>setReload(true)}/>
+      </View>
     </>}
     {step===2&&review&&<>
-      <Card style={{gap:14}}>
-        <Text accessibilityRole="header" style={{color:theme.text,fontSize:21,fontWeight:'700'}}>3. Rà soát thao tác kho</Text>
-        <Text style={{color:theme.text,fontSize:20,fontWeight:'700'}}>{transferLabels[review.action]} · {review.vehicle.license||review.vehicle.name}</Text>
-        <Text style={{color:theme.text,fontSize:17,lineHeight:27}}>Kho đi: {review.fromStore?.name||'Chưa rõ kho đi'}</Text>
-        <Text style={{color:theme.text,fontSize:17,lineHeight:27}}>Kho đến: {review.toStore.name}</Text>
-        <Text style={{color:theme.text,fontSize:17,lineHeight:27}}>{transferEffects[review.effect]}</Text>
-        <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>Sau ghi: {statuses[review.after.status]||review.after.status} · {review.after.storeId===review.toStore.id?review.toStore.name:review.fromStore?.name}</Text>
-        <Text style={{color:theme.text,fontSize:16,lineHeight:25}}>Cơ sở sở hữu trước: {review.vehicle.ownerStoreName||'Chưa xác định'}</Text>
-        <Text style={{color:theme.text,fontSize:16,lineHeight:25}}>Cơ sở sở hữu sau: {review.after.ownerStoreId===review.toStore.id?review.toStore.name:review.fromStore?.name}</Text>
-        {!!review.note&&<Text style={{color:theme.text,fontSize:16,lineHeight:25}}>{review.note}</Text>}
-        <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>Không thay đổi hợp đồng, kỳ thuê, tiền cọc hoặc khoản đã thu/hoàn.</Text>
+      <Card style={{gap:12}}>
+        <View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center',gap:8}}>
+          <Text accessibilityRole="header" style={{color:theme.text,fontSize:18,fontWeight:'700',flex:1}}>3. Rà soát thao tác kho</Text>
+          <StatusBadge status={review.after.status} label={statuses[review.after.status]||review.after.status} />
+        </View>
+        <View style={{gap:2}}>
+          <KeyValueRow label="Thao tác & xe" value={`${transferLabels[review.action]} · ${review.vehicle.license||review.vehicle.name}`} emphasize />
+          <KeyValueRow label="Kho đi" value={review.fromStore?.name||'Chưa rõ kho đi'} />
+          <KeyValueRow label="Kho đến" value={review.toStore.name} emphasize />
+          <KeyValueRow label="Kho sau khi ghi" value={review.after.storeId===review.toStore.id?review.toStore.name:review.fromStore?.name} />
+          <KeyValueRow label="Cơ sở sở hữu trước → sau" value={`${review.vehicle.ownerStoreName||'Chưa xác định'} → ${review.after.ownerStoreId===review.toStore.id?review.toStore.name:review.fromStore?.name}`} />
+          {!!review.note&&<KeyValueRow label="Ghi chú" value={review.note} />}
+        </View>
+        <Text style={{color:theme.text,fontSize:13.5,lineHeight:20}}>{transferEffects[review.effect]}</Text>
+        <Text style={{color:theme.muted,fontSize:13.5,lineHeight:20}}>Không thay đổi hợp đồng, kỳ thuê, tiền cọc hoặc khoản đã thu/hoàn.</Text>
       </Card>
       <Button label="Ghi thao tác kho" loading={write.busy} disabled={locked||!input} onPress={()=>setConfirm(true)}/>
-      <Button label="Sửa thông tin thao tác" secondary disabled={locked} onPress={()=>{setStep(1);clearReview();top();}}/>
-      <Button label="Tải lại để nhập lại" secondary disabled={locked} onPress={()=>setReload(true)}/>
+      <View style={{flexDirection:'row',gap:10}}>
+        <Button size="sm" equalWidth label="Sửa thông tin thao tác" secondary disabled={locked} onPress={()=>{setStep(1);clearReview();top();}}/>
+        <Button size="sm" equalWidth label="Tải lại để nhập lại" secondary disabled={locked} onPress={()=>setReload(true)}/>
+      </View>
     </>}
   </>);
 }

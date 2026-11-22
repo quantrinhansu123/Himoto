@@ -13,7 +13,7 @@ import { useReturnWrite } from '@/hooks/use-return-write';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { emptyReturnMoney, newReturnLine, returnFeeInput, returnSettlementInput, type ReturnLineDraft, type ReturnMoneyDraft, type ReturnReceiptDraft } from '@/lib/return-form';
 import { dateTime, money, useTheme } from '@/theme';
-import { Button, Card, InlineError, StateView } from './ui';
+import { Button, Card, InlineError, KeyValueRow, StateView } from './ui';
 import { FormField, ChoiceField } from './form-fields';
 import { RentalDateTime } from './rental-date-time';
 import { ConfirmEdit } from './editor-sheet';
@@ -141,16 +141,16 @@ function ReturnForm({ id }: { id: string }) {
           />
         }
       >
-        <Text accessibilityRole="header" style={{color:theme.text,fontSize:25,fontWeight:'800'}}>{['1. Chọn xe trả','2. Phí và giờ nhận xe','3. Tiền thực thu và hoàn','4. Rà soát quyết toán'][step]}</Text>
-        <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>{data.code} · đã chọn {lines.length} xe{data.ownership?' · thuê sở hữu':''}</Text>
+        <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'800'}}>{['1. Chọn xe trả','2. Phí và giờ nhận xe','3. Tiền thực thu và hoàn','4. Rà soát quyết toán'][step]}</Text>
+        <Text style={{color:theme.muted,fontSize:14,lineHeight:21}}>{data.code} · đã chọn {lines.length} xe{data.ownership?' · thuê sở hữu':''}</Text>
         {!!error&&<InlineError message={error}/>}
         {!!action.error&&<InlineError message={action.error}/>}
-        {!!action.notice&&<Text accessibilityLiveRegion="polite" style={{color:theme.text,fontSize:16,lineHeight:25}}>{action.notice}</Text>}
+        {!!action.notice&&<Text accessibilityLiveRegion="polite" style={{color:theme.text,fontSize:14,lineHeight:21}}>{action.notice}</Text>}
         {query.isError&&<InlineError message="Chưa cập nhật được dữ liệu trả xe. Giữ nội dung và tải lại trước khi rà soát."/>}
         {!data.available&&<InlineError message={data.blockedReason||'Hợp đồng chưa cho phép trả xe.'}/>}
         {step===0&&<>
           <Card style={{gap:14}}>
-            <Text style={{color:theme.text,fontSize:16,lineHeight:25}}>Chọn các xe thực tế đã nhận. Có thể chọn qua nhiều trang, tối đa 50 xe mỗi lượt.</Text>
+            <Text style={{color:theme.text,fontSize:14,lineHeight:21}}>Chọn các xe thực tế đã nhận. Có thể chọn qua nhiều trang, tối đa 50 xe mỗi lượt.</Text>
             {data.items.rows.map(row=>{
               const checked=lines.some(line=>line.vehicle.id===row.id);
               return <Pressable key={row.id} accessibilityRole="checkbox" accessibilityLabel={'Chọn trả xe '+(row.license||row.name||row.vehicleId)} accessibilityState={{checked,disabled:locked||!row.available||query.isPlaceholderData}}
@@ -158,17 +158,19 @@ function ReturnForm({ id }: { id: string }) {
                   if(!checked&&lines.length>=50){setError('Mỗi lượt chọn tối đa 50 xe.');return;}
                   setLines(old=>checked?old.filter(line=>line.vehicle.id!==row.id):[...old,newReturnLine(row)]);
                   setFees(null);setFeeInput(null);clearReview();
-                }} style={({pressed})=>({padding:16,gap:7,minHeight:72,borderWidth:1,borderColor:checked?theme.primary:theme.border,borderRadius:12,backgroundColor:checked?theme.tint:theme.surface,opacity:pressed?0.7:row.available?1:0.6})}>
-                <Text style={{color:theme.text,fontSize:17,fontWeight:'700'}}>{checked?'Đã chọn · ':''}{row.license||row.name||('Xe #'+row.vehicleId)}</Text>
-                <Text style={{color:theme.muted,fontSize:15,lineHeight:23}}>{row.returnAt?'Hạn trả '+dateTime(row.returnAt):'Chưa có hạn trả'}{row.completedAt?' · đã trả':''}</Text>
-                {!!row.blockedReason&&<Text style={{color:theme.danger,fontSize:14,lineHeight:22}}>{row.blockedReason}</Text>}
+                }} style={({pressed})=>({padding:14,gap:5,minHeight:64,borderWidth:1,borderColor:checked?theme.primary:theme.border,borderRadius:12,backgroundColor:checked?theme.tint:theme.surface,opacity:pressed?0.7:row.available?1:0.6})}>
+                <Text style={{color:theme.text,fontSize:16,fontWeight:'700'}}>{checked?'Đã chọn · ':''}{row.license||row.name||('Xe #'+row.vehicleId)}</Text>
+                <Text style={{color:theme.muted,fontSize:13.5,lineHeight:20}}>{row.returnAt?'Hạn trả '+dateTime(row.returnAt):'Chưa có hạn trả'}{row.completedAt?' · đã trả':''}</Text>
+                {!!row.blockedReason&&<Text style={{color:theme.danger,fontSize:13.5,lineHeight:20}}>{row.blockedReason}</Text>}
               </Pressable>;
             })}
             {!data.items.rows.length&&<Text style={{color:theme.muted}}>Không có dòng xe để trả.</Text>}
           </Card>
-          <Text style={{color:theme.muted,fontSize:15}}>Trang {data.items.page}/{data.items.pages}</Text>
-          <Button label="Trang xe trước" secondary disabled={page<=1||locked||query.isFetching} onPress={()=>{setPage(p=>p-1);top();}}/>
-          <Button label="Trang xe tiếp" secondary disabled={page>=data.items.pages||locked||query.isFetching} onPress={()=>{setPage(p=>p+1);top();}}/>
+          <Text style={{color:theme.muted,fontSize:13.5}}>Trang {data.items.page}/{data.items.pages}</Text>
+          <View style={{flexDirection:'row',gap:10}}>
+            <Button size="sm" equalWidth label="Trang xe trước" secondary disabled={page<=1||locked||query.isFetching} onPress={()=>{setPage(p=>p-1);top();}}/>
+            <Button size="sm" equalWidth label="Trang xe tiếp" secondary disabled={page>=data.items.pages||locked||query.isFetching} onPress={()=>{setPage(p=>p+1);top();}}/>
+          </View>
           <Button label="Nhập phí trả xe" disabled={!lines.length||locked||!data.available||query.isFetching||query.isError} onPress={()=>{setLineIndex(0);setStep(1);top();}}/>
         </>}
         {step===1&&selected&&<>
@@ -197,31 +199,35 @@ function ReturnForm({ id }: { id: string }) {
           <Button label="Sửa lựa chọn xe" secondary disabled={locked} onPress={()=>{setStep(0);top();}}/>
         </>}
         {step===2&&fees&&<>
-          <Card style={{gap:12}}>
-            <Text accessibilityRole="header" style={{color:theme.text,fontSize:21,fontWeight:'700'}}>Phí sau khi nhận xe</Text>
-            {fees.items.map(row=><Text key={row.id} style={{color:theme.text,fontSize:16,lineHeight:25}}>{row.license||row.name}: trễ {money(row.lateFee)}, sửa {money(row.repairFee)}, giảm sớm {money(row.earlyDiscount)}</Text>)}
-            <Text style={{color:theme.text,fontSize:17,lineHeight:27}}>Tổng phí {money(fees.after.totalAmount)} · còn thiếu {money(fees.after.rentalRemaining)}</Text>
-            <Text style={{color:theme.muted,fontSize:15,lineHeight:24}}>Nhập tiền thực tế đã thu/hoàn. Phí gợi ý chưa phải khoản thu tiền. Cọc đang giữ {money(fees.after.depositHeld)}; còn {fees.after.remainingItems} xe.</Text>
+          <Card style={{gap:10}}>
+            <Text accessibilityRole="header" style={{color:theme.text,fontSize:18,fontWeight:'700'}}>Phí sau khi nhận xe</Text>
+            <View style={{gap:2}}>
+              {fees.items.map(row=><KeyValueRow key={row.id} label={row.license||row.name} value={`Trễ ${money(row.lateFee)} · Sửa ${money(row.repairFee)} · Giảm sớm ${money(row.earlyDiscount)}`} />)}
+              <KeyValueRow label="Tổng phí hợp đồng" value={money(fees.after.totalAmount)} />
+              <KeyValueRow label="Còn thiếu" value={money(fees.after.rentalRemaining)} emphasize />
+              <KeyValueRow label="Cọc đang giữ & xe còn lại" value={`${money(fees.after.depositHeld)} · Còn ${fees.after.remainingItems} xe`} />
+            </View>
+            <Text style={{color:theme.muted,fontSize:13.5,lineHeight:20}}>Nhập tiền thực tế đã thu/hoàn. Phí gợi ý chưa phải khoản thu tiền.</Text>
           </Card>
-          <Card style={{gap:16}}>
-            <Text accessibilityRole="header" style={{color:theme.text,fontSize:21,fontWeight:'700'}}>Khoản thực thu ({receipts.length})</Text>
+          <Card style={{gap:14}}>
+            <Text accessibilityRole="header" style={{color:theme.text,fontSize:18,fontWeight:'700'}}>Khoản thực thu ({receipts.length})</Text>
             {receipts.map((row,i)=><Button key={i} secondary label={'Sửa khoản thu '+(i+1)+' · '+(row.amount?money(Number(row.amount)):'chưa nhập tiền')} disabled={locked} onPress={()=>setReceiptIndex(i)}/>)}
             {receipt&&<>
               <ChoiceField label="Loại khoản thu" value={receipt.kind} choices={kinds} disabled={locked} onChange={kind=>{setReceipts(old=>old.map((r,i)=>i===receiptIndex?{...r,kind:kind as ReturnReceiptDraft['kind']}:r));clearReview();}}/>
               {moneyFields(receipt,next=>setReceipts(old=>old.map((r,i)=>i===receiptIndex?{...next,kind:r.kind}:r)),'Khoản thu '+(receiptIndex+1))}
-              <Button label="Bỏ khoản thu này" secondary disabled={locked} onPress={()=>{setReceipts(old=>old.filter((_,i)=>i!==receiptIndex));setReceiptIndex(0);clearReview();}}/>
+              <Button label="Bỏ khoản thu này" secondary danger disabled={locked} onPress={()=>{setReceipts(old=>old.filter((_,i)=>i!==receiptIndex));setReceiptIndex(0);clearReview();}}/>
             </>}
             <Button label="Thêm khoản thực thu" secondary disabled={locked||receipts.length>=50} onPress={()=>{setReceiptIndex(receipts.length);setReceipts(old=>[...old,{...defaultMoney(),kind:'rental_debt'}]);clearReview();}}/>
           </Card>
-          <Card style={{gap:16}}>
-            <Text accessibilityRole="header" style={{color:theme.text,fontSize:21,fontWeight:'700'}}>Hoàn tiền thuê</Text>
-            <Text style={{color:theme.muted,fontSize:15,lineHeight:24}}>Khoản giảm sớm có thể hoàn trước các khoản thu mới: {money(fees.after.rentalRefundable)}. Chỉ hoàn trong credit hợp lệ và tiền đã thu dư.</Text>
+          <Card style={{gap:14}}>
+            <Text accessibilityRole="header" style={{color:theme.text,fontSize:18,fontWeight:'700'}}>Hoàn tiền thuê</Text>
+            <Text style={{color:theme.muted,fontSize:13.5,lineHeight:20}}>Khoản giảm sớm có thể hoàn trước các khoản thu mới: {money(fees.after.rentalRefundable)}. Chỉ hoàn trong credit hợp lệ và tiền đã thu dư.</Text>
             <ChoiceField label="Ghi hoàn tiền thuê" value={rentalRefund?'yes':'no'} choices={[{value:'no',label:'Chưa ghi hoàn thuê'},{value:'yes',label:'Đã thực tế hoàn thuê'}]} disabled={locked} onChange={v=>{setRentalRefund(v==='yes'?defaultMoney():null);clearReview();}}/>
             {rentalRefund&&moneyFields(rentalRefund,setRentalRefund,'Hoàn thuê',true)}
           </Card>
-          <Card style={{gap:16}}>
-            <Text accessibilityRole="header" style={{color:theme.text,fontSize:21,fontWeight:'700'}}>Hoàn cọc</Text>
-            <Text style={{color:theme.muted,fontSize:15,lineHeight:24}}>Đang giữ {money(fees.after.depositHeld)}. Chỉ hoàn khi đã nhận đủ xe và thu đủ công nợ.</Text>
+          <Card style={{gap:14}}>
+            <Text accessibilityRole="header" style={{color:theme.text,fontSize:18,fontWeight:'700'}}>Hoàn cọc</Text>
+            <Text style={{color:theme.muted,fontSize:13.5,lineHeight:20}}>Đang giữ {money(fees.after.depositHeld)}. Chỉ hoàn khi đã nhận đủ xe và thu đủ công nợ.</Text>
             <ChoiceField label="Ghi hoàn cọc" value={depositRefund?'yes':'no'} choices={[{value:'no',label:'Chưa hoàn cọc'},{value:'yes',label:'Đã thực tế hoàn cọc'}]} disabled={locked||!fees.after.closesRental} onChange={v=>{setDepositRefund(v==='yes'?defaultMoney():null);clearReview();}}/>
             {depositRefund?moneyFields(depositRefund,setDepositRefund,'Hoàn cọc',true):fees.after.depositHeld>0&&<>
               <Text style={{color:theme.muted,fontSize:13.5,lineHeight:20}}>Có thể tải ảnh QR hoàn cọc hoặc nhập tài khoản nhận để kế toán đối chiếu hoàn sau.</Text>
@@ -235,25 +241,27 @@ function ReturnForm({ id }: { id: string }) {
           <Button label="Sửa giờ và phí xe" secondary disabled={locked} onPress={()=>{setStep(1);clearReview();top();}}/>
         </>}
         {step===3&&review&&<>
-          <Card style={{gap:16}}>
-            <Text accessibilityRole="header" style={{color:theme.text,fontSize:21,fontWeight:'700'}}>Xác nhận tiền thực tế</Text>
-            <Text style={{color:theme.text,fontSize:18,lineHeight:29}}>Nhận {review.fees.items.length} xe · còn {review.after.remainingItems} xe</Text>
-            {review.payments.map((row,i)=><View key={i} style={{gap:6}}>
-              <Text style={{color:theme.text,fontSize:17,fontWeight:'700'}}>{row.kind==='rental_refund'?'Hoàn thuê':row.kind==='deposit_refund'?'Hoàn cọc':kinds.find(k=>k.value===row.kind)?.label}: {money(Number(row.amount))}</Text>
-              <Text style={{color:theme.muted,fontSize:15,lineHeight:24}}>{row.label} · {dateTime(row.paid_at+':00+07:00')}</Text>
-            </View>)}
-            {!review.payments.length&&<Text style={{color:theme.muted,fontSize:16}}>Không ghi khoản thu/hoàn trong lượt này.</Text>}
-            <Text style={{color:theme.text,fontSize:17,lineHeight:27}}>Tổng phí sau quyết toán {money(review.after.totalAmount)}</Text>
-            <Text style={{color:theme.text,fontSize:17,lineHeight:27}}>Còn thiếu {money(review.after.rentalRemaining)} · cọc còn giữ {money(review.after.depositHeld)}</Text>
-            {review.settlement.refund_deferred&&<Text style={{color:theme.warning,fontSize:16}}>Cọc được giữ để hoàn sau.</Text>}
-            {review.overpayment&&<Text accessibilityRole="alert" style={{color:theme.warning,fontSize:16,lineHeight:26}}>Tiền thực thu vượt phần còn thiếu. Tổng phí tăng thêm {money(review.totals.totalIncrease)}. Chỉ xác nhận khi đúng khoản khách đã trả.</Text>}
+          <Card style={{gap:12}}>
+            <Text accessibilityRole="header" style={{color:theme.text,fontSize:18,fontWeight:'700'}}>Xác nhận tiền thực tế</Text>
+            <View style={{gap:2}}>
+              <KeyValueRow label="Số xe nhận & còn lại" value={`Nhận ${review.fees.items.length} xe · Còn ${review.after.remainingItems} xe`} emphasize />
+              {review.payments.map((row,i)=><KeyValueRow key={i} label={`${row.kind==='rental_refund'?'Hoàn thuê':row.kind==='deposit_refund'?'Hoàn cọc':kinds.find(k=>k.value===row.kind)?.label} (${row.label})`} value={`${money(Number(row.amount))} · ${dateTime(row.paid_at+':00+07:00')}`} emphasize />)}
+              <KeyValueRow label="Tổng phí sau quyết toán" value={money(review.after.totalAmount)} />
+              <KeyValueRow label="Còn thiếu" value={money(review.after.rentalRemaining)} emphasize />
+              <KeyValueRow label="Cọc còn giữ" value={money(review.after.depositHeld)} />
+            </View>
+            {!review.payments.length&&<Text style={{color:theme.muted,fontSize:13.5}}>Không ghi khoản thu/hoàn trong lượt này.</Text>}
+            {review.settlement.refund_deferred&&<Text style={{color:theme.warning,fontSize:13.5}}>Cọc được giữ để hoàn sau.</Text>}
+            {review.overpayment&&<Text accessibilityRole="alert" style={{color:theme.warning,fontSize:13.5,lineHeight:20}}>Tiền thực thu vượt phần còn thiếu. Tổng phí tăng thêm {money(review.totals.totalIncrease)}. Chỉ xác nhận khi đúng khoản khách đã trả.</Text>}
           </Card>
           {review.overpayment&&!review.overpaymentAcknowledged&&<Button label="Xác nhận khoản thu vượt và rà soát lại" loading={previewing} onPress={()=>{void calculateSettlement(true);}}/>}
           <Button label="Ghi trả xe và quyết toán" disabled={locked||query.isError||review.overpayment&&!review.overpaymentAcknowledged} onPress={()=>setConfirm(true)}/>
           <Button label="Sửa khoản thu và hoàn" secondary disabled={locked} onPress={()=>{setStep(2);clearReview();top();}}/>
         </>}
-        <Button label="Tải lại dữ liệu trả xe" secondary loading={query.isFetching} disabled={locked} onPress={()=>{void query.refetch();}}/>
-        <Button label="Ẩn bàn phím" secondary disabled={action.busy} onPress={()=>Keyboard.dismiss()}/>
+        <View style={{flexDirection:'row',gap:10}}>
+          <Button size="sm" equalWidth label="Tải lại dữ liệu trả xe" secondary loading={query.isFetching} disabled={locked} onPress={()=>{void query.refetch();}}/>
+          <Button size="sm" equalWidth label="Ẩn bàn phím" secondary disabled={action.busy} onPress={()=>Keyboard.dismiss()}/>
+        </View>
       </KeyboardFormScrollView>
     {overlays}
   </SafeAreaView>;

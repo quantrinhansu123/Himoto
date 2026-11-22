@@ -3,7 +3,7 @@ import { useFocusEffect } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { ScrollView, RefreshControl, Text, View, type ScrollViewInstance } from "react-native";
 import { SlidersHorizontal } from "lucide-react-native";
-import { SALES_REPORTS, REPORT_PRESETS, salesReportPeriod, type SalesReportKind } from "../../../shared/mobile-reports";
+import { SALES_REPORTS, REPORT_PRESETS, salesReportPeriod, type ReportSection, type ReportValue, type SalesReportKind } from "../../../shared/mobile-reports";
 import { useGlobalBranch } from "@/providers/branch";
 import { useSession } from "@/providers/session";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
@@ -50,6 +50,25 @@ export function SalesReportScreen() {
       [slot]: { filter, pages: { ...(previous[slot]?.filter === filter ? previous[slot].pages : {}), [section]: next } } }));
     else setPaging(previous => ({ ...previous, [slot]: { filter, page: next, size: String(nextSize) } }));
     scroll.current?.scrollTo({ y: 0, animated: false });
+  }
+  async function loadAllSectionRows(section: ReportSection, signal: AbortSignal): Promise<ReportValue[][]> {
+    if (!section.paging || section.paging.total <= section.rows.length) return section.rows.map(r => r.values);
+    const pageSize = 50, totalPages = Math.ceil(section.paging.total / pageSize), allRows: ReportValue[][] = [];
+    const currentPages = sectionPaging[slot]?.filter === filter ? sectionPaging[slot].pages : {};
+    for (let p = 1; p <= totalPages; p++) {
+      const q = new URLSearchParams(filter);
+      if (kind === "ledger" || kind === "vehicles" || kind === "fleet") {
+        q.set("page", String(p)); q.set("size", String(pageSize));
+      } else {
+        q.set("section_pages", JSON.stringify({ ...currentPages, [section.key]: p }));
+      }
+      const res = await api!.salesReport(kind, q.toString(), signal);
+      const sec = res.sections.find(s => s.key === section.key) ?? res.sections[0];
+      if (!sec?.rows.length) break;
+      allRows.push(...sec.rows.map(r => r.values));
+      if (allRows.length >= section.paging.total) break;
+    }
+    return allRows;
   }
   const mainChoices = SALES_REPORTS.filter(row => !["by-staff", "by-store", "new-customers", "assigned"].includes(row.value) && (row.value !== "fleet" || options.data?.canViewFleet));
   const storeName = store === "all" ? "Tất cả cơ sở" : (options.data?.stores || []).find(r => String(r.id) === store)?.name || "Cơ sở đã chọn";
@@ -98,6 +117,25 @@ export function SalesReportScreen() {
     {kind === "vehicles" && <Card style={{ gap: 10 }}><ChoiceField label="Sắp xếp theo" value={sort} choices={[{ value: "revenue", label: "Doanh thu" }, { value: "rentals", label: "Lượt thuê" }, { value: "license", label: "Biển số" }]} onChange={setSort} /><ChoiceField label="Chiều sắp xếp" value={direction} choices={[{ value: "desc", label: "Giảm dần" }, { value: "asc", label: "Tăng dần" }]} onChange={setDirection} /></Card>}
     {(kind === "vehicles" || kind === "ledger") && <ChoiceField label="Số dòng mỗi trang" value={size} choices={(kind === "ledger" ? [10, 20, 50, 100] : [10, 20, 50]).map(value => ({ value: String(value), label: String(value) }))} onChange={value => changePage(1, Number(value))} />}
     {options.isError && <InlineError message={options.error.message} />}
-    {!valid ? <StateView title="Kiểm tra ngày báo cáo" message="Chọn khoảng ngày hợp lệ, không sau hôm nay." /> : report.isPending ? <SkeletonList count={4} lines={3} /> : report.isError ? <StateView title="Chưa tải được báo cáo" message={report.error.message} retry={() => { void report.refetch(); }} /> : <SalesReportView key={`${kind}:${params}`} report={report.data} onPage={changePage} />}
+    {!valid ? <StateView title="Kiểm tra ngày báo cáo" message="Chọn khoảng ngày hợp lệ, không sau hôm nay." /> : report.isPending ? <SkeletonList count={4} lines={3} /> : report.isError ? <StateView title="Chưa tải được báo cáo" message={report.error.message} retry={() => { void report.refetch(); }} /> : <>
+      {!report.data.canExport && report.data.sections.length === 1 && report.data.sections[0].rows.length > 0 && (
+        <FileExportButton
+          key={`${kind}:${params}:section0`}
+          label={`Tải Excel · ${report.data.sections[0].title}`}
+          disabled={report.isFetching || report.isError}
+          load={async (signal) =>
+            api!.exportWorkbook(
+              {
+                filename: `himoto-bao-cao-${kind}`,
+                headers: report.data.sections[0].columns.map((c) => c.label),
+                rows: await loadAllSectionRows(report.data.sections[0], signal),
+              },
+              signal,
+            )
+          }
+        />
+      )}
+      <SalesReportView key={`${kind}:${params}`} report={report.data} onPage={changePage} loadSectionRows={loadAllSectionRows} />
+    </>}
   </ScrollView>;
 }

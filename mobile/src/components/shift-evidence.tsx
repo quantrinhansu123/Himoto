@@ -6,7 +6,7 @@ import {SHIFT_PHOTOS,type ShiftReport} from '../../../shared/mobile-shift-report
 import {useSession} from '@/providers/session';
 import {pendingWrites} from '@/lib/pending-writes';
 import {useTheme} from '@/theme';
-import {Button,Card,InlineError} from './ui';
+import {Button,Card,InlineError,KeyValueRow,SegmentedBar} from './ui';
 import {PhotoBatch} from './photo-batch';
 import {ChoiceField} from './form-fields';
 import {BillPhoto} from './bill-photo';
@@ -23,15 +23,15 @@ export function ShiftEvidence({report,initialCategory,onChanged}:{report:ShiftRe
   const photoCount=legacy.length+media.filter(m=>m.mime_type.startsWith('image/')).length;
   async function remove(){if(!api||!session||!deleting||busy)return;const file=report.media?.find(m=>m.id===deleting);if(!file)return;setBusy(true);setError('');setDeleting(null);const scope={origin:api.origin,userId:session.user.id,storeId:session.user.allStores?null:session.user.storeId,allStores:session.user.allStores},operation=`shift.media:${report.id}`;
     try{const intent=await pendingWrites.reserveExclusive(scope,operation,[operation,`shift.update:${report.id}`,`shift.audit:${report.id}`],()=>uuid.v4().toLowerCase());if(!intent.created)throw Error('Còn thao tác báo cáo ca chưa đối chiếu. Mở Tài khoản để kiểm tra mã gốc.');await api.deleteShiftMedia(report.id,file.id,file.stage,file.category,report.revision,intent.key);const proof=await api.shiftResult(intent.key);if(proof.receipt.id!==report.id)throw Error('Phiếu không khớp báo cáo.');await pendingWrites.complete(scope,operation,intent.key);onChanged();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
-  return <View style={{gap:18}}><Text accessibilityRole="header" style={{color:theme.text,fontSize:23,fontWeight:'800'}}>Minh chứng PGD / KTNB</Text>
-    <ChoiceField label="Phần minh chứng ca" value={stage} choices={[{value:'pgd',label:'PGD kiểm kê'},{value:'audit',label:'KTNB đối soát'}]} disabled={busy} onChange={v=>setStage(v as 'pgd'|'audit')}/>
+  return <View style={{gap:14}}><Text accessibilityRole="header" style={{color:theme.text,fontSize:18,fontWeight:'800'}}>Minh chứng PGD / KTNB</Text>
+    <SegmentedBar value={stage} options={[{value:'pgd',label:'PGD kiểm kê'},{value:'audit',label:'KTNB đối soát'}]} disabled={busy} onChange={v=>setStage(v)}/>
     <ChoiceField label="Mục minh chứng ca" value={category} choices={SHIFT_PHOTOS.map(([value,label])=>({value,label:categoryLabel(value,label)}))} disabled={busy} onChange={setCategory}/>
-    <Text style={{color:theme.muted}}>{photoCount? `${photoCount} ảnh đã lưu` : 'Chưa có ảnh trong mục này.'}</Text>
-    {!writable&&<Text style={{color:theme.muted,lineHeight:24}}>{stage==='pgd'&&report.status==='submitted'
+    <KeyValueRow label="Số lượng ảnh mục này" value={photoCount? `${photoCount} ảnh đã lưu` : 'Chưa có ảnh trong mục này'} emphasize={photoCount>0} />
+    {!writable&&<Text style={{color:theme.muted,fontSize:13.5,lineHeight:20}}>{stage==='pgd'&&report.status==='submitted'
       ?(report.payload.report_type??'end_shift')==='end_shift'?'Báo cáo đã chốt. Mở lại báo cáo để bổ sung ảnh PGD.':'Báo cáo đã chốt. Ảnh PGD đang ở chế độ xem.'
       :stage==='audit'&&report.status==='draft'?'Chốt báo cáo trước khi thêm minh chứng KTNB.':'Tài khoản hoặc trạng thái hiện tại chỉ cho phép xem minh chứng.'}</Text>}
     {legacy.map(slot=><BillPhoto key={slot} context="minh chứng ca" label={`Ảnh cũ · ${slot}`} source={api!.shiftMediaSource(report.id,slot,true)}/>)}
-    {media.map(m=><Card key={m.id} style={{gap:12}}><Text style={{color:theme.text,fontWeight:'700'}}>{m.filename}</Text>{m.mime_type.startsWith('image/')?<BillPhoto context="minh chứng ca" label={m.filename} source={api!.shiftMediaSource(report.id,m.id)}/>:m.mime_type==='video/mp4'?<RecordVideoPlayer source={api!.shiftVideoSource(report.id,m.id,report.revision)} label={`Video ca · ${m.filename}`}/>:<Text style={{color:theme.muted}}>Video cũ chưa có bản MP4.</Text>}{writable&&<Button secondary label={`Xóa minh chứng ca · ${m.filename}`} disabled={busy} onPress={()=>setDeleting(m.id)}/>}</Card>)}
+    {media.map(m=><Card key={m.id} style={{gap:12}}><Text style={{color:theme.text,fontWeight:'700'}}>{m.filename}</Text>{m.mime_type.startsWith('image/')?<BillPhoto context="minh chứng ca" label={m.filename} source={api!.shiftMediaSource(report.id,m.id)}/>:m.mime_type==='video/mp4'?<RecordVideoPlayer source={api!.shiftVideoSource(report.id,m.id,report.revision)} label={`Video ca · ${m.filename}`}/>:<Text style={{color:theme.muted}}>Video cũ chưa có bản MP4.</Text>}{writable&&<Button size="sm" secondary danger label={`Xóa minh chứng ca · ${m.filename}`} disabled={busy} onPress={()=>setDeleting(m.id)}/>}</Card>)}
     <PhotoBatch key={batchKey} cameraOnly captureGps disabled={!writable||busy} adapter={{identity:`shift:${report.id}:${stage}:${category}`,label:'Bộ ảnh minh chứng ca',operation:`shift.media:${report.id}`,conflicts:[`shift.media:${report.id}`,`shift.update:${report.id}`,`shift.audit:${report.id}`],
       prepare:async()=>{if(latestRevision.current.key!==batchKey||latestRevision.current.revision===null)latestRevision.current={key:batchKey,revision:(await api!.shift(String(report.id))).revision};return{revision:latestRevision.current.revision,stage,category};},
       upload:async(row,attempt,bytes)=>{const info=attempt as {revision:number;stage:'pgd'|'audit';category:string};const saved=await api!.saveShiftMedia(report.id,row.id,info.stage,info.category,info.revision,bytes,row.key,row.gps??null);latestRevision.current={key:batchKey,revision:saved.revision};const proof=await api!.shiftResult(row.key);if(proof.receipt.id!==report.id)throw Error('Phiếu minh chứng không khớp báo cáo gốc.');},

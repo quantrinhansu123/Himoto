@@ -164,7 +164,7 @@ function SectionCharts({ section }: { section: ReportSection }) {
   );
 }
 
-function Section({ section, onPage, showSectionExport }: { section: ReportSection; onPage: ReportPageChange; showSectionExport?: boolean }) {
+function Section({ section, onPage, showSectionExport, loadSectionRows }: { section: ReportSection; onPage: ReportPageChange; showSectionExport?: boolean; loadSectionRows?: (section: ReportSection, signal: AbortSignal) => Promise<ReportValue[][]> }) {
   const theme = useTheme(), { api } = useSession(), [localPage, setLocalPage] = useState(1), size = section.paging?.size || 20, total = section.paging?.total ?? section.rows.length;
   const pages = Math.max(1, Math.ceil(total / size)), page = section.paging?.page || Math.min(localPage, pages);
   const rows = section.paging ? section.rows : section.rows.slice((page - 1) * size, page * size);
@@ -175,12 +175,12 @@ function Section({ section, onPage, showSectionExport }: { section: ReportSectio
     {showSectionExport && !!api && section.rows.length > 0 && (
       <FileExportButton
         label={`Tải Excel · ${section.title}`}
-        load={(signal) =>
+        load={async (signal) =>
           api.exportWorkbook(
             {
               filename: `himoto-bao-cao-${section.key}`,
               headers: section.columns.map((c) => c.label),
-              rows: section.rows.map((r) => r.values),
+              rows: loadSectionRows ? await loadSectionRows(section, signal) : section.rows.map((r) => r.values),
             },
             signal,
           )
@@ -205,7 +205,7 @@ function Section({ section, onPage, showSectionExport }: { section: ReportSectio
     )}
   </View>;
 }
-export function SalesReportView({ report, onPage }: { report: MobileSalesReport; onPage: ReportPageChange }) {
+export function SalesReportView({ report, onPage, loadSectionRows }: { report: MobileSalesReport; onPage: ReportPageChange; loadSectionRows?: (section: ReportSection, signal: AbortSignal) => Promise<ReportValue[][]> }) {
   const theme = useTheme(), groups = new Map<string, typeof report.metrics>();
   for (const metric of report.metrics) groups.set(metric.group, [...groups.get(metric.group) || [], metric]);
   return <View style={{ gap: 16 }}>
@@ -220,6 +220,6 @@ export function SalesReportView({ report, onPage }: { report: MobileSalesReport;
         </View>
       ))}
     </Card>)}
-    {report.sections.map(section => <Section key={section.key} section={section} onPage={onPage} showSectionExport={report.sections.length > 1} />)}
+    {report.sections.map(section => <Section key={section.key} section={section} onPage={onPage} showSectionExport={report.sections.length > 1} loadSectionRows={loadSectionRows} />)}
   </View>;
 }
