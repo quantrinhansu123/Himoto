@@ -11,6 +11,7 @@ import { queueReportTelegram,shiftTelegramAttachments } from './report-telegram'
 import { compareShiftStock,isShiftStockDay,SHIFT_STOCK_CATEGORY } from '../../../shared/shift-stock-check';
 import { readShiftStock } from './shift-inventory';
 import { storedShiftStock } from './shift-stock-photos';
+import { lockShiftClose } from './shift-close-lock';
 type Database=Pick<PoolClient,'query'>;
 export async function listShiftReports(client:Database,store:string|null,date:string|null,id?:number,all=false,reportType:string|null=null):Promise<ShiftReport[]> {
   if(date&&(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!Number.isFinite(Date.parse(date))||new Date(date).toISOString().slice(0,10)!==date))throw new ShiftRequestError('Ngày báo cáo không hợp lệ.');
@@ -40,6 +41,9 @@ export async function saveShiftReport(client:Database,actor:Omit<DataAccess,'ope
   if(!actor.scope_all&&input.store_id!==actor.store_id)throw new ShiftRequestError('PGD nằm ngoài phạm vi được phân công.',403);
   const hash=shiftRequestHash(JSON.stringify({actor:actor.id,id:raw.id??null,revision:raw.revision??null,input,status:raw.status}));
   const receipt=await readShiftReceipt(client,requestId,actor.id,hash);if(receipt)return receipt;
+  if (raw.status === 'submitted' && (input.report_type ?? 'end_shift') === 'end_shift') {
+    await lockShiftClose(client, input.store_id, input.date);
+  }
     if (!(await client.query('SELECT id FROM himoto.stores WHERE id=$1', [input.store_id])).rowCount) throw new ShiftRequestError('PGD không tồn tại.');
     let stockCaptures = storedShiftStock({});
     let hasStockEvidence = false;

@@ -16,7 +16,15 @@ export function ContractTelegramPanel({id,eventKind,eventKey,returnItemIds,onlyE
   const [confirmedAbsent,setConfirmedAbsent]=useState(false);
   const refresh=useCallback(async(signal?:AbortSignal)=>{
     setLoading(true);setError('');
-    try{const state=await contractTelegramRequest(id,undefined,signal);if(returnItems)state.events=state.events.filter(e=>e.kind==='return'&&e.phases.some(phase=>returnItems.split(',').some(item=>phase===`return-${item}`)));if(!signal?.aborted){setData(state);setSelected(old=>state.events.some(e=>e.key===old)?old:state.events.find(e=>eventKey?e.key===eventKey:eventKind?e.kind===eventKind:true)?.key||state.events[0]?.key||'');}}
+    try {
+      const state=await contractTelegramRequest(id,undefined,signal);
+      if(returnItems)state.events=state.events.filter(e=>e.kind==='return'&&e.phases.some(phase=>returnItems.split(',').some(item=>phase===`return-${item}`)));
+      if(!signal?.aborted){
+        setData(state);
+        setSelected(old=>state.events.some(e=>e.key===old)?old:
+          (eventKey?state.events.find(e=>e.key===eventKey):eventKind?state.events.find(e=>e.kind===eventKind):state.events[0])?.key||'');
+      }
+    }
     catch(cause){if(!signal?.aborted)setError(cause instanceof Error?cause.message:'Không tải được thông báo.');}
     finally{if(!signal?.aborted)setLoading(false);}
   },[id,eventKind,eventKey,returnItems]);
@@ -39,7 +47,9 @@ export function ContractTelegramPanel({id,eventKind,eventKey,returnItemIds,onlyE
     <div className="mg-contract-history-toolbar"><button className="mg-button" type="button" disabled={loading||busy} onClick={()=>void refresh()}>{loading?<LoaderCircle size={15} className="mg-spin"/>:null}Làm mới nội dung và ảnh</button></div>
     {events.some(item=>item.preparation_error)&&<p role="status">Có giao dịch cần kiểm tra hồ sơ. Những giao dịch hợp lệ khác vẫn có thể gửi.</p>}
     {data&&!events.length&&<p>Chưa có giao dịch hoàn tất. Ảnh đã lưu sẽ tập hợp tại đây sau khi xác nhận giao dịch.</p>}
-    {Boolean(events.length)&&<label className="mg-telegram-event-label">Giao dịch cần gửi<select aria-label="Giao dịch cần gửi Telegram" value={selected} disabled={busy} onChange={e=>{setSelected(e.target.value);setMessage('');}}>{events.map(e=><option key={e.key} value={e.key}>{e.label}{e.preparation_error?'':` · ${e.photo_count} ảnh · ${e.video_count||0} video · ${e.can_resume?'Gửi chưa hoàn tất':e.status?NOTICE_STATUS_LABELS[e.status]:'Chưa gửi'}`}</option>)}</select></label>}
+    {data&&events.length>0&&!event&&eventKind==='return'&&<p role="status">Chưa tìm thấy lượt trả xe đã lưu. Chọn giao dịch nếu cần xem hồ sơ khác.</p>}
+    {data&&events.length>0&&!event&&eventKey&&<p role="status">Không tìm thấy lượt đã chọn. Tải lại để đối chiếu hồ sơ.</p>}
+    {Boolean(events.length)&&<label className="mg-telegram-event-label">Giao dịch cần gửi<select aria-label="Giao dịch cần gửi Telegram" value={selected} disabled={busy} onChange={e=>{setSelected(e.target.value);setMessage('');}}>{!selected&&<option value="" disabled>Chọn giao dịch</option>}{events.map(e=><option key={e.key} value={e.key}>{e.label}{e.preparation_error?'':` · ${e.photo_count} ảnh · ${e.video_count||0} video · ${e.can_resume?'Gửi chưa hoàn tất':e.status?NOTICE_STATUS_LABELS[e.status]:'Chưa gửi'}`}</option>)}</select></label>}
     {event&&<div key={event.key}>
       {event.destination_label&&<p><strong>Nơi nhận: {event.destination_label}</strong></p>}
       {event.renewal_receipts_cancelled&&<p className="mg-field-error" role="status">Phiếu thu của kỳ này đã hủy. Kiểm tra và chọn kỳ có phiếu thu đang có hiệu lực trong “Giao dịch cần gửi”.</p>}

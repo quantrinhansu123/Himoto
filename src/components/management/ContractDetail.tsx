@@ -288,7 +288,7 @@ export function ContractDetail({ row, onClose, onQr,onReminder,onPrint,onEditDra
       :source==='api'?<ContractLifecyclePanel id={row.id} reloadKey={lifecycleReload} onChanged={applyLifecycle} onRecover={()=>setRecoveryOpen(true)} onPayment={onPayment}/>
       :<p role="status">Kết nối dữ liệu hệ thống để xem tình trạng công nợ và bảo lưu hợp đồng.</p>))}
     {panel('photos','Ảnh thuê / trả xe',section==='photos'&&<ContractPhotoGallery id={row.id} swaps={history?.changes.filter(change=>change.kind==='swap')}/>)}
-    {panel('telegram','Gửi thông tin và ảnh vào nhóm Telegram',section==='telegram'&&source==='api'&&(row.status==='draft'?<p role="status">Hợp đồng đang lưu nháp. Bấm Tiếp tục hoàn tất hợp đồng, kiểm tra thanh toán rồi Xác nhận lưu chính thức. Sau khi phát hành mới gửi được thông tin và ảnh lên Telegram.</p>:<>{row.status==='cancelled'&&<p>Hợp đồng đã hủy. Có thể xem lịch sử và thu hồi tin đã gửi.</p>}<ContractTelegramPanel id={row.id}/></>))}
+    {panel('telegram','Gửi thông tin và ảnh vào nhóm Telegram',section==='telegram'&&source==='api'&&(row.status==='draft'?<p role="status">Hợp đồng đang lưu nháp. Bấm Tiếp tục hoàn tất hợp đồng, kiểm tra thanh toán rồi Xác nhận lưu chính thức. Sau khi phát hành mới gửi được thông tin và ảnh lên Telegram.</p>:<>{row.status==='cancelled'&&<p>Hợp đồng đã hủy. Có thể xem lịch sử và thu hồi tin đã gửi.</p>}<ContractTelegramPanel id={row.id} eventKind={row.status==='completed'||row.status==='wait_payment'?'return':undefined}/></>))}
     {source === 'api' && (section === 'vehicle' || section === 'customer') && <>
       {section === 'vehicle' && <SavedRecordPhotos entity="contracts" recordId={row.id} slots={draft.vehicles.filter(vehicle => vehicle.id).map(vehicle => ({ key: `plate-${vehicle.id}`, label: `Biển số ${vehicle.license || vehicle.name}` }))} title="Ảnh biển số xe" />}
       {section === 'customer' && draft.customer_id && <SavedRecordPhotos entity="customers" recordId={draft.customer_id} slots={CUSTOMER_PHOTO_SLOTS} title="Ảnh CCCD" />}
@@ -319,7 +319,7 @@ export function ContractDetail({ row, onClose, onQr,onReminder,onPrint,onEditDra
         {can('contracts.return')&&onVehicleChange&&<button type="button" className="mg-button" onClick={onVehicleChange}><Bike size={15} />Đổi xe</button>}
       </>}
       {(canOperateRental||row.status==='bad_debt')&&can('contracts.renew')&&onRenew&&!row.billing_plan_json&&<button type="button" className="mg-button" onClick={onRenew}><CalendarPlus size={15}/>Gia hạn</button>}
-      {row.status==='completed'&&can('contracts.return')&&onReturn&&<button type="button" className="mg-button" onClick={onReturn}>Bổ sung ảnh trả xe</button>}
+      {row.status==='completed'&&can('contracts.return')&&onReturn&&<button type="button" className="mg-button" onClick={onReturn}>Hồ sơ trả xe</button>}
       {row.status==='bad_debt'&&canSettleContract(accessUser)&&<button type="button" className="mg-button mg-button-primary" onClick={()=>setBadDebtCloseOpen(true)}>Đóng hợp đồng nợ xấu</button>}
       {(row.status==='bad_debt'||row.status==='completed'&&Boolean(row.bad_debt_closed_at))&&can('contracts.return')&&<button type="button" className="mg-button" onClick={()=>setRecoveryOpen(true)}><RotateCcw size={15}/>Thu hồi xe nợ xấu</button>}
       {source==='api'&&!['draft','cancelled'].includes(row.status)&&<button type="button" className="mg-button" onClick={()=>setSection('lifecycle')}>Trạng thái &amp; xử lý</button>}

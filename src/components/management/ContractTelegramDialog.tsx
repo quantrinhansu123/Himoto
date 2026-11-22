@@ -7,8 +7,8 @@ import { ContractTelegramPanel } from './ContractTelegramPanel';
 import { Dialog } from './Dialog';
 
 interface PendingRow {order_id:number;code:string;customer_name:string;event_key:string;event_type:ContractEventType;status:string;store_name:string;created_at:string}
-export function ContractTelegramDialog({ order, store, onClose }: {order?:{id:number;code:string};store:string;onClose:()=>void}) {
-  const [selected,setSelected]=useState<{id:number;code:string;eventKey?:string}|null>(order||null);
+export function ContractTelegramDialog({ order, store, onClose }: {order?:{id:number;code:string;preferReturn?:boolean};store:string;onClose:()=>void}) {
+  const [selected,setSelected]=useState<{id:number;code:string;eventKey?:string;preferReturn?:boolean}|null>(order||null);
   const [data,setData]=useState<{rows:PendingRow[];total:number;page:number}|null>(null);
   const [page,setPage]=useState(1),[refresh,setRefresh]=useState(0),[loading,setLoading]=useState(false),[error,setError]=useState('');
   useEffect(()=>{
@@ -22,7 +22,7 @@ export function ContractTelegramDialog({ order, store, onClose }: {order?:{id:nu
   },[order,selected,store,page,refresh]);
   return <Dialog title={selected?`Gửi Telegram · ${selected.code}`:'Giao dịch chưa gửi Telegram'} onClose={onClose} dismissOnBackdrop={false}>
     <div className="mg-dialog-body">
-      {selected?<>{!order&&<button type="button" className="mg-button" onClick={()=>{setData(null);setSelected(null);}}>Quay lại danh sách</button>}<ContractTelegramPanel key={`${selected.id}-${selected.eventKey||''}`} id={selected.id} eventKey={selected.eventKey}/></>:<>
+      {selected?<>{!order&&<button type="button" className="mg-button" onClick={()=>{setData(null);setSelected(null);}}>Quay lại danh sách</button>}<ContractTelegramPanel key={`${selected.id}-${selected.eventKey||''}`} id={selected.id} eventKey={selected.eventKey} eventKind={selected.preferReturn?'return':undefined}/></>:<>
         <p>Các giao dịch đã lưu nhưng chưa được Telegram xác nhận gửi đủ. Chọn giao dịch để kiểm tra nội dung và ảnh, rồi bấm Gửi toàn bộ Telegram. Có thể gửi hồ sơ cũ tại đây.</p>
         <button type="button" className="mg-button" disabled={loading} onClick={()=>setRefresh(value=>value+1)}>Làm mới danh sách</button>
         {loading?<p role="status">Đang tải giao dịch…</p>:error?<p className="mg-field-error" role="alert">{error}</p>:<>

@@ -16,7 +16,7 @@ async function handler(request:NextRequest) {
     const writing=request.method==='PATCH';
     const body=writing?parseReturnCorrection(await request.json()):null;
     client=await himotoPool.connect();await client.query(request.method==='PATCH'?'BEGIN':'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
-    const data=writing?await correctReturn(client,user.id,body):await readReturnCorrection(client,Number(request.nextUrl.searchParams.get('item_id')));
+    const data=writing?await correctReturn(client,user.id,body,{useDepositRefundWorkflow:true}):await readReturnCorrection(client,Number(request.nextUrl.searchParams.get('item_id')));
     await client.query('COMMIT');return NextResponse.json({status:'success',data},{headers});
   }catch(error){
     if(client)await client.query('ROLLBACK').catch(()=>{});

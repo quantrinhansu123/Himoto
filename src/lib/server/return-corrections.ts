@@ -104,7 +104,7 @@ export function parseReturnCorrection(raw:unknown):ReturnCorrectionInput {
 }
 
 /** Atomic correction: retain returned inventory, supersede only this event's vouchers, preserve the audit. */
-export async function correctReturn(db:Database,actor:number,raw:unknown) {
+export async function correctReturn(db:Database,actor:number,raw:unknown,{useDepositRefundWorkflow=false}={}) {
   const input=parseReturnCorrection(raw);
   await db.query("SET LOCAL lock_timeout='5s'");await db.query("SET LOCAL statement_timeout='30s'");
   const state=await readState(db,input.item_id,true),{context,order,composer,itemIds}=state;
@@ -115,6 +115,8 @@ export async function correctReturn(db:Database,actor:number,raw:unknown) {
   if(context.blocked_reason)throw new ContractReturnError(context.blocked_reason,409);
   if(context.revision!==input.revision||input.settlement.revision!==order.revision)throw new ContractReturnError('Hồ sơ hoặc tiền đã thay đổi. Mở lại lượt trả để đối chiếu trước khi lưu.',409);
   if(input.settlement.order_id!==Number(order.id)||!sameIds(idsOf(input.items.map(i=>i.item_id)),itemIds))throw new ContractReturnError('Chỉ sửa đúng các xe và khoản tiền trong lượt trả đã chọn.',403);
+  if(useDepositRefundWorkflow&&input.settlement.refund)throw new ContractReturnError('Dùng Bổ sung hoàn cọc trong hồ sơ trả xe để ghi hoặc yêu cầu sửa phiếu hoàn cọc.',409);
+  const retainedDeposit=useDepositRefundWorkflow?state.transactions.find(t=>t.name==='order:deposit_refund'):undefined;
   const receiptKeys=[...input.settlement.receipts,...[input.settlement.refund,input.settlement.rental_refund].filter(r=>r!==undefined)].map(r=>r.request_id);
   if(receiptKeys.length&&(await db.query('SELECT request_id FROM himoto.management_contract_payments WHERE request_id=ANY($1::uuid[])',[receiptKeys])).rowCount)throw new ContractReturnError('Mã phiếu thu/hoàn đã được dùng. Mở lại lượt sửa để đối chiếu.',409);
   const planValue=composer.installment_plan,plan=planValue?parseInstallmentPlan(planValue):null;
@@ -155,14 +157,15 @@ export async function correctReturn(db:Database,actor:number,raw:unknown) {
     const status=(await db.query('SELECT count(*) FILTER(WHERE completed_at IS NULL)::int AS remaining,max(completed_at) AS latest FROM himoto.order_vehicle_details WHERE order_id=$1 AND deleted_at IS NULL',[order.id])).rows[0];
     if(!Number(status.remaining))nextComposer.installment_plan={...plan,stopped_at:local(status.latest)<plan.end?local(status.latest):plan.end};
   }
-  const cancelled=state.transactions.map(t=>Number(t.id));
+  const cancelled=state.transactions.filter(t=>t!==retainedDeposit).map(t=>Number(t.id));
   if(cancelled.length)await db.query("UPDATE himoto.transactions SET status='cancelled',updated_at=now() WHERE order_id=$1 AND id=ANY($2::bigint[])",[order.id,cancelled]);
   const nextPid=Number(order.pid)-state.signed;
   if(order.pid==null||!Number.isSafeInteger(nextPid)||nextPid<0)throw new ContractReturnError('Tổng tiền đã thu chưa hợp lệ để sửa phiếu.',409);
   payload.management_composer=nextComposer;
   await db.query('UPDATE himoto.orders SET total=$2,pid=$3,draft_payload=$4::json,updated_at=now() WHERE id=$1',[order.id,String(nextTotal),nextPid,JSON.stringify(payload)]);
   const payment=await readPaymentContext(db,Number(order.id));
-  await settleReturnedItems(db,actor,{...input.settlement,revision:payment.revision},itemIds,results);
+  await settleReturnedItems(db,actor,{...input.settlement,revision:payment.revision},itemIds,results,
+    retainedDeposit?{id:Number(retainedDeposit.id),recipient:state.settlement?.recipient}:undefined);
   const saved=(await db.query('SELECT draft_payload FROM himoto.orders WHERE id=$1',[order.id])).rows[0].draft_payload;
   const after=await readPaymentContext(db,Number(order.id));
   const snapshot=saved.management_composer.return_settlements.at(-1);snapshot.note=input.note;

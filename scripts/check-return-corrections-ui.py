@@ -33,24 +33,35 @@ def mock(route):
         else:route.fulfill(body=pixel,content_type='image/png');return
         route.fulfill(json=dict(status='success',data=data));return
     if req.method not in ('GET','HEAD'):
+        if path=='/api/auth/deposit-refunds' and req.method=='POST':
+            raw=req.post_data_buffer
+            assert b'QA sua phieu' in raw and b'name="replaces_id"' in raw and b'name="evidence"' in raw
+            state['refund_pending']=True
+            route.fulfill(json=dict(status='success',data=refund_request()))
+            return
         body=req.post_data_json;writes.append(dict(path=path,method=req.method,body=body))
         if path=='/api/auth/returns/correction':
             assert req.method=='PATCH' and body['item_id']==1001 and len(body['items'])==1
             assert body['items'][0]['fee_override']=='40000'
-            refund=body['settlement']['refund'];assert refund['method']=='company_transfer' and refund['account_id']==17
-            assert refund['recipient_account']=='000123456' and refund['recipient_name']=='Khách nhận hoàn QA'
+            assert 'refund' not in body['settlement']
             assert body['reason']==''
             assert body['note']=='Hoàn cọc theo bill đã đối chiếu QA'
             if state.get('fail_once'):
                 state['fail_once']=False;state['failed_request']=body['request_id'];route.fulfill(status=409,json=dict(status='error',message='QA hồ sơ đã thay đổi. Giữ form để đối chiếu.'));return
             if state.get('failed_request'):assert body['request_id']==state['failed_request']
-            state['saved']=True;state['context'].update(revision='b'*64,note=body['note'],settlement=body['settlement']);state['context']['settlement']['revision']='8';data=correction()
+            refund=state['context']['settlement']['refund']
+            state['saved']=True;state['context'].update(revision='b'*64,note=body['note'],settlement={**body['settlement'],'refund':refund});state['context']['settlement']['revision']='8';data=correction()
         elif path=='/api/auth/order/car-rental/900/telegram':
             assert body['action']=='send' and body['event_key']=='return:900:1001';assert state.get('saved') or state.get('direct');state['sent']=True;data=telegram()
         else:unexpected.append(req.method+' '+path);route.abort();return
         route.fulfill(json=dict(status='success',data=data));return
     if path=='/api/auth/returns':data=[line]
     elif path=='/api/auth/returns/correction':data=correction()
+    elif path=='/api/auth/deposit-refunds':
+        data=dict(code='QA-RETURN',held=0,can_submit=True,can_send_telegram=True,blocked_reason='',review_reason='',
+            accounts=[dict(id=99,method='cash',label='Két QA'),dict(id=17,method='company_transfer',label='Ngân hàng QA')],
+            vouchers=[dict(id=71,revision='22',amount=1000000,paid_at='2026-10-24T03:30:00Z',method='Tiền mặt',account='Két QA')],
+            requests=[refund_request()] if state.get('refund_pending') else [])
     elif path=='/api/auth/order/car-rental/900/telegram':data=telegram()
     elif path in ('/api/auth/vehicles/inventory','/api/auth/vehicle/vehicles'):data=[dict(id=101,store_id=33,current_store_id=33,name='VISION QA',license='QA-101',status='ready',available=True,rental_blockers=[])]
     elif path in ('/api/auth/stores','/api/auth/store-directory'):data=[dict(id=33,store_name='CS Hà Đông QA',status='opening')]
@@ -61,6 +72,10 @@ def mock(route):
     else:unexpected.append(req.method+' '+path);route.abort();return
     route.fulfill(json=dict(status='success',data=data))
 def cloud(route):route.fulfill(json=dict(public_id=state['upload_public_id'],version=1,signature='qa'),headers={'Access-Control-Allow-Origin':'*'})
+def refund_request():
+    return dict(id='f8b48e19-9dc9-4b35-898a-c6c107516f6c',order_id=900,code='QA-RETURN',store='CS QA',actor_id=143,actor='QA',
+        reviewer='',status='pending',amount=1000000,method='company_transfer',account_label='Ngân hàng QA',
+        paid_at='2026-10-24T10:30',reason='QA sua phieu',review_reason='Sửa phiếu đã ghi',review_note='',replaces_id=71,transaction_id=None)
 
 with sync_playwright() as pw:
     for engine,width,height,role in [('chromium',1280,720,'admin'),('webkit',390,844,'staff')]:
@@ -72,29 +87,34 @@ with sync_playwright() as pw:
         page=ctx.new_page();page.on('pageerror',lambda e:errors.append(str(e)))
         page.goto(a.url+'/contracts?action=return&query=QA-101',wait_until='domcontentloaded',timeout=120000)
         returned=page.get_by_role('dialog',name='Trả xe',exact=True);expect(returned.get_by_role('button',name='Sửa hồ sơ trả xe',exact=True)).to_be_visible()
-        expect(returned.get_by_role('button',name='Gửi Telegram',exact=True)).to_be_visible();expect(returned.get_by_role('button',name='Xác nhận trả',exact=False)).to_have_count(0)
+        expect(returned.get_by_role('button',name='Gửi Telegram trả xe',exact=True)).to_be_visible();expect(returned.get_by_role('button',name='Xác nhận trả',exact=False)).to_have_count(0)
+        returned.get_by_role('button',name='Bổ sung hoàn cọc',exact=True).click()
+        refund_dialog=page.get_by_role('dialog',name='Bổ sung hoàn cọc · QA-RETURN')
+        expect(refund_dialog.get_by_text('Cọc còn giữ 0')).to_be_visible()
+        refund_dialog.get_by_label('Thao tác').select_option('71')
+        refund_dialog.get_by_label('Hình thức').select_option('company_transfer')
+        refund_dialog.get_by_label('Lý do',exact=True).fill('QA sua phieu')
+        refund_dialog.locator('input[name="evidence"]').set_input_files(dict(name='qa-refund.png',mimeType='image/png',buffer=pixel))
+        refund_dialog.get_by_role('button',name='Gửi kế toán duyệt',exact=True).click()
+        expect(refund_dialog.get_by_role('status').filter(has_text='Đã chuyển yêu cầu')).to_be_visible()
+        expect(refund_dialog.get_by_text('Chờ kế toán duyệt ·')).to_be_visible()
+        refund_dialog.get_by_role('button',name='Đóng',exact=True).click()
+        checks.append(f'{engine}: a posted refund is sent for review with supporting evidence from the returned-vehicle record')
         returned.get_by_role('button',name='Sửa hồ sơ trả xe',exact=True).click();editor=page.get_by_role('dialog',name='Sửa hồ sơ trả xe',exact=True)
         expect(editor.get_by_label('Phí quá hạn (VNĐ)',exact=True)).to_have_value('40000');expect(editor.get_by_label('Phí sửa chữa (VNĐ)',exact=True)).to_have_value('0')
         expect(editor.get_by_label('Giảm tiền thuê trả sớm (VNĐ)',exact=True)).to_be_editable()
         editor.screenshot(path=str(out/f'{engine}-{width}-return-editor.png'))
         checks.append(f'{engine}: a previously returned vehicle has direct edit/send actions; all saved return fields load without a second confirmation')
-        refund=editor.locator('section[aria-label="Khoản thu hoàn 2"]')
-        refund.get_by_label('Hình thức thanh toán',exact=True).select_option('company_transfer')
-        expect(refund.get_by_label('Tài khoản thu / chi',exact=True)).to_have_value('')
-        refund.get_by_label('Tài khoản thu / chi',exact=True).select_option('17')
-        refund.get_by_label('Ngân hàng nhận hoàn',exact=True).fill('QA Bank')
-        refund.get_by_label('Số tài khoản nhận hoàn',exact=True).fill('000123456')
-        refund.get_by_label('Tên người nhận hoàn',exact=True).fill('Khách nhận hoàn QA')
+        expect(editor.locator('section[aria-label="Khoản thu hoàn 2"]')).to_have_count(0)
         editor.get_by_label('Ghi chú gửi cùng Telegram',exact=True).fill('Hoàn cọc theo bill đã đối chiếu QA')
         editor.get_by_label('Lý do chỉnh sửa (không bắt buộc)',exact=True).fill('')
-        refund.scroll_into_view_if_needed();editor.screenshot(path=str(out/f'{engine}-{width}-refund-method.png'))
         expect(editor.get_by_role('button',name='2. Kiểm tra & gửi Telegram',exact=True)).to_be_disabled()
         editor.get_by_role('button',name='Lưu thay đổi',exact=True).click()
         expect(editor.get_by_role('alert')).to_contain_text('QA hồ sơ đã thay đổi')
-        expect(refund.get_by_label('Số tài khoản nhận hoàn',exact=True)).to_have_value('000123456')
-        checks.append(f'{engine}: changing cash to transfer requires a matching account; unsaved edits block send and a conflict preserves every field')
+        expect(editor.get_by_label('Ghi chú gửi cùng Telegram',exact=True)).to_have_value('Hoàn cọc theo bill đã đối chiếu QA')
+        checks.append(f'{engine}: unsaved edits block send and a conflict preserves the note without changing the posted refund')
         editor.get_by_role('button',name='Lưu thay đổi',exact=True).click();telegram_dialog=page.get_by_role('dialog',name='Kiểm tra & gửi Telegram · Trả xe',exact=True)
-        expect(telegram_dialog.locator('.mg-telegram-preview')).to_contain_text('CK TK công ty')
+        expect(telegram_dialog.locator('.mg-telegram-preview')).to_contain_text('Tiền mặt')
         expect(telegram_dialog.locator('.mg-telegram-preview')).to_contain_text('Hoàn cọc theo bill đã đối chiếu QA')
         expect(telegram_dialog.get_by_role('combobox',name='Giao dịch cần gửi Telegram')).to_have_value('return:900:1001')
         expect(telegram_dialog.get_by_role('combobox',name='Giao dịch cần gửi Telegram').locator('option')).to_have_count(1)
@@ -122,7 +142,7 @@ with sync_playwright() as pw:
         footer=telegram_dialog.locator('.mg-dialog-footer').bounding_box();assert footer['y']+footer['height']<=height+1
         checks.append(f'{engine}: explicit send occurs once, duplicate send is locked, footer remains visible and the dialog has no horizontal overflow')
         telegram_dialog.get_by_role('button',name='Đóng',exact=True).click()
-        returned=page.get_by_role('dialog',name='Trả xe',exact=True);state['direct']=True;returned.get_by_role('button',name='Gửi Telegram',exact=True).click()
+        returned=page.get_by_role('dialog',name='Trả xe',exact=True);state['direct']=True;returned.get_by_role('button',name='Gửi Telegram trả xe',exact=True).click()
         expect(page.get_by_role('dialog',name='Kiểm tra & gửi Telegram · Trả xe',exact=True).get_by_role('button',name='Đã gửi Telegram',exact=False)).to_be_disabled()
         checks.append(f'{engine}: reopening the return reaches its saved Telegram state directly')
         ctx.close();browser.close()

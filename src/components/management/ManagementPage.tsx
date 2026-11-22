@@ -213,7 +213,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const [deleteTarget, setDeleteTarget] = useState<ManagementRow | null>(null);
   const [draftDeleteTarget,setDraftDeleteTarget]=useState<ManagementRow|null>(null);
   const [depositDeleteTarget,setDepositDeleteTarget]=useState<ManagementRow|null>(null);
-  const [telegramTarget,setTelegramTarget]=useState<{id:number;code:string}|'pending'|null>(null);
+  const [telegramTarget,setTelegramTarget]=useState<{id:number;code:string;preferReturn?:boolean}|'pending'|null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState('');
   const [blacklistBusyId, setBlacklistBusyId] = useState<number | null>(null);
@@ -519,7 +519,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
             else if (kind === 'staff') setStaffDialog({ row, mode: 'delete' });
             else { setDeleteTarget(row); setDeleteError(''); }
           } : undefined} canDelete={canDelete}
-          onTelegram={kind==='contracts'&&source==='api'?row=>setTelegramTarget({id:row.id,code:row.code}):undefined}
+          onTelegram={kind==='contracts'&&source==='api'?row=>setTelegramTarget({id:row.id,code:row.code,preferReturn:row.status==='completed'||row.status==='wait_payment'}):undefined}
           blacklistBusyId={blacklistBusyId} onBlacklist={kind === 'customers' ? async row => {
             if (blacklistPending.current) return;
             blacklistPending.current = true; setBlacklistBusyId(row.id); setBlacklistError('');

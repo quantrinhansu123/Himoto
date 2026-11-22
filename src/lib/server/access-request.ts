@@ -13,6 +13,7 @@ export function requestPermission(path:string,method:string,action=''):AccessPer
   if(path.includes('/record-photos/')){const slot=path.split('/').at(-1)!;if(isSupplementalPhotoSlot(slot))path=path.slice(0,-slot.length)+photoBaseSlot(slot);}
   const read=method==='GET';
   if(path==='/api/auth/guide-faq')return null; // Authenticated shared guide; answer permission is checked in the handler.
+  if(path==='/api/auth/deposit-refunds')return null; // Each action checks the finance or branch-return permission.
   if(path.startsWith('/api/auth/attendance'))return null; // Self-service; handler enforces actor and HR branch scope.
   if(path.startsWith('/api/auth/shift-reports'))return 'contracts.read';
   if(path.startsWith('/api/auth/accounts'))return 'accounts.manage';

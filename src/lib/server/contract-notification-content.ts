@@ -319,10 +319,10 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
   const depositTx=tx.filter(t=>['in','addon'].includes(t.type)&&isDeposit(t.name));
   const refunds=tx.filter(t=>t.type==='out'&&/^(order:deposit_refund$|order:complete:)/.test(t.name));
   const settlement=kind==='return'&&Array.isArray(composer?.return_settlements)?composer.return_settlements.findLast((entry:{item_ids:number[]})=>Array.isArray(entry.item_ids)&&entry.item_ids.length===returnIds.length&&entry.item_ids.every(id=>returnIds.includes(String(id)))):undefined;
-  // Prefer the settlement-linked refund voucher; otherwise include any deposit refund on the order (e.g. cashbook after return).
-  const eventRefunds=settlement?.refund_transaction_id!=null
-    ?refunds.filter(t=>Number(t.id)===Number(settlement.refund_transaction_id))
-    :refunds;
+  const linkedRefund=refunds.find(t=>Number(t.id)===Number(settlement?.refund_transaction_id));
+  // New correction vouchers keep the return item even when the original voucher is cancelled.
+  const eventRefunds=refunds.filter(t=>t===linkedRefund||returnIds.includes(String(t.order_item_id))||
+    settlement?.refund_transaction_id==null&&t.order_item_id==null);
   const rentalRefunds=kind==='return'?tx.filter(t=>t.type==='out'&&t.name==='order:rental_refund'):[];
   const eventRentalRefunds=rentalRefunds.filter(t=>o.return_covers_order||Number(t.id)===Number(settlement?.rental_refund_transaction_id)
     ||t.order_item_id!=null&&returnIds.includes(String(t.order_item_id)));
@@ -381,6 +381,6 @@ export async function notificationPayload(db:Database,orderId:number,kind:Contra
     deposit:effectiveDeposit,rental_fee:rentalFee,grand_total:o.total==null||deposit===null?null:Number(o.total)+deposit,
     refunded:eventRefunds.reduce((sum,t)=>sum+Number(t.value),0),method:methods(selected),deposit_method:methods(depositTx),...(renewal?{renewal}:{}),...(pendingRefund?{refund_pending:pendingRefund}:{}),
     ...(eventRentalRefunds.length?{rental_refunded:eventRentalRefunds.reduce((sum,t)=>sum+Number(t.value),0)}:{}),
-    ...(adjustments.length?{return_fees:{returned_at:adjustments.map((entry:{actual_return_at:string})=>entry.actual_return_at).sort().at(-1),late:adjustments.reduce((sum:number,entry:{late_fee?:number;fee:number;repair_fee?:number;early_discount?:number})=>sum+Number(entry.late_fee??Math.max(entry.fee+(entry.early_discount||0)-(entry.repair_fee||0),0)),0),repair:adjustments.reduce((sum:number,entry:{repair_fee?:number})=>sum+Number(entry.repair_fee||0),0),early_discount:adjustments.reduce((sum:number,entry:{early_discount?:number})=>sum+Number(entry.early_discount||0),0),collected:feeReceipts.reduce((sum,t)=>sum+Number(t.value),0),method:methods(feeReceipts)}}:{}),...(settlement?.recipient?.account?{refund_recipient:settlement.recipient}:{}),
+    ...(adjustments.length?{return_fees:{returned_at:adjustments.map((entry:{actual_return_at:string})=>entry.actual_return_at).sort().at(-1),late:adjustments.reduce((sum:number,entry:{late_fee?:number;fee:number;repair_fee?:number;early_discount?:number})=>sum+Number(entry.late_fee??Math.max(entry.fee+(entry.early_discount||0)-(entry.repair_fee||0),0)),0),repair:adjustments.reduce((sum:number,entry:{repair_fee?:number})=>sum+Number(entry.repair_fee||0),0),early_discount:adjustments.reduce((sum:number,entry:{early_discount?:number})=>sum+Number(entry.early_discount||0),0),collected:feeReceipts.reduce((sum,t)=>sum+Number(t.value),0),method:methods(feeReceipts)}}:{}),...(linkedRefund&&settlement?.recipient?.account?{refund_recipient:settlement.recipient}:{}),
     ...(swap?{battery_swap:{percentage:Number(swap.battery_percent),fee:Number(swap.fee),collected:selected.reduce((sum,t)=>sum+Number(t.value),0),license:swap.license,vehicle_name:swap.vehicle_name}}:{})};
 }

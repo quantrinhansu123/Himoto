@@ -76,7 +76,8 @@ export async function completeReturnBatch(db:Database,actor:number,inputs:Return
 }
 
 /** Shared by first return and a correction, after the caller establishes the exact current balance. */
-export async function settleReturnedItems(db:Database,actor:number,settlement:ReturnSettlement,selected:number[],returns:ReturnResult[]) {
+export async function settleReturnedItems(db:Database,actor:number,settlement:ReturnSettlement,selected:number[],returns:ReturnResult[],
+  retainedDeposit?: { id: number; recipient?: { bank?: string; account?: string; name?: string } }) {
     // Phí quá hạn / sửa chữa trên hợp đồng chỉ là gợi ý — số thu thực tế có thể khác; không khóa khớp.
     let context=await readPaymentContext(db,settlement.order_id);
     const transactionIds:number[]=[];
@@ -88,7 +89,7 @@ export async function settleReturnedItems(db:Database,actor:number,settlement:Re
       context=paid.context;transactionIds.push(paid.transaction_id);
       await db.query('UPDATE himoto.transactions SET name=$2 WHERE id=$1',[paid.transaction_id,kind==='late_fee'?'order:return_late':kind==='repair_fee'?'order:return_repair':'order:payment']);
     }
-    let refundId:number|null=null,rentalRefundId:number|null=null;
+    let refundId:number|null=retainedDeposit?.id??null,rentalRefundId:number|null=null;
     if(settlement.rental_refund){
       const refund=settlement.rental_refund;
       const paid=await recordContractPayment(db,settlement.order_id,actor,{request_id:refund.request_id,amount:refund.amount,method:refund.method,account_id:refund.account_id,paid_at:refund.paid_at,revision:context.revision,purpose:'rental_refund',note:`Hoàn tiền thuê trả sớm_${context.code}${refund.recipient_bank||refund.recipient_account||refund.recipient_name?` · ${[refund.recipient_bank,refund.recipient_account,refund.recipient_name].filter(Boolean).join(' · ')}`:''}`});
@@ -101,7 +102,7 @@ export async function settleReturnedItems(db:Database,actor:number,settlement:Re
       const paid=await recordContractPayment(db,settlement.order_id,actor,{request_id:refund.request_id,revision:context.revision,amount:refund.amount,method:refund.method,account_id:refund.account_id,paid_at:refund.paid_at,purpose:'deposit_refund',note:`Hoàn cọc khi trả xe_${context.code}${refund.recipient_bank||refund.recipient_account||refund.recipient_name?` · ${[refund.recipient_bank,refund.recipient_account,refund.recipient_name].filter(Boolean).join(' · ')}`:''}`});
       context=paid.context;refundId=paid.transaction_id;
     }
-    const snapshot={item_ids:selected,transaction_ids:transactionIds,refund_transaction_id:refundId,...(rentalRefundId!==null?{rental_refund_transaction_id:rentalRefundId,rental_refund_recipient:{bank:settlement.rental_refund?.recipient_bank,account:settlement.rental_refund?.recipient_account,name:settlement.rental_refund?.recipient_name}}:{}),...(settlement.refund_deferred?{refund_deferred:true,refund_pending_amount:pendingReturnRefund(context.deposit_held,context.rental_refundable||0,context.remaining),...(settlement.refund_recipient?{recipient:settlement.refund_recipient}:{})}:{}),...(settlement.refund?{recipient:{bank:settlement.refund.recipient_bank,account:settlement.refund.recipient_account,name:settlement.refund.recipient_name}}:{}),at:new Date().toISOString(),actor_id:actor};
+    const snapshot={item_ids:selected,transaction_ids:transactionIds,refund_transaction_id:refundId,...(rentalRefundId!==null?{rental_refund_transaction_id:rentalRefundId,rental_refund_recipient:{bank:settlement.rental_refund?.recipient_bank,account:settlement.rental_refund?.recipient_account,name:settlement.rental_refund?.recipient_name}}:{}),...(settlement.refund_deferred&&!retainedDeposit?{refund_deferred:true,refund_pending_amount:pendingReturnRefund(context.deposit_held,context.rental_refundable||0,context.remaining),...(settlement.refund_recipient?{recipient:settlement.refund_recipient}:{})}:{}),...(settlement.refund?{recipient:{bank:settlement.refund.recipient_bank,account:settlement.refund.recipient_account,name:settlement.refund.recipient_name}}:retainedDeposit?.recipient?{recipient:retainedDeposit.recipient}:{}),at:new Date().toISOString(),actor_id:actor};
     await db.query(`UPDATE himoto.orders SET draft_payload=jsonb_set(COALESCE(draft_payload::jsonb,'{}'::jsonb),'{management_composer}',
       COALESCE(draft_payload::jsonb->'management_composer','{}'::jsonb)||jsonb_build_object('return_settlements',COALESCE(draft_payload::jsonb #> '{management_composer,return_settlements}','[]'::jsonb)||$2::jsonb),true)::json,
       order_status=CASE WHEN $3 THEN order_status WHEN $4 THEN 'completed' ELSE 'wait_payment' END,updated_at=now() WHERE id=$1`,[settlement.order_id,JSON.stringify([snapshot]),context.items.length>0,context.remaining===0]);

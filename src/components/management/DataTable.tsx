@@ -160,7 +160,9 @@ export function DataTable({ config, columns, rows, offset, sortKey, sortDirectio
         : { key: 'handover', label: 'Giao xe', icon: <Bike size={16} />, onSelect: () => onHandover(row) });
     }
     if(isContract&&onPrint&&canFinalizeRentalContract(accessUser,row.rental_type)&&row.status==='deposit_contract')actions.push({key:'continue-reservation',label:'Bổ sung hồ sơ / Tiếp tục hợp đồng cọc',icon:<Pencil size={16}/>,onSelect:()=>onPrint(row)});
-    if (isContract && onReturn) {
+    if (isContract && onReturn && row.status === 'completed') {
+      actions.push({ key: 'return', label: 'Hồ sơ trả xe', icon: <RotateCcw size={16} />, onSelect: () => onReturn(row) });
+    } else if (isContract && onReturn) {
       const returnBlock = contractReturnBlockReason(String(row.status || ''));
       actions.push(returnBlock
         ? { key: 'return', label: 'Trả xe', icon: <RotateCcw size={16} />, disabled: true, title: returnBlock, onSelect: () => {} }

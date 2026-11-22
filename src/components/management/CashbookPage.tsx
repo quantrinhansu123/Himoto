@@ -12,12 +12,13 @@ import { useReloadAction } from './ReloadButton';
 import { CashbookAccounts } from './CashbookAccounts';
 import { CashbookTable } from './CashbookTable';
 import { CashbookSummary } from './CashbookSummary';
+import { DepositRefundQueue } from './DepositRefundQueue';
 import { ContractPaymentDialog } from './ContractPaymentDialog';
 import { parsePaymentPurpose, type PaymentPurpose } from '@/lib/management/contract-payments';
 import { vietnamDate } from '@/lib/management/duty-roster';
 
 export function CashbookPage() {
-  const { source, selectedStore, selectStore, notify, canPayContracts, dataset } = useManagement();
+  const { source, selectedStore, selectStore, notify, canPayContracts, dataset, accessUser } = useManagement();
   const [result, setResult] = useState<CashbookListResult | null>(null);
   const [loadedFilter, setLoadedFilter] = useState('');
   const [incomePagination, setIncomePagination] = useState<CashbookPagination>(DEFAULT_CASHBOOK_PAGINATION);
@@ -175,6 +176,7 @@ export function CashbookPage() {
         <button type="button" className="mg-button" onClick={() => { const today = vietnamDate(); update({ startDate: today, endDate: today }); }}>Hôm nay</button>
         {invalidDate && <span id="cashbook-date-error" className="mg-field-error" role="alert">Đến ngày phải bằng hoặc sau Từ ngày.</span>}{isFiltered && <button type="button" className="mg-button" onClick={reset}><RotateCcw size={14} />Xóa bộ lọc</button>}</div>
     </div>
+    {canPayContracts&&<DepositRefundQueue actorId={accessUser?.id} onSaved={()=>setRetry(value=>value+1)}/>}
     <CashbookSummary result={result} loading={pending} unavailable={Boolean(error) || invalidDate} scope={`${scopeName} · ${period}`} />
     <CashbookAccounts accounts={storeAccounts} loading={accountsLoading} error={accountsError} onRetry={() => setRetry(value => value + 1)} />
     <div className="mg-cashbook-tables"><CashbookTable type="income" rows={income} total={incomeCount} amount={invalidDate ? undefined : result?.income.amount} pagination={{ ...incomePagination, page: result?.income.page || incomePagination.page }} onPaginationChange={setIncomePagination} loading={pending} error={error} filtered={isFiltered} onReset={reset} onRetry={() => setRetry(value => value + 1)} selectedIds={selectedIds} onSelectionChange={changeSelection} onDeleteAll={() => openDeleteAll('income')} />
