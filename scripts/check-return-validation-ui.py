@@ -18,8 +18,12 @@ def mock(route):
  if req.method!='GET':
   assert req.method=='POST' and path=='/api/auth/returns','Unexpected mutation '+path
   body=req.post_data_json;assert len(body['items'])==2;settlement=body['settlements'][0]
-  assert settlement['refund']['amount']=='2000000' and settlement['refund']['method']=='transfer' and settlement['refund']['account_id']==3
-  assert 'refund_deferred' not in settlement and not settlement['receipts'];posts.append(body)
+  if state.get('zero'):
+   assert settlement['refund_deferred'] is True and 'refund' not in settlement
+  else:
+   assert settlement['refund']['amount']=='2000000' and settlement['refund']['method']=='transfer' and settlement['refund']['account_id']==3
+   assert 'refund_deferred' not in settlement
+  assert not settlement['receipts'];posts.append(body)
   route.fulfill(json=dict(status='success',data=[dict(item_id=i,contract_code='QA-RETURN-2',status='completed',fee=0) for i in [101,102]]));return
  if path=='/api/auth/order/car-rental' and query.get('table')==['1']:
   data=dict(rows=[],total=0,scopeCount=0,tabCount=0,page=1,pages=1,statusCounts=[],statuses=[],dueCount=0,summary=None)
@@ -39,7 +43,7 @@ with sync_playwright() as pw:
   browser=getattr(pw,name).launch();ctx=browser.new_context(viewport=dict(width=390 if name=='webkit' else 1440,height=900),timezone_id='Asia/Ho_Chi_Minh',reduced_motion='reduce')
   ctx.add_init_script("""const qaFetch=window.fetch;window.fetch=function(input,options){const url=new URL(typeof input==='string'?input:input.url,location.href);if(url.pathname==='/api/auth/payment-events')return Promise.resolve(new Response(JSON.stringify({status:'success',data:[]}),{headers:{'Content-Type':'application/json'}}));return qaFetch.call(this,input,options);};""")
   ctx.add_cookies([dict(name='himoto_management_session',value=Path(a.cookie_file).read_text().strip(),url=a.url,httpOnly=True,sameSite='Strict')]);ctx.route('**/api/**',mock)
-  for case in ['amount','no_accounts','load_error']:
+  for case in ['amount','zero','no_accounts','load_error']:
    state.clear();state[case]=True;page=ctx.new_page();page.on('pageerror',lambda e:errors.append(str(e)))
    page.goto(a.url+'/contracts?action=return&query=QA-RETURN-2',wait_until='networkidle',timeout=90000)
    dialog=page.get_by_role('dialog',name='Trả xe',exact=True);section=dialog.locator('.mg-return-settlement')
@@ -51,7 +55,14 @@ with sync_playwright() as pw:
     checks.append(name+': loading failure shows the actual failure beside confirmation and retry restores return')
    else:
     expect(submit).to_be_enabled();section.get_by_label('Đã hoàn cọc cho khách',exact=True).check()
-    if case=='no_accounts':
+    if case=='zero':
+     amount=section.locator('#return-901-refund-amount');amount.fill('')
+     expect(submit).to_be_disabled();amount.fill('0')
+     expect(amount).to_have_value('0');expect(submit).to_be_enabled()
+     expect(section.get_by_label('Tài khoản / két chi hoàn',exact=True)).to_have_count(0)
+     submit.click();expect(dialog).to_contain_text('Đã trả xe hợp đồng QA-RETURN-2');assert len(posts)==before+1
+     checks.append(name+': a zero refund permits return and defers the deposit without a payout')
+    elif case=='no_accounts':
      expect(submit).to_be_disabled();expect(footer).to_contain_text('Chọn tài khoản / két thực tế đã chi hoàn cọc.')
      expect(section.get_by_label('Tài khoản / két chi hoàn',exact=True)).to_have_value('')
      section.get_by_label('Chưa hoàn cọc',exact=False).check();expect(submit).to_be_enabled();assert len(posts)==before
@@ -62,7 +73,6 @@ with sync_playwright() as pw:
      expect(footer).to_contain_text('cọc còn giữ 2.000.000');expect(footer).to_contain_text('vượt 400.000');expect(footer).not_to_contain_text('Đang tải /')
      page.screenshot(path=str(out/(name+'-over-limit.png')),full_page=False);assert len(posts)==before
      checks.append(name+': 2.4m refund against 2m deposit is blocked with an exact amount/limit/excess message for two vehicles')
-     amount.fill('0');expect(footer).to_contain_text('lớn hơn 0');expect(submit).to_be_disabled()
      amount.fill('2000000');expect(amount).not_to_have_attribute('aria-invalid','true');expect(submit).to_be_enabled()
      recipient=section.locator('#return-901-recipient_account');recipient.fill('bad/#');expect(submit).to_be_disabled();expect(footer).to_contain_text('Số tài khoản khách nhận chưa hợp lệ')
      recipient.fill('');expect(submit).to_be_enabled();expect(footer).not_to_contain_text('vượt cọc')
