@@ -14,6 +14,7 @@ import { Button,Card,InlineError } from "./ui";
 import { KeyboardFormScrollView } from "./keyboard-form-scroll-view";
 import { ConfirmEdit } from "./editor-sheet";
 import {ShiftAuditExport} from './shift-audit-export';
+import { ShiftGpsAlerts } from './shift-gps-alerts';
 export function ShiftAuditEditor({report,snapshot,onRefresh}:{report:ShiftReport;snapshot:ShiftSnapshot;onRefresh:()=>void}){
   const{api,session}=useSession(),theme=useTheme(),[input,setInput]=useState<AuditInput>(()=>report.audit?.input||emptyAuditInput()),[part,setPart]=useState("counts"),[busy,setBusy]=useState(false),[pending,setPending]=useState(false),[error,setError]=useState(""),[confirm,setConfirm]=useState<"draft"|"confirmed"|null>(null),[exit,setExit]=useState<(()=>void)|null>(null),[leaving,setLeaving]=useState(false);
   const [baseline]=useState(()=>JSON.stringify(input));const alive=useRef(true),running=useRef(false);useEffect(()=>{alive.current=true;return()=>{alive.current=false;};},[]);
@@ -26,6 +27,7 @@ export function ShiftAuditEditor({report,snapshot,onRefresh}:{report:ShiftReport
   }
   return <SafeAreaView edges={['bottom','left','right']} style={{flex:1}}><KeyboardFormScrollView contentContainerStyle={{padding:20,paddingBottom:40,gap:18,maxWidth:760,width:"100%",alignSelf:"center"}}>
     <Text accessibilityRole="header" style={{color:theme.text,fontSize:26,fontWeight:"800"}}>KTNB đối soát · {report.store_name}</Text><Text style={{color:theme.muted,lineHeight:24}}>{report.payload.date.split("-").reverse().join("/")} · Số PGD đã chốt được giữ nguyên. Nhập số sổ và số KTNB độc lập. Ô trống giữ trạng thái chưa có số liệu.</Text>
+    <ShiftGpsAlerts alerts={report.gps_alerts} />
     {report.audit&&<Card style={{gap:10}}><Text style={{color:theme.text,fontWeight:"700"}}>{report.audit.status==="confirmed"?`Đã xác nhận · ${report.audit.result==="matched"?"Khớp":"Có chênh lệch"}`:"Nháp KTNB"}</Text><Text style={{color:theme.muted}}>Người đối soát: {report.audit.reviewer_name}</Text></Card>}
     <ShiftAuditExport key={`${report.id}:${report.audit?.revision||0}`} report={report} disabled={busy||pending}/>
     <ChoiceField label="Phần đối soát KTNB" value={part} choices={[{value:"counts",label:"Số lượng và số tiền"},{value:"external",label:"Xe bên ngoài / Điều chuyển"},{value:"notes",label:"Giải trình và kết luận"}]} onChange={setPart} disabled={busy} />

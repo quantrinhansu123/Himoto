@@ -45,10 +45,22 @@ export async function sendMobilePush(token: string, kind: MobileNotificationKind
   try { auth = await federatedFcmToken(c); } catch { return 'failed'; }
   try {
     // Generic notification only: current actor/permissions are checked again on open.
+    const title = kind === 'gps_alert' ? 'Himoto · Cảnh báo GPS' : 'Himoto';
+    const body = kind === 'test'
+      ? 'Thông báo thử từ Himoto. Thiết bị đã kết nối dịch vụ thông báo.'
+      : kind === 'activity'
+        ? 'Có sự kiện mới. Mở Himoto để xem.'
+        : kind === 'gps_alert'
+          ? 'Phát hiện chấm công hoặc kiểm kê ca lệch phạm vi cơ sở. Mở Himoto để kiểm tra.'
+          : kind === 'due'
+            ? 'Có hợp đồng sắp đến hạn trong 24 giờ. Mở Himoto để xem.'
+            : kind === 'overdue'
+              ? 'Có hợp đồng quá hạn cần xử lý. Mở Himoto để xem.'
+              : 'Có công việc cần nhận hoặc duyệt. Mở Himoto để xem.';
     const response = await fetch(`https://fcm.googleapis.com/v1/projects/${c.projectId}/messages:send`, {
       method: 'POST', signal: AbortSignal.timeout(10000), headers: {'Authorization': `Bearer ${auth}`, 'Content-Type': 'application/json'},
-      body: JSON.stringify({message: {token, notification: {title: 'Himoto', body: kind==='test'?'Thông báo thử từ Himoto. Thiết bị đã kết nối dịch vụ thông báo.':kind==='activity'?'Có sự kiện mới. Mở Himoto để xem.':kind==='due'?'Có hợp đồng sắp đến hạn trong 24 giờ. Mở Himoto để xem.':kind==='overdue'?'Có hợp đồng quá hạn cần xử lý. Mở Himoto để xem.':'Có công việc cần nhận hoặc duyệt. Mở Himoto để xem.'},
-        data: {screen: 'notifications', kind}, android: {priority: kind==='test'||kind==='activity'?'high':'normal', ttl: '300s', collapse_key: `himoto-${kind}`,
+      body: JSON.stringify({message: {token, notification: {title, body},
+        data: {screen: 'notifications', kind}, android: {priority: kind==='test'||kind==='activity'||kind==='gps_alert'?'high':'normal', ttl: '300s', collapse_key: `himoto-${kind}`,
           notification: {channel_id: 'himoto-work', tag: `himoto-${kind}`, visibility: 'PRIVATE'}}}}),
     });
     const data = await response.json().catch(() => null);

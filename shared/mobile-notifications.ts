@@ -1,21 +1,27 @@
 /** No customer, vehicle, financial or bearer data is carried in push payloads. */
-export const NOTIFICATION_KINDS = ['transfer', 'due', 'overdue', 'approval'] as const;
+export const NOTIFICATION_KINDS = ['transfer', 'due', 'overdue', 'approval', 'gps_alert'] as const;
 export type MobileNotificationKind = typeof NOTIFICATION_KINDS[number];
 export const NOTIFICATION_LABELS: Record<MobileNotificationKind, string> = {
   transfer: 'Điều chuyển cần nhận', due: 'Hợp đồng sắp đến hạn (24 giờ)',
   overdue: 'Hợp đồng quá hạn', approval: 'Hợp đồng chờ duyệt',
+  gps_alert: 'Cảnh báo vị trí GPS',
 };
+export type MobileNotificationTarget = 'contract' | 'transfer' | 'shift' | 'attendance';
+export interface MobileNotificationRow { id: number; label: string; target?: MobileNotificationTarget; target_id?: number }
 export interface MobileNotificationGroup { kind: MobileNotificationKind; count: number }
 export interface MobileNotifications { groups: MobileNotificationGroup[]; observedAt: string }
 export interface MobileNotificationList {
-  kind: MobileNotificationKind; rows: {id: number; label: string}[]; total: number; page: number; pages: number; observedAt: string;
+  kind: MobileNotificationKind; rows: MobileNotificationRow[]; total: number; page: number; pages: number; observedAt: string;
 }
 const object = (v: unknown): v is object => !!v && typeof v === 'object' && !Array.isArray(v);
+const TARGETS = new Set(['contract', 'transfer', 'shift', 'attendance']);
 export function isMobileNotificationList(value: unknown): value is MobileNotificationList {
   if (!object(value)) return false;
   const v = value as MobileNotificationList;
   return NOTIFICATION_KINDS.includes(v.kind) && Array.isArray(v.rows) && v.rows.length <= 20
-    && v.rows.every(r => object(r) && Number.isSafeInteger(r.id) && r.id > 0 && typeof r.label === 'string')
+    && v.rows.every(r => object(r) && Number.isSafeInteger(r.id) && r.id > 0 && typeof r.label === 'string'
+      && (r.target === undefined || TARGETS.has(r.target))
+      && (r.target_id === undefined || (Number.isSafeInteger(r.target_id) && r.target_id > 0)))
     && new Set(v.rows.map(r => r.id)).size === v.rows.length
     && [v.total, v.page, v.pages].every(Number.isSafeInteger) && v.total >= 0 && v.page >= 1 && v.pages >= v.page
     && typeof v.observedAt === 'string' && Number.isFinite(Date.parse(v.observedAt));

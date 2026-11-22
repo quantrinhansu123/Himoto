@@ -6,6 +6,7 @@ import {useSession} from '@/providers/session';
 import {pendingWrites} from '@/lib/pending-writes';
 import {openPhotoBatchStore} from '@/lib/photo-batch-store';
 import {savePhotoBatch,type BatchPhoto,type PhotoBatchAdapter,type PhotoBatchStore} from '@/lib/photo-batch';
+import {locateAttendanceSilent} from '@/lib/attendance-capture';
 import {selectRecordMediaPhotos,type RecordMediaPhoto} from '@/lib/record-media-photo';
 import {useTheme} from '@/theme';
 import {Button,Card,InlineError} from './ui';
@@ -17,9 +18,9 @@ function Preview({row,store}:{row:BatchPhoto;store:PhotoBatchStore}){
   useEffect(()=>{let alive=true,held:RecordMediaPhoto|undefined;void store.photo(row).then(value=>{held=value;if(alive)setPhoto(value);else value.dispose();}).catch(e=>{if(alive)setError(e.message);});return()=>{alive=false;held?.dispose();};},[store,row]);
   return <>{photo&&<BillPhoto source={{uri:photo.uri}} label={`Ảnh ${row.slot}`} context="bộ ảnh"/>}{!!error&&<InlineError message={error}/>}</>;
 }
-type PhotoBatchProps={adapter:PhotoBatchAdapter;nextSlot:(rows:BatchPhoto[])=>string;onSaved?:()=>void;onTelegram?:()=>void;onPrepared?:(photo:RecordMediaPhoto,index:number)=>Promise<void>;onPendingChange?:(pending:boolean)=>void;onBusyChange?:(busy:boolean)=>void;disabled?:boolean;allowSave?:boolean;autoSave?:boolean};
+type PhotoBatchProps={adapter:PhotoBatchAdapter;nextSlot:(rows:BatchPhoto[])=>string;onSaved?:()=>void;onTelegram?:()=>void;onPrepared?:(photo:RecordMediaPhoto,index:number)=>Promise<void>;onPendingChange?:(pending:boolean)=>void;onBusyChange?:(busy:boolean)=>void;disabled?:boolean;allowSave?:boolean;autoSave?:boolean;cameraOnly?:boolean;captureGps?:boolean};
 export function PhotoBatch(props:PhotoBatchProps){const{api,session}=useSession();return <PhotoBatchForm key={JSON.stringify([api?.origin,session?.user.id,session?.user.allStores?null:session?.user.storeId,session?.user.allStores,props.adapter.identity])} {...props}/>;}
-function PhotoBatchForm({adapter,nextSlot,onSaved,onTelegram,onPrepared,onPendingChange,onBusyChange,disabled=false,allowSave=true,autoSave=false}:PhotoBatchProps){
+function PhotoBatchForm({adapter,nextSlot,onSaved,onTelegram,onPrepared,onPendingChange,onBusyChange,disabled=false,allowSave=true,autoSave=false,cameraOnly=false,captureGps=false}:PhotoBatchProps){
   const{api,session}=useSession(),theme=useTheme(),[store,setStore]=useState<PhotoBatchStore|null>(null),[rows,setRows]=useState<BatchPhoto[]>([]),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
   const [preview,setPreview]=useState<string|null>(null);
   const[exit,setExit]=useState<(()=>void)|null>(null);
@@ -36,8 +37,9 @@ function PhotoBatchForm({adapter,nextSlot,onSaved,onTelegram,onPrepared,onPendin
     let first:BatchPhoto|undefined;
     try{
       const existing=await store.list();
+      const gpsPromise = captureGps && camera ? locateAttendanceSilent() : null;
       await selectRecordMediaPhotos(camera,abort.current.signal,async(photo,index,total)=>{
-        try{if(!alive.current||token.current!==at||identityRef.current!==identity)return;const row:BatchPhoto={id:uuid.v4().toLowerCase(),slot:nextSlot(existing),width:photo.width,height:photo.height,size:photo.size,key:uuid.v4().toLowerCase(),attempt:null,state:'queued',error:''};await store.add(row,photo);existing.push(row);first??=row;if(alive.current&&identityRef.current===identity){setRows([...existing]);setNotice(`Đã giữ ảnh ${index+1}/${total}. Chờ chuẩn bị xong cả bộ để rời màn hình.`);}}finally{photo.dispose();}
+        try{if(!alive.current||token.current!==at||identityRef.current!==identity)return;const gps=gpsPromise?await gpsPromise:undefined;const row:BatchPhoto={id:uuid.v4().toLowerCase(),slot:nextSlot(existing),width:photo.width,height:photo.height,size:photo.size,key:uuid.v4().toLowerCase(),attempt:null,state:'queued',error:'',...(gps!==undefined?{gps}:{})};await store.add(row,photo);existing.push(row);first??=row;if(alive.current&&identityRef.current===identity){setRows([...existing]);setNotice(`Đã giữ ảnh ${index+1}/${total}. Chờ chuẩn bị xong cả bộ để rời màn hình.`);}}finally{photo.dispose();}
       });
     }catch(e){if(alive.current)setError((e as Error).message);}finally{
       // OCR runs only after the whole album is durable; it never delays holding the remaining files.
@@ -80,8 +82,9 @@ function PhotoBatchForm({adapter,nextSlot,onSaved,onTelegram,onPrepared,onPendin
     {exit&&<ConfirmEdit title="Đang xử lý bộ ảnh" message="Chờ giữ ảnh và xác nhận yêu cầu đang chạy. Bộ ảnh đã giữ có thể mở lại; việc thử tiếp không ghi lại nghiệp vụ." busy={busy} confirmLabel="Tiếp tục quay lại" onCancel={()=>setExit(null)} onConfirm={()=>{const repeat=exit;setExit(null);repeat();}}/>}
     <Text accessibilityLiveRegion="polite" style={{color:theme.muted,lineHeight:24}}>Đã lưu {saved}/{rows.length} ảnh · Còn {pending.length}. Ảnh đã lưu sẽ không tải lại khi thử tiếp.</Text>
     {!!notice&&<Text accessibilityLiveRegion="polite" style={{color:theme.text,lineHeight:24}}>{notice}</Text>}{!!error&&<InlineError message={error}/>}
-    <Button secondary label="Chọn nhiều ảnh" disabled={!store||busy||disabled} loading={busy} onPress={()=>{void pick(false);}}/>
-    <Button secondary label="Chụp thêm ảnh" disabled={!store||busy||disabled||Platform.OS==='web'} onPress={()=>{void pick(true);}}/>
+    {!cameraOnly&&<Button secondary label="Chọn nhiều ảnh" disabled={!store||busy||disabled} loading={busy} onPress={()=>{void pick(false);}}/>}
+    <Button secondary label={cameraOnly?'Chụp ảnh trực tiếp':'Chụp thêm ảnh'} disabled={!store||busy||disabled||Platform.OS==='web'} loading={cameraOnly&&busy} onPress={()=>{void pick(true);}}/>
+    {cameraOnly&&<Text style={{color:theme.muted,fontSize:12.5,lineHeight:19}}>Chính sách kiểm kê: chỉ hỗ trợ chụp trực tiếp bằng camera, không chọn ảnh từ thư viện.</Text>}
     {!allowSave&&<Text style={{color:theme.muted,lineHeight:24}}>Ảnh được giữ trên máy. Lưu thông tin nghiệp vụ trước để gắn bộ ảnh vào đúng hồ sơ vừa tạo.</Text>}
     <Button label={pending.some(r=>r.error)?'Thử lưu tiếp phần ảnh lỗi':'Lưu bộ ảnh vào hồ sơ'} disabled={!store||busy||disabled||!allowSave||!pending.length} loading={busy} onPress={()=>{void save();}}/>
     {onTelegram&&<Button label="Gửi toàn bộ ảnh qua Telegram" disabled={!store||busy||disabled||pending.length>0} onPress={onTelegram}/>}

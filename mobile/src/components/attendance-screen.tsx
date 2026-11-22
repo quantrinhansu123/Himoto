@@ -136,70 +136,70 @@ export function AttendanceScreen({ historyOnly = false }: { historyOnly?: boolea
           : 'Chưa đăng ký ca hôm nay'
     : 'Đang tải…';
   return <>
-    <FlatList data={historyOnly?query.data?.rows||[]:[]} keyExtractor={row=>String(row.id)} contentContainerStyle={{padding:16,paddingBottom:36,gap:12,maxWidth:760,width:'100%',alignSelf:'center'}} refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={()=>{void query.refetch();}} tintColor={theme.primary}/>}
-      ListHeaderComponent={<View style={{gap:12}}>
-        {!historyOnly&&<>
-        <View style={{gap:2}}>
-          <Text accessibilityRole="header" style={{color:theme.text,fontSize:22,fontWeight:'800'}}>Chấm công</Text>
-          {serverNow&&<Text style={{color:theme.muted,fontSize:13}}>Giờ máy chủ (VN): {dateTime(serverNow)}</Text>}
-        </View>
-        {/* Hero Check-In / Check-Out Card FIRST above the fold */}
-        <Card style={{gap:12,padding:16}}>
-          <View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center',gap:8}}>
-            <View style={{flex:1,gap:2}}>
-              <Text style={{color:theme.text,fontSize:18,fontWeight:'800'}}>{query.data?.staff?.name||session!.user.name}</Text>
-              <Text style={{color:theme.muted,fontSize:13}}>{query.data?.staff?.store_name||'Chưa gắn cơ sở chấm công'}</Text>
-            </View>
-            <StatusBadge status={query.data?.open?'active':'pending'} label={query.data?.open?'Đang trong ca':'Chưa vào ca'} />
+    <FlatList data={historyOnly ? query.data?.rows || [] : []} keyExtractor={row => String(row.id)} contentContainerStyle={{ padding: 16, paddingBottom: 36, gap: 12, maxWidth: 760, width: '100%', alignSelf: 'center' }} refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={() => { void query.refetch(); }} tintColor={theme.primary} />}
+      ListHeaderComponent={<View style={{ gap: 12 }}>
+        {!historyOnly && <>
+          <View style={{ gap: 2 }}>
+            <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 22, fontWeight: '800' }}>Chấm công</Text>
+            {serverNow && <Text style={{ color: theme.muted, fontSize: 13 }}>Giờ máy chủ (VN): {dateTime(serverNow)}</Text>}
           </View>
-          <View style={{borderTopWidth:1,borderTopColor:theme.border,paddingTop:8,gap:2}}>
-            <KeyValueRow label="Trạng thái hôm nay" strong value={query.data?.open?`Vào lúc ${dateTime(query.data.open.clock_in_at)}`:query.data?.latest?`${dateTime(query.data.latest.clock_in_at)}${query.data.latest.clock_out_at?' → '+dateTime(query.data.latest.clock_out_at):''}`:'Chưa chấm công hôm nay'} />
-            <KeyValueRow label="Ca đăng ký" value={shiftSummaryLabel} />
-            {query.data?.late_minutes!==null&&query.data?.late_minutes!==undefined&&<KeyValueRow label="Vào ca" valueColor={query.data.late_minutes?theme.warning:theme.success} value={query.data.late_minutes?`Đi muộn ${query.data.late_minutes} phút`:'Đúng giờ'} />}
-            {query.data?.early_leave_minutes!==null&&query.data?.early_leave_minutes!==undefined&&<KeyValueRow label="Ra ca" valueColor={query.data.early_leave_minutes?theme.warning:theme.success} value={query.data.early_leave_minutes?`Về sớm ${query.data.early_leave_minutes} phút`:'Đủ giờ'} />}
-          </View>
-          {query.data&&!query.data.shift&&query.data.shift_code!=='O'&&query.data.shift_code!=='G1+G3'&&canReview&&(
-            <Button size="sm" secondary label="Đăng ký ca hôm nay trên bảng ca" onPress={()=>router.push({pathname:'/shift-registrations',params:{date:today,staff:query.data?.staff?.name||''}})}/>
-          )}
-          {pending?<View style={{gap:8}}>
-            <InlineError message={`Có lần ${pending.action==='in'?'vào':'ra'} ca chưa xác nhận. Giữ mã ${pending.id} để đối chiếu.`}/>
-            <Button label="Đối chiếu lần chấm đang chờ" loading={busy} onPress={()=>{void run(resolve);}}/>
-            <View style={{flexDirection:'row',gap:8}}>
-              {!pendingIsFromPriorDay&&<Button size="sm" equalWidth secondary label="Thử lại lần này" disabled={busy} onPress={()=>{void run(save);}}/>}
-              <Button size="sm" equalWidth secondary label={pendingIsFromPriorDay?'Chấm ngày mới':'Chụp lại ảnh'} disabled={busy} onPress={()=>{void run(restartFromPending);}}/>
+          {/* Hero Check-In / Check-Out Card FIRST above the fold */}
+          <Card style={{ gap: 12, padding: 16 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={{ color: theme.text, fontSize: 18, fontWeight: '800' }}>{query.data?.staff?.name || session!.user.name}</Text>
+                <Text style={{ color: theme.muted, fontSize: 13 }}>{query.data?.staff?.store_name || 'Chưa gắn cơ sở chấm công'}</Text>
+              </View>
+              <StatusBadge status={query.data?.open ? 'active' : 'pending'} label={query.data?.open ? 'Đang trong ca' : 'Chưa vào ca'} />
             </View>
-          </View>:<Button icon={<Camera size={17} color={theme.primaryText} accessible={false} />} label={query.data?.open?'Chấm công ra ca':'Chấm công vào ca'} disabled={restoring||busy||query.isError||!query.data?.staff||(!query.data.open&&query.data.staff.store_id===null)} onPress={()=>{startClock(query.data?.open?'out':'in');}}/>}
-          {query.data&&!query.data.staff&&<InfoBanner tone="warning" message="Tài khoản chưa liên kết với một nhân viên đang hoạt động. Liên hệ quản lý nhân sự." />}
-          {query.data?.staff&&query.data.staff.store_id===null&&!query.data.open&&<InfoBanner tone="warning" message="Nhân viên chưa được gắn cơ sở. Liên hệ quản lý nhân sự trước khi chấm công." />}
-          <Text style={{color:theme.muted,fontSize:12,lineHeight:17}}>Chấm công cần mạng, ảnh chụp trực tiếp và GPS. Giờ ghi theo máy chủ.</Text>
-        </Card>
-        {/* Compact Horizontal Shortcut Strip */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap:8}}>
-          <Chip label="Lịch sử chấm công" icon={<History size={14} color={theme.text} />} disabled={busy} onPress={()=>router.push('/attendance-history')} />
-          <Chip label="Đăng ký ca tuần" icon={<CalendarDays size={14} color={theme.text} />} disabled={busy} onPress={()=>router.push('/self-shift-registration')} />
-          {canReview&&<Chip label="Bảng đăng ký ca" icon={<Clock3 size={14} color={theme.text} />} disabled={busy} onPress={()=>router.push('/shift-registrations')} />}
-          <Chip label="GPS cơ sở" icon={<MapPin size={14} color={theme.text} />} disabled={busy} onPress={()=>router.push('/attendance-locations')} />
-        </ScrollView>
-        {!!notice&&<InfoBanner tone="success" message={notice} />}
-        {!!error&&!action&&<InlineError message={error}/>}
+            <View style={{ borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 8, gap: 2 }}>
+              <KeyValueRow label="Trạng thái hôm nay" strong value={query.data?.open ? `Vào lúc ${dateTime(query.data.open.clock_in_at)}` : query.data?.latest ? `${dateTime(query.data.latest.clock_in_at)}${query.data.latest.clock_out_at ? ' → ' + dateTime(query.data.latest.clock_out_at) : ''}` : 'Chưa chấm công hôm nay'} />
+              <KeyValueRow label="Ca đăng ký" value={shiftSummaryLabel} />
+              {query.data?.late_minutes !== null && query.data?.late_minutes !== undefined && <KeyValueRow label="Vào ca" valueColor={query.data.late_minutes ? theme.warning : theme.success} value={query.data.late_minutes ? `Đi muộn ${query.data.late_minutes} phút` : 'Đúng giờ'} />}
+              {query.data?.early_leave_minutes !== null && query.data?.early_leave_minutes !== undefined && <KeyValueRow label="Ra ca" valueColor={query.data.early_leave_minutes ? theme.warning : theme.success} value={query.data.early_leave_minutes ? `Về sớm ${query.data.early_leave_minutes} phút` : 'Đủ giờ'} />}
+            </View>
+            {query.data && !query.data.shift && query.data.shift_code !== 'O' && query.data.shift_code !== 'G1+G3' && canReview && (
+              <Button size="sm" secondary label="Đăng ký ca hôm nay trên bảng ca" onPress={() => router.push({ pathname: '/shift-registrations', params: { date: today, staff: query.data?.staff?.name || '' } })} />
+            )}
+            {pending ? <View style={{ gap: 8 }}>
+              <InlineError message={`Có lần ${pending.action === 'in' ? 'vào' : 'ra'} ca chưa xác nhận. Giữ mã ${pending.id} để đối chiếu.`} />
+              <Button label="Đối chiếu lần chấm đang chờ" loading={busy} onPress={() => { void run(resolve); }} />
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {!pendingIsFromPriorDay && <Button size="sm" equalWidth secondary label="Thử lại lần này" disabled={busy} onPress={() => { void run(save); }} />}
+                <Button size="sm" equalWidth secondary label={pendingIsFromPriorDay ? 'Chấm ngày mới' : 'Chụp lại ảnh'} disabled={busy} onPress={() => { void run(restartFromPending); }} />
+              </View>
+            </View> : <Button icon={<Camera size={17} color={theme.primaryText} accessible={false} />} label={query.data?.open ? 'Chấm công ra ca' : 'Chấm công vào ca'} disabled={restoring || busy || query.isError || !query.data?.staff || (!query.data.open && query.data.staff.store_id === null)} onPress={() => { startClock(query.data?.open ? 'out' : 'in'); }} />}
+            {query.data && !query.data.staff && <InfoBanner tone="warning" message="Tài khoản chưa liên kết với một nhân viên đang hoạt động. Liên hệ quản lý nhân sự." />}
+            {query.data?.staff && query.data.staff.store_id === null && !query.data.open && <InfoBanner tone="warning" message="Nhân viên chưa được gắn cơ sở. Liên hệ quản lý nhân sự trước khi chấm công." />}
+            <Text style={{ color: theme.muted, fontSize: 12, lineHeight: 17 }}>Chấm công cần mạng, ảnh chụp trực tiếp và GPS. Giờ ghi theo máy chủ.</Text>
+          </Card>
+          {/* Compact Horizontal Shortcut Strip */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+            <Chip label="Lịch sử chấm công" icon={<History size={14} color={theme.text} />} disabled={busy} onPress={() => router.push('/attendance-history')} />
+            <Chip label="Đăng ký ca tuần" icon={<CalendarDays size={14} color={theme.text} />} disabled={busy} onPress={() => router.push('/self-shift-registration')} />
+            {canReview && <Chip label="Bảng đăng ký ca" icon={<Clock3 size={14} color={theme.text} />} disabled={busy} onPress={() => router.push('/shift-registrations')} />}
+            <Chip label="GPS cơ sở" icon={<MapPin size={14} color={theme.text} />} disabled={busy} onPress={() => router.push('/attendance-locations')} />
+          </ScrollView>
+          {!!notice && <InfoBanner tone="success" message={notice} />}
+          {!!error && !action && <InlineError message={error} />}
         </>}
         {historyOnly && <>
-          <View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center',gap:10}}>
-            <View style={{flex:1,gap:2}}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+            <View style={{ flex: 1, gap: 2 }}>
               <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 22, fontWeight: '800' }}>Lịch sử chấm công</Text>
               <Text style={{ color: theme.muted, fontSize: 13 }}>{from.split('-').reverse().join('/')} → {to.split('-').reverse().join('/')} · {query.data?.total ?? '—'} lượt</Text>
             </View>
-            <Button size="sm" label="Chấm công" disabled={busy} onPress={()=>router.push('/attendance')}/>
+            <Button size="sm" label="Chấm công" disabled={busy} onPress={() => router.push('/attendance')} />
           </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap:8}}>
-            <Chip label={filtersOpen?'Ẩn bộ lọc':'Bộ lọc'} selected={filtersOpen||store!=='all'} icon={<SlidersHorizontal size={14} color={filtersOpen||store!=='all'?theme.primary:theme.text} />} onPress={()=>setFiltersOpen(v=>!v)} />
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+            <Chip label={filtersOpen ? 'Ẩn bộ lọc' : 'Bộ lọc'} selected={filtersOpen || store !== 'all'} icon={<SlidersHorizontal size={14} color={filtersOpen || store !== 'all' ? theme.primary : theme.text} />} onPress={() => setFiltersOpen(v => !v)} />
             <Chip label="Tháng này" disabled={query.isFetching} onPress={() => { const current = dutyToday(); setFrom(current.slice(0, 7) + '-01'); setTo(current); setPage(1); }} />
             <Chip label="Hôm nay" disabled={query.isFetching} onPress={() => { const current = dutyToday(); setFrom(current); setTo(current); setPage(1); }} />
           </ScrollView>
-          {filtersOpen&&<Card style={{ gap: 10 }}>
-            <View style={{flexDirection:'row',gap:8}}>
-              <View style={{flex:1}}><DateField label="Từ ngày" value={from} onChange={value => { setFrom(value); setPage(1); }} /></View>
-              <View style={{flex:1}}><DateField label="Đến ngày" value={to} onChange={value => { setTo(value); setPage(1); }} /></View>
+          {filtersOpen && <Card style={{ gap: 10 }}>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <View style={{ flex: 1 }}><DateField label="Từ ngày" value={from} onChange={value => { setFrom(value); setPage(1); }} /></View>
+              <View style={{ flex: 1 }}><DateField label="Đến ngày" value={to} onChange={value => { setTo(value); setPage(1); }} /></View>
             </View>
             {canReview && <ChoiceField label="Cơ sở chấm công" value={store} searchable choices={[{ value: 'all', label: 'Tất cả cơ sở được phép' }, ...(workspace.data?.stores || []).map(item => ({ value: String(item.id), label: item.name }))]} onChange={value => { setStore(value); setPage(1); }} />}
             {query.data?.rows.some(row => row.can_manage) && <FilteredListExport kind="attendance" label="Tải Excel theo nhân sự" filters={new URLSearchParams({ from, to, store }).toString()} disabled={query.isFetching || query.isError} />}
@@ -209,30 +209,39 @@ export function AttendanceScreen({ historyOnly = false }: { historyOnly?: boolea
         {query.isError && <StateView title="Chưa tải được chấm công" message={query.error.message} retry={() => { void query.refetch(); }} />}
         {query.isPending && from <= to && <SkeletonList count={historyOnly ? 4 : 1} lines={3} />}
       </View>}
-      renderItem={({item:row})=><Card style={{gap:8}}>
-        <View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center',gap:8}}>
-          <Text style={{color:theme.text,fontSize:16,fontWeight:'800',flex:1}}>{row.staff_name}</Text>
-          <StatusBadge status={row.clock_out_at?'completed':'active'} label={row.clock_out_at?'Đã ra ca':'Đang trong ca'} />
+      renderItem={({ item: row }) => <Card style={{ gap: 8 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+          <Text style={{ color: theme.text, fontSize: 16, fontWeight: '800', flex: 1 }}>{row.staff_name}</Text>
+          <StatusBadge status={row.clock_out_at ? 'completed' : 'active'} label={row.clock_out_at ? 'Đã ra ca' : 'Đang trong ca'} />
         </View>
-        <Text style={{color:theme.muted,fontSize:12.5}}>{row.store_name||'Chưa có cơ sở'}</Text>
+        <View style={{flexDirection:'row',flexWrap:'wrap',alignItems:'center',gap:6}}>
+          <Text style={{color:theme.muted,fontSize:12.5}}>{row.store_name||'Chưa có cơ sở'}</Text>
+          {row.can_manage && (row.in_gps_alert || row.out_gps_alert) && (
+            <StatusBadge status="overdue" label="Lệch vị trí GPS (>200m)" />
+          )}
+        </View>
         <View style={{gap:2}}>
           <KeyValueRow label="Vào ca" value={dateTime(row.clock_in_at)} />
-          <KeyValueRow label="Ra ca" value={row.clock_out_at?dateTime(row.clock_out_at):'Chưa chấm ra'} />
-          <KeyValueRow label="Ca đăng ký" value={`${row.shift_name==='O'?'Nghỉ':row.shift_name||'Chưa đăng ký'}${row.scheduled_in&&row.scheduled_out?` (${dateTime(row.scheduled_in)} → ${dateTime(row.scheduled_out)})`:''}`} />
-          {row.late_minutes!==null&&<KeyValueRow label="Trễ / sớm" valueColor={row.late_minutes?theme.warning:theme.success} value={`${row.late_minutes?`Muộn ${row.late_minutes}p`:'Đúng giờ'}${row.early_leave_minutes?` · Sớm ${row.early_leave_minutes}p`:''}`} />}
-          <KeyValueRow label="Công thực tế" strong value={`${row.earned_credit!=null?row.earned_credit.toLocaleString('vi-VN',{maximumFractionDigits:4}):row.credit_on_other_row?'Gộp cùng ca':row.standard_credit==null?'Chưa đăng ký ca':'Chưa chốt'}${typeof row.standard_credit==='number'?` / ${row.standard_credit.toLocaleString('vi-VN')}`:''}`} />
+          <KeyValueRow label="Ra ca" value={row.clock_out_at ? dateTime(row.clock_out_at) : 'Chưa chấm ra'} />
+          <KeyValueRow label="Ca đăng ký" value={`${row.shift_name === 'O' ? 'Nghỉ' : row.shift_name || 'Chưa đăng ký'}${row.scheduled_in && row.scheduled_out ? ` (${dateTime(row.scheduled_in)} → ${dateTime(row.scheduled_out)})` : ''}`} />
+          {row.late_minutes !== null && <KeyValueRow label="Trễ / sớm" valueColor={row.late_minutes ? theme.warning : theme.success} value={`${row.late_minutes ? `Muộn ${row.late_minutes}p` : 'Đúng giờ'}${row.early_leave_minutes ? ` · Sớm ${row.early_leave_minutes}p` : ''}`} />}
+          <KeyValueRow label="Công thực tế" strong value={`${row.earned_credit != null ? row.earned_credit.toLocaleString('vi-VN', { maximumFractionDigits: 4 }) : row.credit_on_other_row ? 'Gộp cùng ca' : row.standard_credit == null ? 'Chưa đăng ký ca' : 'Chưa chốt'}${typeof row.standard_credit === 'number' ? ` / ${row.standard_credit.toLocaleString('vi-VN')}` : ''}`} />
         </View>
-        <View style={{flexDirection:'row',flexWrap:'wrap',gap:8,paddingTop:2}}>
-          <Button size="sm" equalWidth secondary label={`${evidence===String(row.id)?'Ẩn':'Xem'} ảnh & GPS`} onPress={()=>setEvidence(current=>current===String(row.id)?null:String(row.id))}/>
-          {row.can_manage&&<Button size="sm" equalWidth secondary label="Sửa giờ" onPress={()=>setEditing(row)}/>}
-          {!row.shift_name&&canReview&&<Button size="sm" equalWidth secondary label="Đăng ký ca" onPress={()=>router.push({pathname:'/shift-registrations',params:{date:row.clock_in_at.slice(0,10),staff:row.staff_name}})}/>}
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingTop: 2 }}>
+          <Button size="sm" equalWidth secondary label={`${evidence === String(row.id) ? 'Ẩn' : 'Xem'} ảnh & GPS`} onPress={() => setEvidence(current => current === String(row.id) ? null : String(row.id))} />
+          {row.can_manage && <Button size="sm" equalWidth secondary label="Sửa giờ" onPress={() => setEditing(row)} />}
+          {!row.shift_name && canReview && <Button size="sm" equalWidth secondary label="Đăng ký ca" onPress={() => router.push({ pathname: '/shift-registrations', params: { date: row.clock_in_at.slice(0, 10), staff: row.staff_name } })} />}
         </View>
         {evidence===String(row.id)&&<View style={{gap:6,borderTopWidth:1,borderTopColor:theme.border,paddingTop:8}}>
-          <KeyValueRow label="Khoảng cách vào" value={row.in_distance_m!=null?`${row.in_distance_m.toLocaleString('vi-VN')} m`:row.has_store_location?'Chưa có GPS':'Cơ sở chưa có tọa độ'} />
-          {row.clock_out_at&&<KeyValueRow label="Khoảng cách ra" value={row.out_distance_m!=null?`${row.out_distance_m.toLocaleString('vi-VN')} m`:row.has_store_location?'Chưa có GPS':'Cơ sở chưa có tọa độ'} />}
+          {row.can_manage && (
+            <>
+              <KeyValueRow label="Khoảng cách vào" valueColor={row.in_gps_alert ? theme.danger : undefined} strong={row.in_gps_alert} value={row.in_distance_m!=null?`${row.in_distance_m.toLocaleString('vi-VN')} m${row.in_gps_alert?' (Ngoài phạm vi)':''}`:row.has_store_location?'Chưa có GPS':'Cơ sở chưa có tọa độ'} />
+              {row.clock_out_at&&<KeyValueRow label="Khoảng cách ra" valueColor={row.out_gps_alert ? theme.danger : undefined} strong={row.out_gps_alert} value={row.out_distance_m!=null?`${row.out_distance_m.toLocaleString('vi-VN')} m${row.out_gps_alert?' (Ngoài phạm vi)':''}`:row.has_store_location?'Chưa có GPS':'Cơ sở chưa có tọa độ'} />}
+            </>
+          )}
           {row.clock_out_at&&row.has_out_photo===false&&copy('Không có ảnh ra ca.')}
         </View>}
-        {evidence===String(row.id)&&(['in','out'] as const).map(side=>{const hasSide=side==='in'||Boolean(row.clock_out_at);if(!hasSide)return null;const loc=side==='in'?row.in_location:row.out_location;const hasPhoto=side==='in'||row.has_out_photo!==false;const photoSource=hasPhoto?api!.supportPhoto('attendance',String(row.id),side):null;return <View key={side} style={{gap:8}}><Text style={{color:theme.text,fontWeight:'700',fontSize:14}}>{side==='in'?'Ảnh vào ca':'Ảnh ra ca'}</Text>{photoSource?<Image cachePolicy="memory" source={{...photoSource,cacheKey:JSON.stringify([session!.user.id,session!.user.storeId,session!.user.allStores,session!.sessionId||session!.expiresAt,photoSource.uri])}} style={{width:'100%',aspectRatio:4/3,borderRadius:10}} contentFit="contain" accessibilityLabel={`Ảnh ${side==='in'?'vào':'ra'} ca #${row.id}`}/>:copy('Chưa có ảnh chấm công.')}{loc?<>{copy(`GPS ${loc.latitude.toFixed(6)}, ${loc.longitude.toFixed(6)} · sai số ${Math.round(loc.accuracy)} m`)}<Button size="sm" secondary label="Mở vị trí trên Google Maps" onPress={()=>void Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${loc.latitude},${loc.longitude}`)}`)} /></>:copy('Chưa ghi nhận GPS')}</View>;})}
+        {evidence === String(row.id) && (['in', 'out'] as const).map(side => { const hasSide = side === 'in' || Boolean(row.clock_out_at); if (!hasSide) return null; const loc = side === 'in' ? row.in_location : row.out_location; const hasPhoto = side === 'in' || row.has_out_photo !== false; const photoSource = hasPhoto ? api!.supportPhoto('attendance', String(row.id), side) : null; return <View key={side} style={{ gap: 8 }}><Text style={{ color: theme.text, fontWeight: '700', fontSize: 14 }}>{side === 'in' ? 'Ảnh vào ca' : 'Ảnh ra ca'}</Text>{photoSource ? <Image cachePolicy="memory" source={{ ...photoSource, cacheKey: JSON.stringify([session!.user.id, session!.user.storeId, session!.user.allStores, session!.sessionId || session!.expiresAt, photoSource.uri]) }} style={{ width: '100%', aspectRatio: 4 / 3, borderRadius: 10 }} contentFit="contain" accessibilityLabel={`Ảnh ${side === 'in' ? 'vào' : 'ra'} ca #${row.id}`} /> : copy('Chưa có ảnh chấm công.')}{loc ? <>{copy(`GPS ${loc.latitude.toFixed(6)}, ${loc.longitude.toFixed(6)} · sai số ${Math.round(loc.accuracy)} m`)}<Button size="sm" secondary label="Mở vị trí trên Google Maps" onPress={() => void Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${loc.latitude},${loc.longitude}`)}`)} /></> : copy('Chưa ghi nhận GPS')}</View>; })}
       </Card>}
       ListEmptyComponent={historyOnly && !query.isPending && !query.isError ? <StateView title="Chưa có chấm công" message="Không có lượt chấm công trong khoảng ngày đã chọn." /> : undefined}
       ListFooterComponent={historyOnly && query.data && query.data.total > 50 ? <PaginationBar page={query.data.page} pages={Math.max(1, Math.ceil(query.data.total / 50))} total={query.data.total} unit="lượt" disabled={query.isFetching} onChange={setPage} /> : undefined} />

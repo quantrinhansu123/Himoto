@@ -6,7 +6,7 @@ import {requestBrowserLocation, type BrowserLocation} from '@/lib/management/bro
 import {MAX_PHOTO_BYTES} from '@/lib/management/record-photos';
 import {Dialog} from './Dialog';
 
-export type StockCameraPhoto = {image:Blob; gps:BrowserLocation};
+export type StockCameraPhoto = {image:Blob; gps:BrowserLocation | null};
 
 async function encodeJpeg(video:HTMLVideoElement) {
   const canvas = document.createElement('canvas');
@@ -61,7 +61,7 @@ export function ShiftStockCamera({label,onCapture,onClose}:{
     setBusy(true);setError('');
     try {
       const [gps,image] = await Promise.all([
-        requestBrowserLocation({signal:controller.signal}),encodeJpeg(video.current),
+        requestBrowserLocation({signal:controller.signal}).catch(()=>null),encodeJpeg(video.current),
       ]);
       if (!controller.signal.aborted) onCapture({gps,image});
     } catch (cause) {

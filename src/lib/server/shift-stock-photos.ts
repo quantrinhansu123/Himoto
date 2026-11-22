@@ -2,12 +2,16 @@ import 'server-only';
 import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import type { NextRequest } from 'next/server';
-import { hasPermission } from '@/lib/management/permissions';
+import { hasPermission, isAdminAccount } from '@/lib/management/permissions';
 import {
   isShiftStockCapture, isShiftStockDay, matchShiftStockPlate, SHIFT_STOCK_CATEGORY,
-  SHIFT_STOCK_MAX_ACCURACY_METERS, SHIFT_STOCK_RADIUS_METERS, type ShiftStockCapture, type ShiftStockCheck, type ShiftStockVehicle,
+  type ShiftStockCapture, type ShiftStockCheck, type ShiftStockVehicle,
 } from '../../../shared/shift-stock-check';
-import { AttendanceError, attendanceDistanceMeters, parseAttendanceLocation } from './attendance';
+import { AttendanceError } from './attendance';
+import {
+  evaluatePhoneGps, evaluateVehicleGpsSnapshot, readBranchCoords,
+  scheduleAdminGpsPush, stripStockCaptureForNonAdmin,
+} from './gps-audit';
 import { himotoPool } from './himoto-database';
 import { withMobileData } from './mobile-context';
 import type { SessionUser } from './management-session';
@@ -39,24 +43,8 @@ export async function expectedShiftStock(client:Pick<PoolClient,'query'>,store:n
   return frozen;
 }
 
-async function branchCoordinates(client: Pick<PoolClient,'query'>, store: number) {
-  const { rows } = await client.query<{latitude:number;longitude:number}>(
-    'SELECT latitude,longitude FROM himoto.management_attendance_locations WHERE store_id=$1', [store],
-  );
-  return rows[0] ?? null;
-}
-
-export function verifyStockLocation(raw: string, branch: Awaited<ReturnType<typeof branchCoordinates>>) {
-  if (!branch) throw new ShiftRequestError('Cơ sở chưa cài tọa độ chấm công. Cần cấu hình GPS trước khi kiểm kê.', 409);
-  const location = parseAttendanceLocation(raw);
-  if (location.accuracy > SHIFT_STOCK_MAX_ACCURACY_METERS) {
-    throw new ShiftRequestError('Sai số GPS quá lớn. Hãy đứng tại vị trí thoáng ở cơ sở và chụp lại.', 422);
-  }
-  const distance = attendanceDistanceMeters(location, branch);
-  if (distance === null || distance > SHIFT_STOCK_RADIUS_METERS) {
-    throw new ShiftRequestError(`Ảnh phải được chụp trong phạm vi ${SHIFT_STOCK_RADIUS_METERS} m từ cơ sở báo cáo.`, 422);
-  }
-  return distance;
+export function verifyStockLocation(raw: string, branch: Awaited<ReturnType<typeof readBranchCoords>>) {
+  return evaluatePhoneGps(raw, branch);
 }
 
 async function readStockPhotos(request: NextRequest) {
@@ -112,12 +100,13 @@ async function draft(client: Pick<PoolClient,'query'>, id: number, branchId: num
   return report;
 }
 
-export async function readShiftStockCheck(client:Pick<PoolClient,'query'>, id:number, branchId?:number|null):Promise<ShiftStockCheck> {
+export async function readShiftStockCheck(client:Pick<PoolClient,'query'>, id:number, branchId?:number|null, isAdmin = false):Promise<ShiftStockCheck> {
   const report = await draft(client, id, branchId);
   const store = Number(report.store_id);
   const expected = await expectedShiftStock(client, store, report.payload);
-  const captures = storedShiftStock(report.payload);
-  const gpsConfigured = !!await branchCoordinates(client, store);
+  const stored = storedShiftStock(report.payload);
+  const captures = isAdmin ? stored : stored.map(stripStockCaptureForNonAdmin);
+  const gpsConfigured = isAdmin ? !!await readBranchCoords(client, store) : true;
   return {revision:report.revision, expected, captures, gps_configured:gpsConfigured};
 }
 
@@ -157,7 +146,16 @@ export async function mobileShiftStockPhotos(request: NextRequest, user: Session
   }
   if (!Number.isSafeInteger(id) || id <= 0 || request.nextUrl.search) throw new MobileError('Báo cáo kiểm kê không hợp lệ.');
   const branchId = user.scope_all === true ? undefined : user.store_id ?? null;
+  const isAdmin = isAdminAccount(user);
   const reading = request.method === 'GET', removing = request.method === 'DELETE';
+  const projectResponse = (value: unknown) => {
+    if (isAdmin || !value || typeof value !== 'object') return value;
+    const record = value as Record<string, unknown>;
+    if (record.capture && isShiftStockCapture(record.capture)) {
+      return { ...record, capture: stripStockCaptureForNonAdmin(record.capture) };
+    }
+    return value;
+  };
   try {
     const revision = Number(request.headers.get('x-report-revision'));
     const removingId = Number(request.headers.get('x-vehicle-id'));
@@ -176,19 +174,33 @@ export async function mobileShiftStockPhotos(request: NextRequest, user: Session
         }
         return replay;
     }
-    if (reading) return await stockTransaction(user, true, client => readShiftStockCheck(client, id, branchId));
-    let distance = 0, plate = '';
+    if (reading) return await stockTransaction(user, true, client => readShiftStockCheck(client, id, branchId, isAdmin));
+    let phoneEval = evaluatePhoneGps('', null);
+    let plate = '';
     if (photos) {
       const ready = await stockTransaction(user, false, async client => {
         const replay = await readReceipt(client);
         if (replay) return {replay};
         const report = await draft(client, id, branchId, revision);
-        const branch = await branchCoordinates(client,Number(report.store_id));
-        const plateDistance = verifyStockLocation(plateGps, branch);
-        return {distance:vehiclePhoto ? Math.max(verifyStockLocation(vehicleGps, branch), plateDistance) : plateDistance};
+        const branch = await readBranchCoords(client, Number(report.store_id));
+        const plateEval = evaluatePhoneGps(plateGps, branch);
+        if (!vehiclePhoto) return {phoneEval: plateEval};
+        const vehicleEval = evaluatePhoneGps(vehicleGps, branch);
+        const maxDist = plateEval.distance_m != null && vehicleEval.distance_m != null
+          ? Math.max(plateEval.distance_m, vehicleEval.distance_m)
+          : (plateEval.distance_m ?? vehicleEval.distance_m);
+        const mergedIssues = [...new Set([plateEval.issue, vehicleEval.issue].filter(Boolean))].join(' · ');
+        return {
+          phoneEval: {
+            location: plateEval.location ?? vehicleEval.location,
+            distance_m: maxDist,
+            alert: plateEval.alert || vehicleEval.alert,
+            issue: mergedIssues,
+          },
+        };
       });
-      if (ready.replay) return ready.replay;
-      distance = ready.distance;
+      if (ready.replay) return projectResponse(ready.replay);
+      phoneEval = ready.phoneEval;
       limitPhotoOcr(user.id);
       const result = await extractPhoto('plate', MIME, photos[1] ?? photos[0], request.signal, undefined, vehiclePhoto ? {
         additional:[{mimeType:MIME,data:vehiclePhoto}], verifyPlatePair:true,
@@ -198,7 +210,8 @@ export async function mobileShiftStockPhotos(request: NextRequest, user: Session
         ? 'AI chưa xác nhận được cùng một biển số trên hai ảnh. Chụp toàn xe từ phía sau và chụp cận biển số cho rõ.'
         : 'AI chưa đọc rõ biển số. Chụp cận cảnh một biển số, giữ ảnh sáng và rõ nét.', 422);
     }
-    return await stockTransaction(user, false, async client => {
+    let triggerAlertPush = false;
+    const saved = await stockTransaction(user, false, async client => {
         const replay = await readReceipt(client);
         if (replay) return replay;
         const report = await draft(client, id, branchId, revision, true);
@@ -214,6 +227,8 @@ export async function mobileShiftStockPhotos(request: NextRequest, user: Session
           if (previous && matchShiftStockPlate(previous.plate, [vehicle]).length) {
             throw new ShiftRequestError(`Xe ${vehicle.license} đã có ảnh kiểm kê. Mở ảnh đã lưu nếu cần chụp lại.`, 422);
           }
+          const branch = await readBranchCoords(client, store);
+          const [vehicleGpsInfo] = await evaluateVehicleGpsSnapshot(client, [vehicle], branch);
           const ids = photos.map(()=>randomUUID());
           const uploads = cloudflyPhotosEnabled()
             ? await Promise.all(photos.map((photo, index) => storeObjectPhoto(photo, MIME, user.id, ids[index])))
@@ -227,8 +242,27 @@ export async function mobileShiftStockPhotos(request: NextRequest, user: Session
               uploaded ? null : photo, user.id, uploaded?.object_bucket ?? null, uploaded?.object_key ?? null,
               uploaded?.object_etag ?? null, uploaded?.storage_sha256 ?? null, uploaded?.storage_bytes ?? null]);
           }
-          const capture = {vehicle, plate, vehicle_photo_id: vehiclePhoto ? ids[0] : null, plate_photo_id: ids[1] ?? ids[0],
-            captured_at: new Date().toISOString(), actor_name: user.name, distance_m: distance};
+          const capture: ShiftStockCapture = {
+            vehicle, plate,
+            vehicle_photo_id: vehiclePhoto ? ids[0] : null,
+            plate_photo_id: ids[1] ?? ids[0],
+            captured_at: new Date().toISOString(),
+            actor_name: user.name,
+            distance_m: phoneEval.distance_m,
+            gps_alert: phoneEval.alert,
+            ...(phoneEval.issue ? { gps_issue: phoneEval.issue } : {}),
+            phone_location: phoneEval.location,
+            ...(vehicleGpsInfo ? {
+              vehicle_gps_distance_m: vehicleGpsInfo.distance_m,
+              vehicle_gps_status: vehicleGpsInfo.status,
+              vehicle_gps_lat: vehicleGpsInfo.latitude,
+              vehicle_gps_lng: vehicleGpsInfo.longitude,
+              vehicle_gps_at: vehicleGpsInfo.recorded_at,
+              vehicle_gps_alert: vehicleGpsInfo.alert,
+              ...(vehicleGpsInfo.issue ? { vehicle_gps_issue: vehicleGpsInfo.issue } : {}),
+            } : {}),
+          };
+          if (capture.gps_alert || capture.vehicle_gps_alert) triggerAlertPush = true;
           response = {...await replaceCapture(client, id, [...captures.filter(entry => entry !== previous), capture], previous), capture};
         } else {
           const previous = captures.find(entry => entry.vehicle.id === removingId);
@@ -238,6 +272,8 @@ export async function mobileShiftStockPhotos(request: NextRequest, user: Session
         await writeShiftReceipt(client, key, user.id, store, hash, response);
         return response;
     });
+    if (triggerAlertPush) scheduleAdminGpsPush();
+    return projectResponse(saved);
   } catch (error) {
     if (error instanceof ShiftRequestError || error instanceof AttendanceError || error instanceof RecordPhotoError || error instanceof PhotoOcrError) {
       throw new MobileError(error.message, error.status, 'STOCK_CHECK');

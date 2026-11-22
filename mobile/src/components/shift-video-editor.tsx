@@ -6,7 +6,9 @@ import { SHIFT_PHOTOS, type MobileShiftVideoReview } from '../../../shared/mobil
 import { MOBILE_SHIFT_VIDEO_SECONDS } from '../../../shared/mobile-video';
 import { useSession } from '@/providers/session';
 import { useShiftVideoWrite } from '@/hooks/use-shift-video-write';
+import { locateAttendanceSilent } from '@/lib/attendance-capture';
 import { selectRecordVideo, type RecordVideo } from '@/lib/record-video';
+import type { AttendanceLocation } from '../../../shared/mobile-support';
 import { useTheme } from '@/theme';
 import { Button, Card, InlineError, StateView } from './ui';
 import { ChoiceField } from './form-fields';
@@ -24,7 +26,7 @@ export function ShiftVideoEditor({ id, stage, category }: { id: string; stage: s
 function VideoForm({ id, initialStage, initialCategory }: { id: string; initialStage: 'pgd' | 'audit'; initialCategory: string }) {
   const { api, session } = useSession(), theme = useTheme();
   const [stage, setStage] = useState(initialStage), [category, setCategory] = useState(initialCategory);
-  const [video, setVideo] = useState<RecordVideo | null>(null), [picking, setPicking] = useState(false), [ready, setReady] = useState(false), [duration, setDuration] = useState(0), [error, setError] = useState('');
+  const [video, setVideo] = useState<RecordVideo | null>(null), [videoGps, setVideoGps] = useState<AttendanceLocation | null>(null), [picking, setPicking] = useState(false), [ready, setReady] = useState(false), [duration, setDuration] = useState(0), [error, setError] = useState('');
   const [preparationProgress, setPreparationProgress] = useState<number | null>(null), [cancelling, setCancelling] = useState(false);
   const [review, setReview] = useState<MobileShiftVideoReview | null>(null), [resolving, setResolving] = useState(false);
   const alive = useRef(true), local = useRef<RecordVideo | null>(null), picker = useRef<AbortController | null>(null), pickingLock = useRef(false);
@@ -36,10 +38,13 @@ function VideoForm({ id, initialStage, initialCategory }: { id: string; initialS
     if (locked || pickingLock.current) return;
     pickingLock.current = true; setPicking(true); setError(''); setPreparationProgress(null); setCancelling(false); const controller = new AbortController(); picker.current = controller;
     try {
+      const gpsPromise = locateAttendanceSilent();
       const chosen = await selectRecordVideo(camera, controller.signal, MOBILE_SHIFT_VIDEO_SECONDS, percent => { if (alive.current) setPreparationProgress(percent); });
       if (!chosen) return;
       if (!alive.current) { chosen.dispose(); return; }
-      local.current?.dispose(); local.current = chosen; setReady(false); setDuration(0); setVideo(chosen);
+      const capturedGps = await gpsPromise;
+      if (!alive.current) { chosen.dispose(); return; }
+      local.current?.dispose(); local.current = chosen; setReady(false); setDuration(0); setVideoGps(capturedGps); setVideo(chosen);
     } catch (cause) { if (alive.current) setError((cause as Error).message); }
     finally { pickingLock.current = false; if (alive.current) setPicking(false); }
   }
@@ -75,14 +80,13 @@ function VideoForm({ id, initialStage, initialCategory }: { id: string; initialS
           {count >= 3 && <InlineError message="Phần này đã đủ 3 video. Quay lại hồ sơ để kiểm tra hoặc xóa video trước khi thêm." />}
           <Card style={{ gap: 14 }}>
             <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 20, fontWeight: '700' }}>Video chờ lưu</Text>
-            <Text style={text}>Tối đa 3 phút và 45 MB mỗi video. Mỗi phần PGD / KTNB được lưu tối đa 3 video, tính chung tất cả mục.</Text>
-            {picking && <Text accessibilityLiveRegion="polite" style={text}>{cancelling ? 'Đang hủy chuẩn bị video…' : preparationProgress === null ? 'Đang mở video…' : `Đang chuẩn bị video · ${preparationProgress}%`}</Text>}
+            <Text style={text}>Tối đa 3 phút và 45 MB mỗi video. Chỉ hỗ trợ quay video trực tiếp bằng camera, không chọn từ thư viện.</Text>
+            {picking && <Text accessibilityLiveRegion="polite" style={text}>{cancelling ? 'Đang hủy chuẩn bị video…' : preparationProgress === null ? 'Đang mở camera quay video…' : `Đang chuẩn bị video · ${preparationProgress}%`}</Text>}
             {picking && Platform.OS === 'android' && <Button label="Hủy chuẩn bị video ca" secondary loading={cancelling} onPress={() => { setCancelling(true); picker.current?.abort(); }} />}
             {video && <><RecordVideoPlayer key={video.uri} source={{ uri: video.uri, useCaching: false }} label="Video ca đang chọn" onReady={onReady} /><Text style={text}>{(video.size / 1024 / 1024).toFixed(1)} MB · {duration > 0 ? `${Math.ceil(duration)} giây` : 'Đang đọc thời lượng'}</Text></>}
-            {video && ready && !valid && <InlineError message="Video ca cần có thời lượng trên 0 đến 180 giây. Chọn tệp khác." />}
-            <Button label="Chọn video ca" secondary loading={picking} disabled={locked || !writable || count >= 3} onPress={() => void pick(false)} />
-            <Button label="Quay video ca" secondary disabled={locked || !writable || count >= 3 || Platform.OS === 'web'} onPress={() => void pick(true)} />
-            {video && <Button label="Bỏ video ca chưa lưu" secondary disabled={locked} onPress={() => { local.current?.dispose(); local.current = null; setVideo(null); setReady(false); setDuration(0); setError(''); }} />}
+            {video && ready && !valid && <InlineError message="Video ca cần có thời lượng trên 0 đến 180 giây. Quay lại video." />}
+            <Button label="Quay video trực tiếp" secondary loading={picking} disabled={locked || !writable || count >= 3 || Platform.OS === 'web'} onPress={() => void pick(true)} />
+            {video && <Button label="Bỏ video ca chưa lưu" secondary disabled={locked} onPress={() => { local.current?.dispose(); local.current = null; setVideo(null); setVideoGps(null); setReady(false); setDuration(0); setError(''); }} />}
           </Card>
           <Button label="Rà soát và lưu video ca" disabled={locked || !video || !valid || !writable || count >= 3 || query.isFetching || query.isError} onPress={() => setReview({ revision: report.revision, stage, category })} />
         </>}
@@ -90,7 +94,7 @@ function VideoForm({ id, initialStage, initialCategory }: { id: string; initialS
         {!write.checked && <Button label="Đọc lại mã lưu video ca" secondary loading={write.busy} onPress={() => void write.check()} />}
       </>}
     </ScrollView>
-    {review && video && report && <ConfirmEdit title="Lưu video vào báo cáo ca?" message={`${report.store_name} · ${report.payload.date}\n${stageLabel} · ${label}\n${Math.ceil(duration)} giây · ${(video.size / 1024 / 1024).toFixed(1)} MB\nThêm video thứ ${count + 1}/3 của phần này. Báo cáo phải còn đúng phiên bản ${review.revision}.`} confirmLabel="Xác nhận lưu video ca" onCancel={() => setReview(null)} onConfirm={() => { setReview(null); void write.submit(review, video); }} />}
+    {review && video && report && <ConfirmEdit title="Lưu video vào báo cáo ca?" message={`${report.store_name} · ${report.payload.date}\n${stageLabel} · ${label}\n${Math.ceil(duration)} giây · ${(video.size / 1024 / 1024).toFixed(1)} MB\nThêm video thứ ${count + 1}/3 của phần này. Báo cáo phải còn đúng phiên bản ${review.revision}.`} confirmLabel="Xác nhận lưu video ca" onCancel={() => setReview(null)} onConfirm={() => { setReview(null); void write.submit(review, video, videoGps); }} />}
     {resolving && <ConfirmEdit title="Đối chiếu lưu video ca?" message="Nếu đã lưu, mở xác nhận gốc. Nếu chưa lưu, máy chủ khóa mã cũ. Video đã chọn được giữ để rà soát và gửi lại." confirmLabel="Đối chiếu với máy chủ" onCancel={() => setResolving(false)} onConfirm={() => { setResolving(false); void write.resolve().then(cancelled => { if (cancelled && alive.current) void query.refetch(); }); }} />}
     {write.exit && <ConfirmEdit title="Rời video ca?" busy={write.busy || picking} message={write.busy ? 'Đang xử lý video. Chờ xác nhận kết quả.' : 'Video chưa lưu sẽ cần chọn lại. Mã đã gửi vẫn được giữ để đối chiếu trong Tài khoản.'} confirmLabel="Rời video ca" onCancel={write.dismissExit} onConfirm={write.leave} />}
   </SafeAreaView>;

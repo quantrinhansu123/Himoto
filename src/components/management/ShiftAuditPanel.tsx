@@ -3,6 +3,7 @@ import { useEffect,useRef,useState } from 'react';
 import { useManagement } from './ManagementProvider';
 import { ShiftEvidence } from './ShiftEvidence';
 import {ShiftTelegramStatus} from './ShiftTelegramStatus';
+import { ShiftGpsAlerts } from './ShiftGpsAlerts';
 import { SHIFT_PHOTOS,type ShiftReport } from '@/lib/management/shift-reports';
 import { emptyAuditInput,parseAuditInput,auditComparisons,validateAuditConfirmation,auditReportText,type AuditInput,type AuditKey,type ShiftAudit,type ShiftSnapshot } from '@/lib/management/shift-audits';
 import { shiftApi,UnconfirmedSaveError,uploadShiftEvidence,type PendingShiftFile,type ShiftUpload } from '@/lib/management/shift-report-client';
@@ -47,7 +48,7 @@ export function ShiftAuditPanel({report,onDirty,onBusy,onSaved}:{report:ShiftRep
       catch(e){setError((e as Error).message);return;}
       if(confirm&&!window.confirm('Xác nhận đối soát KTNB? Số PGD và kết quả đối soát sẽ được giữ nguyên sau khi xác nhận.'))return;
       plan.current={input,status:confirm?'confirmed':'draft',revision:audit?.revision||0,fingerprint:snapshot.fingerprint,key:crypto.randomUUID(),
-        uploads:Object.entries(pending).map(([key,item])=>({key,slot:item.category,file:item.file,saved:false}))};
+        uploads:Object.entries(pending).map(([key,item])=>({key,slot:item.category,file:item.file,gps:item.gps,saved:false}))};
     }
     const work=plan.current;saving.current=true;setBusy(true);onBusy(true);onDirty(true);
     let revision=reportRevision;
@@ -62,6 +63,7 @@ export function ShiftAuditPanel({report,onDirty,onBusy,onSaved}:{report:ShiftRep
   const setValue=(group:'book'|'actual',key:AuditKey,value:string)=>change({...input,[group]:{...input[group],[key]:value===''?null:Number(value)}});
   const explain=(key:AuditKey|'assets_total'|'transfers',value:string)=>change({...input,explanations:{...input.explanations,[key]:value}});
   return <section className="mg-data-panel shift-form shift-audit" aria-label="KTNB đối soát báo cáo"><div className="shift-audit-heading"><div><div className="mg-eyebrow">BƯỚC 2 · KIỂM TOÁN NỘI BỘ</div><h2>Đối soát {report.store_name} · {report.payload.date.split('-').reverse().join('/')}</h2><p>Bản PGD đã chốt được giữ nguyên. Nhập số sổ và số KTNB kiểm tra độc lập.</p></div><span className={'shift-badge '+(audit?.status==='confirmed'?'is-confirmed':'')}>{audit?.status==='confirmed'?(audit.result==='matched'?'Đã xác nhận · Khớp':'Đã xác nhận · Có chênh lệch'):'Chờ KTNB xác nhận'}</span></div>
+    <ShiftGpsAlerts alerts={report.gps_alerts} />
     {audit&&<p>Người đối soát: <strong>{audit.reviewer_name}</strong> · {new Date(audit.confirmed_at||audit.updated_at).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})}</p>}
     {audit&&<details><summary>Nội dung báo cáo KTNB để gửi / lưu</summary><pre className="shift-report-text">{auditReportText(report.store_name,report.payload.date,audit,report.payload)}</pre><button type="button" className="mg-button" onClick={()=>void navigator.clipboard.writeText(auditReportText(report.store_name,report.payload.date,audit,report.payload)).then(()=>notify('Đã chép báo cáo KTNB.')).catch(()=>setError('Không chép được. Chọn nội dung báo cáo và sao chép thủ công.'))}>Chép báo cáo KTNB</button></details>}
     {!locked&&<button type="button" className="mg-button" disabled={busy||loading||uncertain} onClick={()=>void refresh()}>{loading?'Đang lấy số liệu…':'Lấy lại số liệu app'}</button>}

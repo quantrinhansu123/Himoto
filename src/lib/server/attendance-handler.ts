@@ -5,6 +5,8 @@ import { ATTENDANCE_ON_LOCAL_DATE, ATTENDANCE_SHIFT_JOIN, SPLIT_SHIFT_MORNING_EN
 import { failureResponse } from '@/lib/server/public-failure';
 import { vietnamDate } from '@/lib/management/duty-roster';
 import { isAdminAccount } from '@/lib/management/permissions';
+import { GPS_ALERT_RADIUS_METERS } from '../../../shared/shift-stock-check';
+import { readBranchCoords, scheduleAdminGpsPush } from '@/lib/server/gps-audit';
 
 export async function handleAttendance(request: NextRequest, user: SessionUser) {
   let client;
@@ -37,11 +39,20 @@ export async function handleAttendance(request: NextRequest, user: SessionUser) 
       if (!valid(from)||!valid(to)||from>to||Date.parse(to)-Date.parse(from)>93*86400000||store!=='all'&&!/^[1-9]\d{0,14}$/.test(store)||!Number.isSafeInteger(page)||page<1||page>100000) throw new AttendanceError('Chọn khoảng ngày tối đa 93 ngày và cơ sở hợp lệ.');
       await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
       const staff = await attendanceStaff(client,user);
-      const { now } = (await client.query('SELECT clock_timestamp() AS now')).rows[0];
-      const open = staff ? (await client.query(`SELECT id,clock_in_at FROM himoto.management_staff_attendance
-        WHERE staff_id=$1 AND clock_out_at IS NULL AND ${ATTENDANCE_ON_LOCAL_DATE}`,[staff.id,now])).rows[0] : null;
-      const latest = staff ? (await client.query(`SELECT clock_in_at,clock_out_at FROM himoto.management_staff_attendance
-        WHERE staff_id=$1 AND ${ATTENDANCE_ON_LOCAL_DATE} ORDER BY clock_in_at DESC,id DESC LIMIT 1`,[staff.id,now])).rows[0] : null;
+      const summaryRow = staff ? (await client.query(`
+        SELECT clock_timestamp() AS now,
+          (SELECT jsonb_build_object('id', id, 'clock_in_at', clock_in_at)
+             FROM himoto.management_staff_attendance
+             WHERE staff_id=$1 AND clock_out_at IS NULL AND ${ATTENDANCE_ON_LOCAL_DATE.replace('$2', 'clock_timestamp()')}
+             ORDER BY clock_in_at DESC, id DESC LIMIT 1) AS open_row,
+          (SELECT jsonb_build_object('clock_in_at', clock_in_at, 'clock_out_at', clock_out_at)
+             FROM himoto.management_staff_attendance
+             WHERE staff_id=$1 AND ${ATTENDANCE_ON_LOCAL_DATE.replace('$2', 'clock_timestamp()')}
+             ORDER BY clock_in_at DESC, id DESC LIMIT 1) AS latest_row
+      `, [staff.id])).rows[0] : (await client.query('SELECT clock_timestamp() AS now')).rows[0];
+      const now = summaryRow.now;
+      const open = summaryRow.open_row ?? null;
+      const latest = summaryRow.latest_row ?? null;
       const registration = staff ? (await client.query(`SELECT registration.work_date::text,registration.shift_code FROM (SELECT $1::bigint AS staff_id,$2::timestamptz AS clock_in_at) a ${ATTENDANCE_SHIFT_JOIN}`,[staff.id,latest?.clock_in_at || now])).rows[0] : undefined;
       const comparison = compareRegisteredAttendance(registration, latest?.clock_in_at, latest?.clock_out_at);
       const shift = comparison.scheduled_in && comparison.scheduled_out
@@ -104,11 +115,19 @@ export async function handleAttendance(request: NextRequest, user: SessionUser) 
           const credit = creditRow && aggregated
             ? compareRegisteredAttendance(registration,first_in,shift_open?null:last_out).earned_credit
             : comparison.earned_credit;
+          const inDistance = attendanceDistanceMeters(row.in_location,storeLocation);
+          const outDistance = attendanceDistanceMeters(row.out_location,storeLocation);
+          const inAccuracy = Number(row.in_location?.accuracy ?? 0);
+          const outAccuracy = Number(row.out_location?.accuracy ?? 0);
+          const inGpsAlert = canManage && ((inDistance !== null && inDistance > GPS_ALERT_RADIUS_METERS) || inAccuracy > GPS_ALERT_RADIUS_METERS);
+          const outGpsAlert = canManage && Boolean(row.clock_out_at) && ((outDistance !== null && outDistance > GPS_ALERT_RADIUS_METERS) || outAccuracy > GPS_ALERT_RADIUS_METERS);
           return {...row,
             can_manage:canManage,
-            has_store_location:storeLocation !== null,
-            in_distance_m:attendanceDistanceMeters(row.in_location,storeLocation),
-            out_distance_m:attendanceDistanceMeters(row.out_location,storeLocation),
+            has_store_location:canManage ? storeLocation !== null : false,
+            in_distance_m:canManage ? inDistance : null,
+            out_distance_m:canManage ? outDistance : null,
+            in_gps_alert:inGpsAlert,
+            out_gps_alert:outGpsAlert,
             ...comparison,
             earned_credit:creditRow?credit:null,
             credit_aggregated:aggregated && creditRow,
@@ -132,7 +151,17 @@ export async function handleAttendance(request: NextRequest, user: SessionUser) 
     const location = parseAttendanceLocation(String(form.get('location') || ''));
     await client.query('BEGIN');
     const data = await recordAttendance(client,user,String(form.get('action')),String(form.get('request_id')),photo,location);
+    let gpsAnomaly = location.accuracy > GPS_ALERT_RADIUS_METERS;
+    if (!gpsAnomaly && !data.replayed) {
+      const punchedStore = (await client.query('SELECT store_id FROM himoto.management_staff_attendance WHERE id=$1', [data.id])).rows[0]?.store_id;
+      if (punchedStore != null) {
+        const branch = await readBranchCoords(client, Number(punchedStore));
+        const distance = attendanceDistanceMeters(location, branch);
+        if (distance !== null && distance > GPS_ALERT_RADIUS_METERS) gpsAnomaly = true;
+      }
+    }
     await client.query('COMMIT');
+    if (gpsAnomaly && !data.replayed) scheduleAdminGpsPush();
     return NextResponse.json({status:'success',data},{headers:{'Cache-Control':'no-store'}});
   } catch (error) {
     if(client) await client.query('ROLLBACK').catch(()=>{});

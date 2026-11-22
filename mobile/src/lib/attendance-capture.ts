@@ -19,3 +19,27 @@ export async function locateAttendance(purpose = 'chấm công'):Promise<Attenda
     return {latitude:value.coords.latitude,longitude:value.coords.longitude,accuracy:value.coords.accuracy,timestamp:value.timestamp};
   }finally{if(timer)clearTimeout(timer);}
 }
+/** Silent best-effort GPS capture for shift evidence/stock photos: never throws or alerts staff. */
+export async function locateAttendanceSilent(timeoutMs = 7000): Promise<AttendanceLocation | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const perm = await Location.getForegroundPermissionsAsync();
+    const granted = perm.granted || (await Location.requestForegroundPermissionsAsync()).granted;
+    if (!granted) return null;
+    if (!await Location.hasServicesEnabledAsync()) return null;
+    const value = await Promise.race([
+      Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+      new Promise<null>(resolve => { timer = setTimeout(() => resolve(null), timeoutMs); }),
+    ]);
+    if (!value || value.coords.accuracy === null) {
+      const last = await Location.getLastKnownPositionAsync({ maxAge: 180_000 }).catch(() => null);
+      if (!last || last.coords.accuracy === null) return null;
+      return { latitude: last.coords.latitude, longitude: last.coords.longitude, accuracy: last.coords.accuracy, timestamp: last.timestamp };
+    }
+    return { latitude: value.coords.latitude, longitude: value.coords.longitude, accuracy: value.coords.accuracy, timestamp: value.timestamp };
+  } catch {
+    return null;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}

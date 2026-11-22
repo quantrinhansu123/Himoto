@@ -5,6 +5,7 @@ import {useQueryClient} from '@tanstack/react-query';
 import type {MobileShiftVideoReview} from '../../../shared/mobile-shift-reports';
 import type {MobileVideoCloudReceipt} from '../../../shared/mobile-video';
 import type {MobileVideoBrowserReceipt} from '../../../shared/mobile-video-upload';
+import type {AttendanceLocation} from '../../../shared/mobile-support';
 import {useSession} from '@/providers/session';
 import {pendingWrites} from '@/lib/pending-writes';
 import {uploadSignedRecordVideo,type RecordVideo} from '@/lib/record-video';
@@ -21,7 +22,7 @@ export function useShiftVideoWrite(id:string,dirty:boolean) {
   useEffect(()=>{if(!scope)return;let cancelled=false;running.current=true;pendingWrites.lookup(scope,operation).then(value=>{if(!cancelled&&alive.current){setKey(value);setChecked(true);}}).catch(cause=>{if(!cancelled&&alive.current)setError((cause as Error).message);}).finally(()=>{if(!cancelled){running.current=false;if(alive.current)setBusy(false);}});return()=>{cancelled=true;};},[scope,operation]);
   function openResult(value:string){setLeaving(true);disable();router.replace({pathname:'/shift-result/[key]',params:{key:value}});}
   async function check(){if(!scope||running.current)return;running.current=true;setBusy(true);setError('');try{const value=await pendingWrites.lookup(scope,operation);if(alive.current){setKey(value);setChecked(true);}}catch(cause){if(alive.current)setError((cause as Error).message);}finally{running.current=false;if(alive.current)setBusy(false);}}
-  async function submit(review:MobileShiftVideoReview,video:RecordVideo) {
+  async function submit(review:MobileShiftVideoReview,video:RecordVideo,captureGps:AttendanceLocation|null=null) {
     if(!api||!session||!scope||!checked||key||running.current)return;running.current=true;setBusy(true);setError('');setNotice('');const controller=new AbortController();abort.current=controller;const timer=setTimeout(()=>controller.abort(),240000);
     try{
       const intent=await pendingWrites.reserveExclusive(scope,operation,[operation,`shift.update:${id}`,`shift.audit:${id}`],()=>uuid.v4().toLowerCase());if(!alive.current)return;
@@ -33,7 +34,7 @@ export function useShiftVideoWrite(id:string,dirty:boolean) {
         if('receipt'in signed)cloud=signed.receipt;else{setStage('Đang tải video…');await putDirectRecordVideo(video,signed,session.user.id,intent.key,hash,controller.signal);if(!alive.current)return;setStage('Đang xác minh video…');try{cloud=(await api.verifyShiftDirectVideo(id,review,intent.key,signed.ticket,controller.signal)).receipt;}catch(cause){if(!(cause instanceof ApiError&&cause.code==='VIDEO_CONVERSION_REQUIRED'))throw cause;}}
       }
       if(!cloud){if(!alive.current)return;setStage('Đang chuẩn hóa video…');const signed=await api.signShiftVideo(id,review,intent.key,controller.signal);cloud=await uploadSignedRecordVideo(video,signed,session.user.id,intent.key,controller.signal);}
-      if(!alive.current)return;setStage('Đang lưu video vào báo cáo…');const mediaId=uuid.v4().toLowerCase(),saved=await api.saveShiftVideo(id,mediaId,review,cloud,intent.key);if(!alive.current)return;
+      if(!alive.current)return;setStage('Đang lưu video vào báo cáo…');const mediaId=uuid.v4().toLowerCase(),saved=await api.saveShiftVideo(id,mediaId,review,cloud,intent.key,captureGps);if(!alive.current)return;
       const proof=await api.shiftResult(intent.key);if(!alive.current)return;
       if(proof.operation!==operation||String(proof.receipt.id)!==id||String(proof.receipt.revision)!==String(saved.revision)||!proof.current.media?.some(m=>m.id===mediaId&&m.stage===review.stage&&m.category===review.category&&m.mime_type==='video/mp4'))throw Error('Chưa đối chiếu được đúng video đã lưu. Giữ mã để đọc phiếu gốc.');
       void cache.invalidateQueries({queryKey:['shift']});openResult(intent.key);

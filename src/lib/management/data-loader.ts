@@ -50,7 +50,8 @@ export function createManagementDataLoader(repository: Pick<ManagementRepository
     const existing = pending.get(kind);
     if (existing) return existing;
     const current = state.resources[kind];
-    if (!force && current.loaded && !current.error && current.updatedAt > 0 && now() - current.updatedAt < maxAge) return Promise.resolve();
+    const ttl = kind === 'stores' ? Math.max(maxAge, 300_000) : maxAge;
+    if (!force && current.loaded && !current.error && current.updatedAt > 0 && now() - current.updatedAt < ttl) return Promise.resolve();
     const version = versions.get(kind) || 0;
     const query = kind === 'contracts' ? contractsQuery : '';
     resource(kind, { loading: true, error: '' });

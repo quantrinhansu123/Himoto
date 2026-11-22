@@ -2,20 +2,23 @@ import 'server-only';
 import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import type { SessionUser } from './management-session';
-import { hasPermission } from '@/lib/management/permissions';
+import { hasPermission, isAdminAccount } from '@/lib/management/permissions';
 import { canApproveOwnershipContract, isOwnershipApprovalContract } from '@/lib/management/contract-approval';
 import { withMobileData } from './mobile-context';
 import { himotoPool } from './himoto-database';
 import { readContractAttentionRows } from './management-table';
 import { VEHICLE_TRANSFER_JOIN_SQL } from './vehicle-transfers';
 import { EFFECTIVE_RENTAL_TYPE_SQL, VEHICLE_ORDER_SQL } from './contract-classification';
-import { isMobileNotifications, isMobileNotificationList, NOTIFICATION_KINDS, type MobileNotifications, type MobileNotificationList, type MobileNotificationKind } from '../../../shared/mobile-notifications';
+import { isMobileNotifications, isMobileNotificationList, NOTIFICATION_KINDS, type MobileNotifications, type MobileNotificationList, type MobileNotificationKind, type MobileNotificationRow } from '../../../shared/mobile-notifications';
+import { GPS_ALERT_RADIUS_METERS } from '../../../shared/shift-stock-check';
+import { attendanceDistanceMeters } from './attendance';
+import { buildShiftGpsAlerts, formatDistanceVi, hasGpsTable } from './gps-audit';
 import { MobileError } from './mobile-session';
 
 type Database = Pick<PoolClient, 'query'>;
-export interface NotificationState { kind: MobileNotificationKind; count: number; fingerprint: string; rows: {id: number; label: string}[] }
-function state(kind: MobileNotificationKind, rows: {id: number; label: string; member: string}[]): NotificationState {
-  return {kind, count: rows.length, rows: rows.map(({id,label}) => ({id,label})),
+export interface NotificationState { kind: MobileNotificationKind; count: number; fingerprint: string; rows: MobileNotificationRow[] }
+function state(kind: MobileNotificationKind, rows: (MobileNotificationRow & { member: string })[]): NotificationState {
+  return {kind, count: rows.length, rows: rows.map(({member: _member, ...row}) => row),
     fingerprint: createHash('sha256').update(JSON.stringify(rows.map(r => r.member).sort())).digest('hex')};
 }
 export function contractAttentionGroups(rows:Awaited<ReturnType<typeof readContractAttentionRows>>,now=Date.now()){
@@ -56,6 +59,79 @@ export async function readNotificationState(db: Database, user: SessionUser,kind
       result.push(state('approval', rows.filter(isOwnershipApprovalContract).map(r => ({id: Number(r.id),
         label: String(r.contract_number || r.draft_reference || `Hợp đồng #${r.id}`), member: String(r.id)}))));
     }
+  }
+  if (kinds.includes('gps_alert') && isAdminAccount(user)) {
+    const gpsRows: (MobileNotificationRow & { member: string; sortAt: number })[] = [];
+    const hasLoc = await hasGpsTable(db, 'management_attendance_locations');
+    if (hasLoc && await hasGpsTable(db, 'management_staff_attendance')) {
+      const att = (await db.query(`
+        SELECT a.id, a.staff_name, s.store_name, a.clock_in_at, a.clock_out_at,
+               a.in_location, a.out_location, loc.latitude AS store_lat, loc.longitude AS store_lng
+        FROM himoto.management_staff_attendance a
+        LEFT JOIN himoto.staff_profiles p ON p.id = a.staff_id AND a.store_id IS NULL
+        LEFT JOIN himoto.stores s ON s.id = COALESCE(a.store_id, p.store_id)
+        LEFT JOIN himoto.management_attendance_locations loc ON loc.store_id = s.id
+        WHERE a.clock_in_at >= now() - interval '7 days'
+        ORDER BY a.clock_in_at DESC, a.id DESC LIMIT 120
+      `)).rows;
+      for (const row of att) {
+        const branch = row.store_lat != null && row.store_lng != null
+          ? { latitude: Number(row.store_lat), longitude: Number(row.store_lng) } : null;
+        const inDist = attendanceDistanceMeters(row.in_location, branch);
+        const outDist = attendanceDistanceMeters(row.out_location, branch);
+        const inAcc = Number(row.in_location?.accuracy ?? 0);
+        const outAcc = Number(row.out_location?.accuracy ?? 0);
+        const inAlert = (inDist !== null && inDist > GPS_ALERT_RADIUS_METERS) || inAcc > GPS_ALERT_RADIUS_METERS;
+        const outAlert = Boolean(row.clock_out_at) && ((outDist !== null && outDist > GPS_ALERT_RADIUS_METERS) || outAcc > GPS_ALERT_RADIUS_METERS);
+        if (!inAlert && !outAlert) continue;
+        const maxDist = Math.max(inDist ?? 0, outDist ?? 0);
+        const sideText = inAlert && outAlert ? 'vào & ra ca' : inAlert ? 'vào ca' : 'ra ca';
+        const detail = maxDist > GPS_ALERT_RADIUS_METERS ? `lệch ${formatDistanceVi(maxDist)}` : 'sai số GPS cao';
+        const attId = Number(row.id);
+        gpsRows.push({
+          id: attId * 2,
+          target: 'attendance',
+          target_id: attId,
+          label: `Chấm công ${sideText} ${detail} · ${row.staff_name}${row.store_name ? ` (${row.store_name})` : ''}`,
+          member: `att:${attId}:${inDist ?? 'x'}:${outDist ?? 'x'}`,
+          sortAt: Date.parse(String(row.clock_out_at || row.clock_in_at)) || 0,
+        });
+      }
+    }
+    if (await hasGpsTable(db, 'management_shift_reports')) {
+      const locJoin = hasLoc ? 'LEFT JOIN himoto.management_attendance_locations loc ON loc.store_id = r.store_id' : '';
+      const locCols = hasLoc ? 'loc.latitude AS store_lat, loc.longitude AS store_lng,' : 'NULL::numeric AS store_lat, NULL::numeric AS store_lng,';
+      const shifts = (await db.query(`
+        SELECT r.id, r.report_date::text, r.updated_at, r.payload, s.store_name, ${locCols} r.status
+        FROM himoto.management_shift_reports r
+        JOIN himoto.stores s ON s.id = r.store_id
+        ${locJoin}
+        WHERE r.report_date >= (now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date - 7
+          AND (r.payload ? 'stock_captures' OR r.payload ? 'media_gps' OR r.payload ? 'stock_gps_audit')
+        ORDER BY r.updated_at DESC, r.id DESC LIMIT 60
+      `)).rows;
+      for (const row of shifts) {
+        const branch = row.store_lat != null && row.store_lng != null
+          ? { latitude: Number(row.store_lat), longitude: Number(row.store_lng) } : null;
+        const summary = buildShiftGpsAlerts(row.payload, branch);
+        if (!summary || summary.total_alerts === 0) continue;
+        const parts: string[] = [];
+        if (summary.phone_alerts.length) parts.push(`${summary.phone_alerts.length} ảnh lệch GPS`);
+        if (summary.vehicle_alerts.length) parts.push(`${summary.vehicle_alerts.length} xe GPS bất thường`);
+        const shiftId = Number(row.id);
+        const dateVi = String(row.report_date).split('-').reverse().join('/');
+        gpsRows.push({
+          id: shiftId * 2 + 1,
+          target: 'shift',
+          target_id: shiftId,
+          label: `Báo cáo ca ${dateVi} · ${row.store_name}: ${parts.join(', ')}`,
+          member: `shift:${shiftId}:${summary.phone_alerts.length}:${summary.vehicle_alerts.length}`,
+          sortAt: Date.parse(String(row.updated_at)) || 0,
+        });
+      }
+    }
+    gpsRows.sort((a, b) => b.sortAt - a.sortAt || b.id - a.id);
+    result.push(state('gps_alert', gpsRows.map(({ sortAt: _sortAt, ...item }) => item)));
   }
   return result;
 }

@@ -17,7 +17,16 @@ export function ShiftStockProofs({reportId,captures,onRemove}:{
   if (!captures.length) return null;
   return <ul className="shift-inventory-stock">{captures.map(entry=><li key={entry.vehicle.id}>
     <div><strong>{entry.vehicle.license}</strong> · {entry.vehicle.name}</div>
-    <small>{entry.actor_name} · {new Date(entry.captured_at).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})} · Cách cơ sở {entry.distance_m} m</small>
+    <small>
+      {entry.actor_name} · {new Date(entry.captured_at).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})}
+      {entry.distance_m != null ? ` · Cách cơ sở ${entry.distance_m.toLocaleString('vi-VN')} m` : ''}
+    </small>
+    {(entry.gps_alert || entry.vehicle_gps_alert) && (
+      <div style={{color:'#b91c1c',fontSize:12.5,fontWeight:600,marginTop:4}}>
+        {entry.gps_alert && <div>⚠ Điện thoại: {entry.gps_issue || 'Ngoài phạm vi cơ sở'}</div>}
+        {entry.vehicle_gps_alert && <div>⚠ GPS xe: {entry.vehicle_gps_issue || 'Ngoài phạm vi cơ sở'}</div>}
+      </div>
+    )}
     <div className="shift-stock-actions">
       <a href={`/api/auth/shift-reports/${reportId}/media/${entry.plate_photo_id}`} target="_blank" rel="noreferrer">Ảnh biển số</a>
       {entry.vehicle_photo_id&&<a href={`/api/auth/shift-reports/${reportId}/media/${entry.vehicle_photo_id}`} target="_blank" rel="noreferrer">Ảnh toàn xe</a>}
@@ -83,7 +92,7 @@ export function ShiftStockPanel({reportId,revision,captures,writable,active,bloc
       let body:Blob|undefined;
       if (attempt.method==='PUT') {
         headers['Content-Type']='image/jpeg';
-        headers['x-plate-gps']=JSON.stringify(attempt.plate.gps);
+        headers['x-plate-gps']=attempt.plate.gps?JSON.stringify(attempt.plate.gps):'unavailable';
         body=attempt.plate.image;
       } else headers['x-vehicle-id']=String(attempt.vehicleId);
       const saved=await shiftApi<{revision:number;capture?:ShiftStockCapture}>(endpoint,{
@@ -123,7 +132,6 @@ export function ShiftStockPanel({reportId,revision,captures,writable,active,bloc
     {notice && <p role="status">{notice}</p>}
     {check && result && <>
       <p aria-live="polite">Đã khớp {check.expected.length-result.missing.length}/{check.expected.length} xe Lưu kho.</p>
-      {!check.gps_configured && <p className="mg-field-error">Cơ sở chưa cài tọa độ GPS trong mục Chấm công.</p>}
       {!!result.missing.length && <p>Còn thiếu: {result.missing.map(vehicle=>vehicle.license || vehicle.name || `#${vehicle.id}`).join(', ')}</p>}
       {!!result.unexpected.length && <p>Lệch kho: {result.unexpected.map(entry=>entry.vehicle.license).join(', ')}</p>}
     </>}
@@ -131,7 +139,7 @@ export function ShiftStockPanel({reportId,revision,captures,writable,active,bloc
       <p>Chụp một ảnh cận biển số cho mỗi xe. AI đọc biển số và đối chiếu với danh sách Lưu kho của cơ sở.</p>
       <div className="shift-stock-preview">
         {plate&&<PhotoPreview photo={plate} label="Ảnh cận biển số"/>}
-        <button type="button" className="mg-button" disabled={!canChange||!check?.gps_configured||!check.expected.length}
+        <button type="button" className="mg-button" disabled={!canChange||!check?.expected.length}
           onClick={()=>setCamera(true)}><Camera size={16}/>{plate?'Chụp lại ảnh cận biển số':'Chụp ảnh cận biển số'}</button>
       </div>
       <div className="shift-stock-actions">

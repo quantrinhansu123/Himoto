@@ -3,8 +3,8 @@ import {useQuery, useQueryClient} from '@tanstack/react-query';
 import * as ImagePicker from 'expo-image-picker';
 import {usePreventRemove} from 'expo-router';
 import {uuid} from 'expo';
-import {Linking, Platform, Text} from 'react-native';
-import {locateAttendance} from '@/lib/attendance-capture';
+import {Linking, Platform, Text, View} from 'react-native';
+import {locateAttendanceSilent} from '@/lib/attendance-capture';
 import {ApiError} from '@/lib/api';
 import {prepareRecordMediaAsset, type RecordMediaPhoto} from '@/lib/record-media-photo';
 import {useSession} from '@/providers/session';
@@ -16,7 +16,7 @@ import {BillPhoto} from './bill-photo';
 import {ConfirmEdit} from './editor-sheet';
 import {Button, Card, InlineError} from './ui';
 
-type Photo = { photo: RecordMediaPhoto; gps: AttendanceLocation };
+type Photo = { photo: RecordMediaPhoto; gps: AttendanceLocation | null };
 const noCaptures: ShiftStockCapture[] = [];
 
 export function ShiftStockPhotos({report, writable}: {report:ShiftReport; writable:boolean}) {
@@ -72,9 +72,10 @@ export function ShiftStockPhotos({report, writable}: {report:ShiftReport; writab
       mediaTypes:['images'], cameraType:ImagePicker.CameraType.back, allowsEditing:false, quality:1, exif:false,
     });
     if (result.canceled || signal.aborted) return;
-    const gps = await locateAttendance('kiểm kê xe');
-    if (signal.aborted) return;
-    const photo = await prepareRecordMediaAsset(result.assets[0], signal);
+    const [gps, photo] = await Promise.all([
+      locateAttendanceSilent(),
+      prepareRecordMediaAsset(result.assets[0], signal),
+    ]);
     if (signal.aborted) { photo.dispose(); return; }
     file.current?.photo.dispose();
     file.current = {photo,gps};
@@ -130,7 +131,6 @@ export function ShiftStockPhotos({report, writable}: {report:ShiftReport; writab
       {!currentDay && <Text style={{color:theme.muted,lineHeight:22}}>Báo cáo ngày {report.payload.date.split('-').reverse().join('/')}. Ảnh bổ sung được ghi theo thời gian chụp và đối chiếu với kho hiện tại.</Text>}
       {query.isPending && <Text accessibilityLiveRegion="polite" style={{color:theme.muted}}>Đang tải danh sách Lưu kho…</Text>}
       {query.isError && <InlineError message={query.error.message} />}
-      {query.data && !query.data.gps_configured && <InlineError message="Cơ sở chưa cài tọa độ GPS trong mục Chấm công." />}
       {query.data && comparison && <>
         <Text accessibilityLiveRegion="polite" style={{color:theme.text,fontWeight:'700'}}>
           Đã khớp {query.data.expected.length - comparison.missing.length}/{query.data.expected.length} xe Lưu kho
@@ -141,7 +141,7 @@ export function ShiftStockPhotos({report, writable}: {report:ShiftReport; writab
         {!!comparison.unexpected.length && <InlineError message={`Xe đã chụp lệch danh sách kho: ${comparison.unexpected.map(entry=>entry.plate).join(', ')}.`} />}
       </>}
       <Button secondary label="Tải lại danh sách Lưu kho" loading={query.isFetching} disabled={!!busy} onPress={()=>{void query.refetch();}} />
-      {query.data?.gps_configured && query.data.expected.length > 0 && <>
+      {query.data && query.data.expected.length > 0 && <>
         {platePhoto && <BillPhoto source={{uri:platePhoto.photo.uri}} label="Ảnh cận biển số" context="kiểm kê xe" />}
         <Button secondary label={platePhoto?'Chụp lại ảnh cận biển số':'Chụp ảnh cận biển số'}
           loading={busy==='take'} disabled={!!busy} onPress={()=>void run('take',take)} />
@@ -163,7 +163,19 @@ export function ShiftStockPhotos({report, writable}: {report:ShiftReport; writab
     {showSaved&&captures.map(entry=><Button key={entry.vehicle.id} secondary label={`${entry.vehicle.license} · ${entry.vehicle.name}`}
       disabled={!!busy} onPress={()=>setOpenId(id=>id===entry.vehicle.id?null:entry.vehicle.id)} />)}
     {selected && <>
-      <Text style={{color:theme.muted}}>{selected.actor_name} · {new Date(selected.captured_at).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})} · Cách cơ sở {selected.distance_m} m</Text>
+      <Text style={{color:theme.muted}}>
+        {selected.actor_name} · {new Date(selected.captured_at).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})}
+        {selected.distance_m != null ? ` · Cách cơ sở ${selected.distance_m.toLocaleString('vi-VN')} m` : ''}
+      </Text>
+      {(selected.gps_alert || selected.vehicle_gps_alert) && (
+        <View style={{backgroundColor:theme.dangerBackground,borderColor:theme.danger,borderWidth:1,borderRadius:10,padding:10,gap:4}}>
+          <Text style={{color:theme.danger,fontWeight:'800',fontSize:13}}>Cảnh báo GPS (Chỉ quản trị thấy)</Text>
+          {selected.gps_alert && <Text style={{color:theme.danger,fontSize:13}}>• Điện thoại: {selected.gps_issue || 'Ngoài phạm vi cơ sở'}</Text>}
+          {selected.vehicle_gps_alert && <Text style={{color:theme.danger,fontSize:13}}>• GPS xe: {selected.vehicle_gps_issue || 'Ngoài phạm vi cơ sở'}</Text>}
+          {selected.phone_location && <Button size="sm" secondary label="Vị trí chụp trên Google Maps" onPress={()=>void Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${selected.phone_location!.latitude},${selected.phone_location!.longitude}`)}`)} />}
+          {selected.vehicle_gps_lat != null && selected.vehicle_gps_lng != null && <Button size="sm" secondary label="Vị trí GPS xe trên Google Maps" onPress={()=>void Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${selected.vehicle_gps_lat},${selected.vehicle_gps_lng}`)}`)} />}
+        </View>
+      )}
       <BillPhoto source={api!.shiftMediaSource(report.id,selected.plate_photo_id)} label={`Ảnh biển số ${selected.vehicle.license}`} context="kiểm kê xe" />
       {selected.vehicle_photo_id && <BillPhoto source={api!.shiftMediaSource(report.id,selected.vehicle_photo_id)}
         label={`Ảnh toàn xe ${selected.vehicle.license}`} context="kiểm kê xe" />}

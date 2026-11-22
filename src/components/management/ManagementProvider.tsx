@@ -72,6 +72,7 @@ export function ManagementProvider({ children, canPayContracts = false,user=null
   const [fleetStores,setFleetStores]=useState<ManagementRow[]|null>(null);
   const [fleetStoresError,setFleetStoresError]=useState('');
   const [fleetStoresVersion,setFleetStoresVersion]=useState(0);
+  const [fleetStoresLoadedVersion,setFleetStoresLoadedVersion]=useState(-1);
   const error=[resourceError,directoryPage?fleetStoresError:''].filter(Boolean).join(' ');
   const selectedStore=customerPage?customerStore:fleetPage?fleetStore:branchStore;
   const selectStore=useCallback((id:string)=>{
@@ -80,12 +81,12 @@ export function ManagementProvider({ children, canPayContracts = false,user=null
     else setBranchStore(user&&!user.scope_all&&!user.scope_all_read&&user.store_id?String(user.store_id):id);
   },[customerPage,fleetPage,user]);
   useEffect(()=>{
-    if(!directoryPage)return;const controller=new AbortController();setFleetStoresError('');
+    if(!directoryPage||(fleetStores&&fleetStoresLoadedVersion===fleetStoresVersion))return;const controller=new AbortController();setFleetStoresError('');
     void fetch('/api/auth/store-directory',{signal:controller.signal,cache:'no-store'}).then(async response=>{
       const body=await response.json();if(!response.ok||body.status!=='success'||!Array.isArray(body.data))throw Error('Không tải được danh sách cơ sở.');
-      if(!controller.signal.aborted)setFleetStores(body.data.map((row:Record<string,unknown>)=>mapApiRow('stores',row)));
+      if(!controller.signal.aborted){setFleetStores(body.data.map((row:Record<string,unknown>)=>mapApiRow('stores',row)));setFleetStoresLoadedVersion(fleetStoresVersion);}
     }).catch(()=>{if(!controller.signal.aborted)setFleetStoresError('Không tải được danh sách cơ sở. Nhấn Làm mới để thử lại.');});return()=>controller.abort();
-  },[directoryPage,fleetStoresVersion]);
+  },[directoryPage,fleetStores,fleetStoresLoadedVersion,fleetStoresVersion]);
   const visibleDataset=useMemo(()=>dataset&&directoryPage&&fleetStores?{...dataset,stores:fleetStores}:dataset,[dataset,directoryPage,fleetStores]);
   const [notification, notify] = useState('');
 

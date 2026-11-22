@@ -2,7 +2,7 @@ import 'server-only';
 import { createHash, randomUUID } from 'node:crypto';
 import type { NextRequest } from 'next/server';
 import { ownerDatabase } from './himoto-database';
-import { sessionUserById } from './management-session';
+import { sessionUserById, isAdminAccount } from './management-session';
 import { MobileError } from './mobile-session';
 import { mobileBody } from './mobile-writes';
 import { mobilePushConfigured, sendMobilePush } from './mobile-push-fcm';
@@ -108,6 +108,70 @@ export async function dispatchMobilePush(budgetMs = 45000) {
     } catch {
       // No exception text can include an FCM token, credential or provider body.
       await ownerDatabase.query(`UPDATE himoto.management_mobile_push_devices SET checked_at=now(),lease_until=NULL,lease_id=NULL WHERE token_hash=$1 AND lease_id=$2`, [device.token_hash, lease]).catch(() => {});
+    }
+  }
+  await ownerDatabase.query('UPDATE himoto.management_mobile_push_devices SET lease_id=NULL,lease_until=NULL WHERE lease_id=$1', [lease]);
+  return {configured: true, checked, sent};
+}
+
+/** Immediate silent GPS alert push exclusively for Admin devices (bypasses 5-minute poll). */
+export async function dispatchAdminGpsPush(budgetMs = 15000) {
+  if (!mobilePushConfigured()) return {configured: false, checked: 0, sent: 0};
+  const deadline = Date.now() + budgetMs, lease = randomUUID();
+  const candidates = (await ownerDatabase.query(`WITH candidates AS (
+    SELECT token_hash FROM himoto.management_mobile_push_devices WHERE enabled
+      AND (lease_until IS NULL OR lease_until<now()) ORDER BY updated_at DESC LIMIT 10 FOR UPDATE SKIP LOCKED)
+    UPDATE himoto.management_mobile_push_devices d SET lease_id=$1,lease_until=now()+interval '1 minute'
+    FROM candidates c WHERE d.token_hash=c.token_hash RETURNING d.*`, [lease])).rows;
+  let checked = 0, sent = 0;
+  for (const device of candidates) {
+    if (Date.now() > deadline - 4000) break;
+    try {
+      const session = (await ownerDatabase.query(`SELECT user_id,password_version FROM himoto.management_mobile_sessions s
+        WHERE s.id=$1 AND s.user_id=$2 AND s.revoked_at IS NULL AND ${PUSH_SESSION_ACTIVE} AND s.token_hash IS NOT NULL`, [device.session_id, device.user_id])).rows[0];
+      const user = session && await sessionUserById(Number(session.user_id), Number(session.password_version), ownerDatabase);
+      if (!user) { await ownerDatabase.query('UPDATE himoto.management_mobile_push_devices SET enabled=false,lease_id=NULL,lease_until=NULL WHERE token_hash=$1 AND lease_id=$2', [device.token_hash, lease]); continue; }
+      if (!isAdminAccount(user)) {
+        await ownerDatabase.query('UPDATE himoto.management_mobile_push_devices SET lease_id=NULL,lease_until=NULL WHERE token_hash=$1 AND lease_id=$2', [device.token_hash, lease]);
+        continue;
+      }
+      const current = await withNotificationSnapshot(user, db => readNotificationState(db, user, ['gps_alert']));
+      const group = current.find(g => g.kind === 'gps_alert');
+      const next: Record<string, string> = { ...(device.state || {}) };
+      if (group) {
+        const policy = notificationPushPolicy(group, device.state || {});
+        next[group.kind] = group.fingerprint;
+        next[policy.memberKey] = policy.members;
+        if (group.count > 0 && device.state?.[group.kind] !== group.fingerprint && policy.added) {
+          const still = await ownerDatabase.query(`SELECT 1 FROM himoto.management_mobile_push_devices d
+            JOIN himoto.management_mobile_sessions s ON s.id=d.session_id WHERE d.token_hash=$1 AND d.lease_id=$2 AND d.enabled
+            AND s.revoked_at IS NULL AND ${PUSH_SESSION_ACTIVE}`, [device.token_hash, lease]);
+          if (still.rowCount) {
+            const id = randomUUID();
+            const claim = await ownerDatabase.query(`WITH claimed AS (
+              UPDATE himoto.management_mobile_push_devices SET state=jsonb_set(state,ARRAY[$3::text],to_jsonb($4::text))
+              WHERE token_hash=$2 AND lease_id=$5 AND enabled RETURNING token_hash)
+              INSERT INTO himoto.management_mobile_push_deliveries(id,token_hash,kind,fingerprint,outcome)
+              SELECT $1,token_hash,$3,$4,'sending' FROM claimed RETURNING id`, [id, device.token_hash, group.kind, group.fingerprint, lease]);
+            if (claim.rowCount) {
+              const outcome = await sendMobilePush(device.token, group.kind);
+              await ownerDatabase.query('UPDATE himoto.management_mobile_push_deliveries SET outcome=$2,completed_at=now() WHERE id=$1', [id, outcome === 'invalid' ? 'failed' : outcome]);
+              if (outcome === 'invalid') {
+                await ownerDatabase.query('UPDATE himoto.management_mobile_push_devices SET enabled=false,lease_id=NULL,lease_until=NULL WHERE token_hash=$1 AND lease_id=$2', [device.token_hash, lease]);
+                continue;
+              }
+              if (outcome === 'sent') sent++;
+              if (outcome === 'failed') { delete next[group.kind]; next[policy.memberKey] = device.state?.[policy.memberKey] || '[]'; }
+              else next[policy.sentKey] = String(Date.now());
+            }
+          }
+        }
+      }
+      await ownerDatabase.query(`UPDATE himoto.management_mobile_push_devices SET state=$3::jsonb,lease_until=NULL,lease_id=NULL
+        WHERE token_hash=$1 AND lease_id=$2`, [device.token_hash, lease, JSON.stringify(next)]);
+      checked++;
+    } catch {
+      await ownerDatabase.query(`UPDATE himoto.management_mobile_push_devices SET lease_until=NULL,lease_id=NULL WHERE token_hash=$1 AND lease_id=$2`, [device.token_hash, lease]).catch(() => {});
     }
   }
   await ownerDatabase.query('UPDATE himoto.management_mobile_push_devices SET lease_id=NULL,lease_until=NULL WHERE lease_id=$1', [lease]);

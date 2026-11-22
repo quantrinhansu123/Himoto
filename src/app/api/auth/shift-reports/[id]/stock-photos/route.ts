@@ -1,5 +1,7 @@
 import {NextRequest, NextResponse} from 'next/server';
 import {withAccessRequest, withAccessUser} from '@/lib/server/access-request';
+import {dataAccess} from '@/lib/server/access-context';
+import {isAdminAccount} from '@/lib/management/permissions';
 import {himotoPool} from '@/lib/server/himoto-database';
 import {readShiftStockCheck, mobileShiftStockPhotos as writeShiftStockPhotos} from '@/lib/server/shift-stock-photos';
 import {ShiftRequestError} from '@/lib/server/shift-report-requests';
@@ -18,7 +20,7 @@ export const GET = withAccessRequest(async (request:NextRequest, {params}:Contex
   const client = await himotoPool.connect();
   try {
     await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
-    const data = await readShiftStockCheck(client,id);
+    const data = await readShiftStockCheck(client,id,undefined,isAdminAccount(dataAccess.getStore()));
     await client.query('COMMIT');
     return NextResponse.json({data},{headers:{'Cache-Control':'private, no-store'}});
   } catch (error) {

@@ -9,6 +9,7 @@ import { ShiftEvidence } from "@/components/shift-evidence";
 import {ShiftAuditExport} from '@/components/shift-audit-export';
 import {ShiftStockPhotos} from '@/components/shift-stock-photos';
 import { ShiftReopen } from "@/components/shift-reopen";
+import { ShiftGpsAlerts } from "@/components/shift-gps-alerts";
 function Report({id,evidence}:{id:string;evidence?:"batteries"|"door"}){
   const{api,session}=useSession(),theme=useTheme(),query=useQuery({queryKey:["shift",session!.user.id,id],queryFn:({signal})=>api!.shift(id,signal),enabled:session!.user.permissions.includes("contracts.read"),retry:false});
   if(!session!.user.permissions.includes("contracts.read"))return <StateView title="Không có quyền xem báo cáo ca" />;
@@ -16,6 +17,7 @@ function Report({id,evidence}:{id:string;evidence?:"batteries"|"door"}){
   const writable=(session!.user.allStores||session!.user.storeId===report.payload.store_id)&&session!.user.permissions.some(p=>p==="contracts.draft"||p==="finance.write");
   const proof=<ShiftEvidence key={`${report.id}:${report.revision}:${report.audit?.revision||0}:${evidence??""}`} report={report} initialCategory={evidence} onChanged={()=>{void query.refetch();}} />;
   return <ScrollView contentContainerStyle={{padding:20,paddingBottom:40,gap:18,maxWidth:760,width:"100%",alignSelf:"center"}} refreshControl={<RefreshControl refreshing={query.isRefetching} tintColor={theme.primary} onRefresh={()=>{void query.refetch();}} />}>
+    <ShiftGpsAlerts alerts={report.gps_alerts} />
     {evidence&&proof}
     {report.status==="draft"&&writable&&<Button label="Sửa thông tin / Chốt báo cáo" onPress={()=>router.push({pathname:"/shift-editor/[id]",params:{id}})} />}
     {(report.payload.report_type??"end_shift")==="end_shift"&&<ShiftReopen report={report}/>}

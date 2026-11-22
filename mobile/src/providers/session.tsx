@@ -238,7 +238,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
     if (Platform.OS === "web") return;
     const subscription = AppState.addEventListener("change", (state) => {
       focusManager.setFocused(state === "active");
-      if (state === "active" && currentSession.current)
+      if (state === "active" && currentSession.current && (!offlineStatus.get().connected || Date.now() - lastVerified.current >= 30_000))
         void restoreRef.current(true);
     });
     return () => subscription.remove();

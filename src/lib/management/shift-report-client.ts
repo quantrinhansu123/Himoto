@@ -1,5 +1,6 @@
 import { prepareRecordPhoto,uploadRecordMedia,type MediaUploadReceipt } from './record-photos';
 import type { ShiftMedia } from './shift-audits';
+import type { BrowserLocation } from './browser-geolocation';
 export class UnconfirmedSaveError extends Error {}
 export class ShiftApiError extends Error {
   constructor(message:string,public code?:string){super(message);}
@@ -12,8 +13,8 @@ export async function shiftApi<T>(url:string,options?:RequestInit):Promise<T>{
   if(!response.ok||!result?.data)throw new ShiftApiError(result?.message||'Không xử lý được báo cáo.',result?.code);
   return result.data;
 }
-export type PendingShiftFile={category:string;file:File};
-export type ShiftUpload={slot:string;file:File;key:string;prepared?:File;cloud?:MediaUploadReceipt;saved:boolean};
+export type PendingShiftFile={category:string;file:File;gps?:BrowserLocation|null};
+export type ShiftUpload={slot:string;file:File;key:string;gps?:BrowserLocation|null;prepared?:File;cloud?:MediaUploadReceipt;saved:boolean};
 export async function uploadShiftEvidence(id:number,revision:number,stage:'pgd'|'audit',item:ShiftUpload):Promise<{revision:number;media:ShiftMedia}>{
   const video=item.file.type.startsWith('video/');
   if(video){
@@ -22,7 +23,8 @@ export async function uploadShiftEvidence(id:number,revision:number,stage:'pgd'|
   }else item.prepared??=await prepareRecordPhoto(item.file);
   const url=`/api/auth/shift-reports/${id}/media/${item.key}`;
   const data=await shiftApi<{revision:number}>(url,{method:'PUT',headers:{'Content-Type':video?'application/json':item.prepared!.type,
-    'x-shift-request-id':item.key,'x-report-revision':String(revision),'x-shift-category':item.slot,'x-shift-stage':stage,'x-file-name':encodeURIComponent(item.file.name)},
+    'x-shift-request-id':item.key,'x-report-revision':String(revision),'x-shift-category':item.slot,'x-shift-stage':stage,'x-file-name':encodeURIComponent(item.file.name),
+    ...(item.gps!==undefined?{'x-capture-gps':item.gps?JSON.stringify(item.gps):'unavailable'}:{})},
     body:video?JSON.stringify(item.cloud):item.prepared});
   return {...data,media:{id:item.key,category:item.slot,stage,mime_type:video?'video/mp4':item.prepared!.type,url,filename:item.file.name}};
 }

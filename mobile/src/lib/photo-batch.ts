@@ -1,5 +1,6 @@
 import type {RecordMediaPhoto} from './record-media-photo';
-export interface BatchPhoto {id:string;slot:string;width:number;height:number;size:number;key:string;attempt:unknown|null;state:'queued'|'saved';error:string;recordId?:number}
+import type {AttendanceLocation} from '../../../shared/mobile-support';
+export interface BatchPhoto {id:string;slot:string;width:number;height:number;size:number;key:string;attempt:unknown|null;state:'queued'|'saved';error:string;recordId?:number;gps?:AttendanceLocation|null}
 export interface PhotoBatchScope {origin:string;userId:number;storeId:number|null;allStores:boolean}
 export const photoBatchScopeKey=(scope:PhotoBatchScope,identity:string)=>JSON.stringify([scope,identity]);
 export interface PhotoBatchStore {

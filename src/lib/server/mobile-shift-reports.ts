@@ -2,7 +2,8 @@ import "server-only";
 import type { PoolClient } from "pg";
 import type { NextRequest } from "next/server";
 import type { SessionUser } from "./management-session";
-import { hasPermission } from "@/lib/management/permissions";
+import { hasPermission, isAdminAccount } from "@/lib/management/permissions";
+import { scheduleAdminGpsPush } from "./gps-audit";
 import { canMobileCrossStoreRead,withMobileData,withMobileReadData } from "./mobile-context";
 import { himotoPool } from "./himoto-database";
 import { MobileError } from "./mobile-session";
@@ -36,10 +37,10 @@ async function transaction<T>(user:SessionUser,read:boolean,run:(client:PoolClie
   }catch(error){await client.query("ROLLBACK").catch(()=>{});if(error instanceof ShiftRequestError)throw new MobileError(error.message,error.status,error.code);if(error instanceof ShiftAutofillError)throw new MobileError(error.message,error.status);if((error as {code?:string}).code==='23505')throw new MobileError("PGD đã có báo cáo cùng loại trong ngày này.",409,"SHIFT_REPORT_EXISTS");throw error;}finally{client.release();}});
 }
 function report(row:ShiftReport):ShiftReport {return {...row,updated_at:new Date(row.updated_at).toISOString(),media:row.media?.map(m=>({...m,url:`/api/mobile/v1/shift-reports/${row.id}/media/${m.id}`}))};}
-async function current(client:PoolClient,id:number) {const row=(await listShiftReports(client,null,null,id))[0];if(!row)throw new MobileError("Báo cáo không tồn tại hoặc ngoài phạm vi truy cập.",404,"NOT_FOUND");return report(row);}
+async function current(client:PoolClient,id:number,isAdmin=false) {const row=(await listShiftReports(client,null,null,id,false,null,isAdmin))[0];if(!row)throw new MobileError("Báo cáo không tồn tại hoặc ngoài phạm vi truy cập.",404,"NOT_FOUND");return report(row);}
 export function readMobileShiftOptions(user:SessionUser){return transaction(user,true,async client=>({canWrite:hasPermission(user,"contracts.draft")||hasPermission(user,"finance.write"),canReview:hasPermission(user,"shift.review"),stores:(await client.query("SELECT id,store_name,kind FROM himoto.stores ORDER BY store_name,id")).rows.map(s=>({id:Number(s.id),name:String(s.store_name||""),kind:String(s.kind||"")}))}),true);}
-export function readMobileShifts(user:SessionUser,params:URLSearchParams){fields(params,["store_id","date","all","report_type"]);if(params.has('all')&&params.get('all')!=='1')throw new MobileError('Bộ lọc báo cáo ca không hợp lệ.');return transaction(user,true,async client=>({rows:(await listShiftReports(client,params.get("store_id"),params.get("date"),undefined,params.get('all')==='1',params.get("report_type"))).map(report)}),true);}
-export function readMobileShift(user:SessionUser,rawId:string){const id=mobileShiftId(rawId);return transaction(user,true,client=>current(client,id),true);}
+export function readMobileShifts(user:SessionUser,params:URLSearchParams){fields(params,["store_id","date","all","report_type"]);if(params.has('all')&&params.get('all')!=='1')throw new MobileError('Bộ lọc báo cáo ca không hợp lệ.');const admin=isAdminAccount(user);return transaction(user,true,async client=>({rows:(await listShiftReports(client,params.get("store_id"),params.get("date"),undefined,params.get('all')==='1',params.get("report_type"),admin)).map(report)}),true);}
+export function readMobileShift(user:SessionUser,rawId:string){const id=mobileShiftId(rawId);const admin=isAdminAccount(user);return transaction(user,true,client=>current(client,id,admin),true);}
 export function readMobileShiftAutofill(user:SessionUser,params:URLSearchParams){fields(params,["store_id","date","section"]);const input=parseShiftAutofill(params);if(!canMobileCrossStoreRead(user)&&input.store_id!==user.store_id)throw new MobileError("PGD ngoài phạm vi được phân công.",403,"FORBIDDEN");return transaction(user,true,client=>readShiftAutofill(client,input),true);}
 export async function saveMobileShift(user:SessionUser,request:NextRequest){
   permission(user,"write");const key=mobileRequestKey(request.headers.get("Idempotency-Key")),body=await mobileBody(request,65536);
@@ -47,6 +48,7 @@ export async function saveMobileShift(user:SessionUser,request:NextRequest){
   let input;try{input=parseShiftInput(body.payload);}catch(error){throw new MobileError((error as Error).message);}
   const raw={...body,payload:input} as unknown as MobileShiftSave;const operation=raw.id==null?"shift.create":`shift.update:${mobileShiftId(String(raw.id))}`;
   const receipt=await transaction(user,false,client=>idempotentMobileWrite(client,user.id,key,operation,raw,async()=>{const saved=await saveShiftReport(client,{...user,store_id:user.store_id??null,scope_all:user.scope_all===true},raw,key);return{id:Number(saved.id),revision:String(saved.revision)};}));
+  if (raw.status === "submitted" && !receipt.replayed) scheduleAdminGpsPush();
   return {key,operation,receipt,deliveryKey:raw.status==="submitted"?`shift:${receipt.id}`:null};
 }
 export function readMobileShiftSnapshot(user:SessionUser,id:string){mobileShiftId(id);return transaction(user,true,client=>readShiftAuditSnapshot(client,id),true);}
@@ -78,4 +80,4 @@ export async function saveMobileShiftAudit(user:SessionUser,id:string,request:Ne
   if(Object.keys(raw).some(k=>!["input","revision","report_revision","status","fingerprint"].includes(k)))throw new MobileError("Thông tin đối soát không hợp lệ.");
   return transaction(user,false,client=>idempotentMobileWrite(client,user.id,key,`shift.audit:${id}`,raw,async()=>{const saved=await saveShiftAudit(client,{...user,store_id:user.store_id??null,scope_all:user.scope_all===true},id,raw as unknown as MobileAuditSave,key);return{id:Number(saved.id),revision:String(saved.revision)};}));
 }
-export function readMobileShiftResult(user:SessionUser,key:string):Promise<MobileShiftResult>{mobileRequestKey(key);return transaction(user,true,async client=>{const row=(await client.query("SELECT operation,resource_id,resource_revision FROM himoto.management_mobile_requests WHERE user_id=$1 AND request_id=$2 AND operation ~ '^shift[.](create|(update|audit|media):[1-9][0-9]*)$'",[user.id,key])).rows[0];if(!row?.resource_id)throw new MobileError("Chưa có xác nhận báo cáo ca. Giữ mã để đối chiếu.",404,"NOT_FOUND");return {key,operation:String(row.operation),receipt:{id:Number(row.resource_id),revision:String(row.resource_revision)},current:await current(client,Number(row.resource_id))};});}
+export function readMobileShiftResult(user:SessionUser,key:string):Promise<MobileShiftResult>{mobileRequestKey(key);const admin=isAdminAccount(user);return transaction(user,true,async client=>{const row=(await client.query("SELECT operation,resource_id,resource_revision FROM himoto.management_mobile_requests WHERE user_id=$1 AND request_id=$2 AND operation ~ '^shift[.](create|(update|audit|media):[1-9][0-9]*)$'",[user.id,key])).rows[0];if(!row?.resource_id)throw new MobileError("Chưa có xác nhận báo cáo ca. Giữ mã để đối chiếu.",404,"NOT_FOUND");return {key,operation:String(row.operation),receipt:{id:Number(row.resource_id),revision:String(row.resource_revision)},current:await current(client,Number(row.resource_id),admin)};});}

@@ -15,6 +15,7 @@ import {streamMobileVideo} from './mobile-video-read';
 import {MobileError} from './mobile-session';
 import {cloudflyPhotosEnabled,storeObjectPhoto,objectMediaUrl,readObjectMedia} from './object-media';
 import {SHIFT_STOCK_CATEGORY} from '../../../shared/shift-stock-check';
+import { evaluatePhoneGps, readBranchCoords, scheduleAdminGpsPush, type MediaGpsAuditEntry } from './gps-audit';
 type Context={params:Promise<{id:string;mediaId:string}>};
 export async function handleShiftMedia(request:NextRequest,context:Context,mobile=false){
   const {id,mediaId}=await context.params,actor=dataAccess.getStore()!;let client;
@@ -66,10 +67,17 @@ export async function handleShiftMedia(request:NextRequest,context:Context,mobil
       if(report.status!=='submitted'||audit?.status==='confirmed'||report.reopen_request)throw new RecordPhotoError('Cần báo cáo PGD đã chốt, chưa mở lại và chưa được KTNB xác nhận để sửa minh chứng.',409);
     }
     if(report.revision!==revision)throw new RecordPhotoError('Báo cáo đã thay đổi. Tải lại trước khi sửa minh chứng.',409);
+    let mediaGpsAlert = false;
+    let updated: { revision: number };
     if(request.method==='DELETE'){
       if(!existing||existing.stage!==stage)throw new RecordPhotoError('Không tìm thấy minh chứng cần xóa.',404);
       if(existing.category===SHIFT_STOCK_CATEGORY)throw new RecordPhotoError('Mở mục Kiểm kê xe bằng ảnh để sửa ảnh đã ghi nhận.',409);
       await client.query('DELETE FROM himoto.management_shift_media WHERE id=$1 AND report_id=$2',[mediaId,id]);
+      updated=(await client.query(`UPDATE himoto.management_shift_reports
+        SET payload = CASE WHEN payload ? 'media_gps' THEN jsonb_set(payload,'{media_gps}',
+          COALESCE((SELECT jsonb_agg(item) FROM jsonb_array_elements(payload->'media_gps') item WHERE item->>'media_id'<>$2),'[]'::jsonb),true)
+          ELSE payload END,
+          revision=revision+1,updated_at=now() WHERE id=$1 RETURNING revision`,[id,mediaId])).rows[0];
     }else{
       if(existing)throw new RecordPhotoError('Minh chứng này đã được lưu. Tải lại báo cáo để kiểm tra.',409);
       if(cloud){asset=isBrowserVideoReceipt(cloud)?{cloud_name:'',mime_type:'video/mp4',...await readyBrowserVideo(cloud,actor.id,180)}:await shiftCloudAsset(cloud);mime=asset.mime_type;}
@@ -78,9 +86,34 @@ export async function handleShiftMedia(request:NextRequest,context:Context,mobil
       const object=storedPhoto||(asset&&'object_key' in asset?asset:null);
       await client.query(`INSERT INTO himoto.management_shift_media(id,report_id,store_id,category,stage,filename,mime_type,data,cloudinary_public_id,cloudinary_cloud_name,cloudinary_version,created_by,object_bucket,object_key,object_etag,storage_sha256,storage_bytes)
         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,[mediaId,id,report.store_id,category,stage,filename,mime,storedPhoto?null:bytes??null,object?null:cloud&&!isBrowserVideoReceipt(cloud)?cloud.public_id:null,object?null:asset?.cloud_name??null,object?null:cloud&&!isBrowserVideoReceipt(cloud)?cloud.version:null,actor.id,object?.object_bucket??null,object?.object_key??null,object?.object_etag??null,storedPhoto?.storage_sha256??null,storedPhoto?.storage_bytes??null]);
+      const captureGpsRaw = request.headers.get('x-capture-gps');
+      if (captureGpsRaw !== null) {
+        const branch = await readBranchCoords(client, Number(report.store_id));
+        const evaluated = evaluatePhoneGps(captureGpsRaw, branch);
+        const actorName = (await client.query<{ name: string | null }>('SELECT name FROM himoto.users WHERE id=$1', [actor.id])).rows[0]?.name || 'Nhân sự';
+        mediaGpsAlert = evaluated.alert;
+        const entry: MediaGpsAuditEntry = {
+          media_id: mediaId,
+          stage: stage as 'pgd' | 'audit',
+          category: category!,
+          filename,
+          captured_at: new Date().toISOString(),
+          actor_name: actorName,
+          distance_m: evaluated.distance_m,
+          gps_alert: evaluated.alert,
+          gps_issue: evaluated.issue,
+          latitude: evaluated.location?.latitude ?? null,
+          longitude: evaluated.location?.longitude ?? null,
+          accuracy: evaluated.location?.accuracy ?? null,
+        };
+        updated=(await client.query(`UPDATE himoto.management_shift_reports
+          SET payload=jsonb_set(payload,'{media_gps}',COALESCE(payload->'media_gps','[]'::jsonb) || $2::jsonb,true),
+              revision=revision+1,updated_at=now() WHERE id=$1 RETURNING revision`,[id,JSON.stringify([entry])])).rows[0];
+      } else {
+        updated=(await client.query('UPDATE himoto.management_shift_reports SET revision=revision+1,updated_at=now() WHERE id=$1 RETURNING revision',[id])).rows[0];
+      }
     }
-    const updated=(await client.query('UPDATE himoto.management_shift_reports SET revision=revision+1,updated_at=now() WHERE id=$1 RETURNING revision',[id])).rows[0];
     if(mobile)await finishShiftMobileReceipt(client,actor.id,key!,Number(id),updated.revision);
-    await writeShiftReceipt(client,key,actor.id,Number(report.store_id),hash,updated);await client.query('COMMIT');client.release();client=undefined;if(cloud&&!isBrowserVideoReceipt(cloud))await cleanupConvertedVideo(cloud);return NextResponse.json({data:updated});
+    await writeShiftReceipt(client,key,actor.id,Number(report.store_id),hash,updated);await client.query('COMMIT');client.release();client=undefined;if(mediaGpsAlert)scheduleAdminGpsPush();if(cloud&&!isBrowserVideoReceipt(cloud))await cleanupConvertedVideo(cloud);return NextResponse.json({data:updated});
   }catch(error){if(client)await client.query('ROLLBACK').catch(()=>{});if(mobile&&error instanceof MobileError)throw error;const known=error instanceof RecordPhotoError||error instanceof ShiftRequestError;return known?NextResponse.json({message:error.message},{status:error.status}):failureResponse('Không xử lý được minh chứng. Giữ tệp và thử lại.',error);}finally{client?.release();}
 }

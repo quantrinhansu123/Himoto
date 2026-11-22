@@ -19,7 +19,7 @@ async function main(){
   const snapshot=()=>({captured_at:'2026-11-03T12:00:00Z',date:'2026-11-03',fingerprint:createHash('sha256').update(String(snapshotVersion)).digest('hex'),values:{...values},assets_total:13,revenue:{rental:0,renewal:0,late:0,early:0,revenue:0},unclassified_count:0,transfers:[],inventory_note:'Synthetic inventory snapshot',accounts_note:'Synthetic account snapshot'});
   snap.readShiftSnapshot=async()=>{if(snapshotFails)throw Error('Synthetic analytics unavailable');return snapshot();};ownership.readOwnershipReport=async()=>({...dto.blankOwnershipReport(),app:Object.fromEntries(Object.keys(dto.blankOwnershipReport().app).map(k=>[k,123])),sources:['Fresh source QA']});
   const query=async(text,params)=>{const r=await sql.query(text,params);return{rows:r.rows,rowCount:r.rows.length||r.affectedRows||0};};
-  Object.defineProperty(db.himotoPool,'query',{configurable:true,value:query});Object.defineProperty(db.himotoPool,'connect',{configurable:true,value:async()=>{const a=dataAccess.getStore();assert.equal(a.id,7);assert.equal(a.store_id,23);assert.equal(a.scope_all,false);assert.equal(a.operation,'');return{query,release(){}};}});
+  Object.defineProperty(db.himotoPool,'query',{configurable:true,value:query});Object.defineProperty(db.himotoPool,'connect',{configurable:true,value:async()=>{const a=dataAccess.getStore();assert.equal(a.id,7);assert.equal(a.store_id,23);assert.equal(a.scope_all,a.access_role==='admin');assert.equal(a.operation,'');return{query,release(){}};}});
   const req=(key,body)=>new NextRequest('https://qa.invalid/api/mobile/v1/shift-reports',{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':key},body:JSON.stringify(body)});
   const base={store_id:23,date:'2026-11-03',staff:'QA Ca tối',vehicles:10,daily_vehicles:1,monthly_vehicles:2,other_vehicles:0,batteries:2,charged:1,rented_batteries:3,transfers:0,cash:0,personal:0,company:0,electricity_off:false,notes:'QA ONLY',summary:dto.emptyShiftSummary()};
   const save=(body,key=randomUUID(),user=actor)=>api.saveMobileShift(user,req(key,body));
@@ -106,25 +106,32 @@ async function main(){
       else singleScans++;
       return {fields:{license:bytes[3]===0?'':`29 A1 0000${bytes[3]}`}};
     };
+    await sql.exec(`CREATE TABLE himoto.gps_devices(id bigserial PRIMARY KEY,vehicle_id bigint,management_status text,provider_status text,last_latitude numeric,last_longitude numeric,position_recorded_at timestamptz,sync_received_at timestamptz);
+      INSERT INTO himoto.gps_devices(vehicle_id,management_status,provider_status,last_latitude,last_longitude,position_recorded_at,sync_received_at) VALUES
+        (1,'online','online',21.0201,105.8201,now(),now()),
+        (2,'online','online',21.0500,105.8500,now(),now());`);
+    const adminActor={...actor,role:'admin',access_role:'admin',scope_all:true};
     const initialStock=await inspect();
     assert.deepEqual(initialStock.expected.map(row=>row.id),[1,2]);assert(initialStock.gps_configured);
     await assert.rejects(closeReport(1,{...currentPayload,stock_captures:[{vehicle:{id:1}}]}),error=>error.code==='SHIFT_STOCK_INCOMPLETE');
-    await assert.rejects(upload(1,randomUUID(),1,{...coordinates,latitude:21.1}),error=>error.status===422);
-    await assert.rejects(upload(1,randomUUID(),1,{...coordinates,accuracy:101}),error=>error.status===422);
-    await assert.rejects(upload(1,randomUUID(),1,{...coordinates,timestamp:Date.now()-360000}),error=>error.status===400);
-    assert.equal(scans,0);
+    // Silent GPS policy: out-of-range (>200m), high-accuracy, and stale GPS MUST NOT block staff or leak alerts to staff.
+    // Unreadable / non-matching plates still reject with 422 before writing.
     await assert.rejects(upload(1,randomUUID(),0),error=>error.status===422);
     await assert.rejects(upload(1,randomUUID(),3),error=>error.status===422);
     await query("INSERT INTO himoto.vehicles VALUES(7,'QA xe trùng','29A1-000.01',23,23,'ready',NULL)");
     await assert.rejects(upload(1,randomUUID(),1),error=>error.status===422&&error.message.includes('trùng'));
     await query('DELETE FROM himoto.vehicles WHERE id=7');
-    const key=randomUUID(),captured=await upload(1,key);
+    const key=randomUUID(),captured=await upload(1,key,1,{...coordinates,latitude:21.1});
     assert.equal(captured.revision,2);assert.equal(captured.capture.vehicle.id,1);
-    const beforeReplay=scans;assert.deepEqual(await upload(1,key),captured);assert.equal(scans,beforeReplay);
+    assert.equal(captured.capture.distance_m,undefined);assert.equal(captured.capture.gps_alert,undefined);
+    const beforeReplay=scans;assert.deepEqual(await upload(1,key,1,{...coordinates,latitude:21.1}),captured);assert.equal(scans,beforeReplay);
     await assert.rejects(upload(1,randomUUID(),2),error=>error.status===409);
     await assert.rejects(upload(2,randomUUID(),1),error=>error.status===422&&error.message.includes('đã có'));
     assert.equal((await query('SELECT count(*)::int AS n FROM himoto.management_shift_media WHERE report_id=$1',[reportId])).rows[0].n,2);
     assert.equal((await inspect()).captures.length,1);
+    assert.equal((await inspect()).captures[0].distance_m,undefined);
+    const adminStock=await stock.mobileShiftStockPhotos(new NextRequest(stockUrl),adminActor,reportId);
+    assert.equal(adminStock.captures[0].gps_alert,true);assert(adminStock.captures[0].distance_m>200);
     const afterWebEdit=await webSave({id:reportId,revision:2,payload:{...currentPayload,notes:'Edited without photos'},status:'draft'});
     assert.equal(afterWebEdit.revision,3);assert.equal((await inspect()).captures.length,1);
     await assert.rejects(closeReport(3),error=>error.code==='SHIFT_STOCK_INCOMPLETE');
@@ -141,18 +148,21 @@ async function main(){
     assert.equal((await stockWeb.PUT(makeWebUpload(randomUUID()),webContext)).status,403);
     sessions.userFromSession=async()=>actor;
     assert.equal((await stockWeb.PUT(makeWebUpload(randomUUID(),'https://other.invalid'),webContext)).status,403);
-    await assert.rejects(stock.mobileShiftStockPhotos(makePlateUpload(stockUrl,randomUUID(),'https://qa.invalid',{...coordinates,latitude:21.1}),actor,reportId),error=>error.status===422);
-    assert.equal(singleScans,0);
     await assert.rejects(stock.mobileShiftStockPhotos(makePlateUpload(stockUrl,randomUUID(),'https://qa.invalid',coordinates,0),actor,reportId),error=>error.status===422);
     const webKey=randomUUID();
     const webResponse=await stockWeb.PUT(makeWebUpload(webKey),webContext);
     assert.equal(webResponse.status,200);
     const {data:second}=await webResponse.json();assert.equal(second.revision,4);
     assert.equal(second.capture.vehicle_photo_id,null);
+    assert.equal(second.capture.distance_m,undefined);assert.equal(second.capture.vehicle_gps_alert,undefined);
     assert.equal(singleScans,2);
     assert.deepEqual(await stock.mobileShiftStockPhotos(makePlateUpload(stockUrl,webKey),actor,reportId),second);
     assert.equal(singleScans,2);
     assert.equal((await inspect()).captures.length,2);
+    const adminReportDraft=await api.readMobileShift(adminActor,String(reportId));
+    assert(adminReportDraft.gps_alerts && adminReportDraft.gps_alerts.phone_alerts.length===1 && adminReportDraft.gps_alerts.vehicle_alerts.some(v=>v.vehicle_id===2));
+    const staffReportDraft=await api.readMobileShift(actor,String(reportId));
+    assert.equal(staffReportDraft.gps_alerts,undefined);assert(staffReportDraft.stock_captures.every(c=>c.distance_m===undefined&&c.gps_alert===undefined&&c.vehicle_gps_alert===undefined));
     assert.equal((await query('SELECT count(*)::int AS n FROM himoto.management_shift_media WHERE report_id=$1',[reportId])).rows[0].n,3);
     const mixed=await api.readMobileShift(actor,String(reportId));assert(dto.isShiftReport(mixed));
     assert.equal(mixed.payload.vehicles,2);

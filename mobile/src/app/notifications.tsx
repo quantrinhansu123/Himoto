@@ -3,11 +3,11 @@ import { useState } from 'react';
 import { ScrollView, Text, View, Pressable, RefreshControl, Linking } from 'react-native';
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { Bell, ChevronRight } from 'lucide-react-native';
+import { AlertTriangle, Bell, ChevronRight } from 'lucide-react-native';
 import { NOTIFICATION_LABELS } from '../../../shared/mobile-notifications';
 import { useSession } from '@/providers/session';
 import { useTheme } from '@/theme';
-import { Button, Card, InlineError, StateView } from '@/components/ui';
+import { Button, Card, InlineError, SkeletonList, StateView, StatusBadge } from '@/components/ui';
 import { enableNativePush, nativePushConfigured, notificationsModule } from '@/lib/push-notifications';
 
 export default function Notifications() {
@@ -38,7 +38,25 @@ export default function Notifications() {
       {query.data && <Text style={{color:theme.muted,fontSize:12}}>Cập nhật {new Date(query.data.observedAt).toLocaleTimeString('vi-VN')}</Text>}
       {session?.user.permissions.includes('contracts.read') && <Button secondary label="Tiền về qua SePay" onPress={() => router.push('/payment-events')} />}
     </Card>
-    {query.isPending ? <StateView title="Đang tải công việc" loading/> : query.error ? <InlineError message={query.error.message}/> : query.data?.groups.length ? query.data.groups.map(group=><Pressable key={group.kind} accessibilityRole="button" accessibilityLabel={`${NOTIFICATION_LABELS[group.kind]}: ${group.count}`} onPress={()=>router.push({pathname:'/notification-list/[kind]',params:{kind:group.kind}})}><Card style={{flexDirection:'row',alignItems:'center',gap:12}}><View style={{flex:1,gap:6}}><Text style={{color:theme.text,fontSize:17,fontWeight:'600'}}>{NOTIFICATION_LABELS[group.kind]}</Text><Text style={{color:theme.muted,lineHeight:22}}>{group.count ? `${group.count} công việc` : 'Không có công việc cần xử lý'}</Text></View><ChevronRight size={20} color={theme.muted}/></Card></Pressable>) : <StateView title="Chưa có nhóm công việc" message="Tài khoản hiện không có quyền nhận các nhóm thông báo này."/>}
+    {query.isPending ? <SkeletonList count={4} lines={2} /> : query.error ? <InlineError message={query.error.message}/> : query.data?.groups.length ? query.data.groups.map(group=>{
+      const isGps = group.kind === 'gps_alert';
+      const hasAlert = isGps && group.count > 0;
+      return <Pressable key={group.kind} accessibilityRole="button" accessibilityLabel={`${NOTIFICATION_LABELS[group.kind]}: ${group.count}`} onPress={()=>router.push({pathname:'/notification-list/[kind]',params:{kind:group.kind}})}>
+        <Card style={{flexDirection:'row',alignItems:'center',gap:12,...(hasAlert ? {borderColor:theme.danger,borderWidth:1.5,backgroundColor:theme.dangerBackground} : {})}}>
+          {isGps && <AlertTriangle size={20} color={hasAlert ? theme.danger : theme.muted} />}
+          <View style={{flex:1,gap:4}}>
+            <Text style={{color:hasAlert ? theme.danger : theme.text,fontSize:16,fontWeight:'700'}}>{NOTIFICATION_LABELS[group.kind]}</Text>
+            <Text style={{color:theme.muted,fontSize:13,lineHeight:19}}>
+              {isGps
+                ? (group.count ? `${group.count} cảnh báo lệch GPS (Chỉ quản trị thấy)` : 'Chưa phát hiện bất thường GPS trong 7 ngày qua')
+                : (group.count ? `${group.count} công việc cần xử lý` : 'Không có công việc cần xử lý')}
+            </Text>
+          </View>
+          {group.count > 0 && <StatusBadge status={isGps || group.kind === 'overdue' ? 'overdue' : 'pending'} label={String(group.count)} />}
+          <ChevronRight size={20} color={theme.muted}/>
+        </Card>
+      </Pressable>;
+    }) : <StateView title="Chưa có nhóm công việc" message="Tài khoản hiện không có quyền nhận các nhóm thông báo này."/>}
     {query.error && <Button secondary label="Tải lại công việc" onPress={()=>{void query.refetch();}}/>}
     <Pressable accessibilityRole="button" accessibilityLabel="Mở sự kiện gần đây" onPress={()=>router.push('/notification-activity')}>
       <Card style={{flexDirection:'row',alignItems:'center',gap:12}}><View style={{flex:1,gap:6}}>

@@ -93,6 +93,9 @@ function ShiftReportsList({ initialReportType }: { initialReportType: ShiftRepor
             </View>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
               <StatusBadge status={auditStatus} label={auditLabel} />
+              {row.gps_alerts && row.gps_alerts.total_alerts > 0 && (
+                <StatusBadge status="overdue" label={`${row.gps_alerts.total_alerts} cảnh báo GPS`} />
+              )}
               <Text style={{ color: theme.primary, fontSize: 12, fontWeight: '700' }}>{shiftReportTypeLabel(row.payload.report_type)}</Text>
             </View>
             <View style={{ gap: 2 }}>

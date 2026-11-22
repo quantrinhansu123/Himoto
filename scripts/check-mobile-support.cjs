@@ -43,13 +43,15 @@ async function main(){
     assert.equal((await pg.query('SELECT count(*)::integer AS n FROM himoto.management_staff_attendance WHERE actor_id=7')).rows[0].n,1);
     checks.push('Actual web attendance writer: in/out pairing, repeated UUID and lost-response lookup, double-in rejection, actor-bound resolution/photos, HR branch scope and authenticated image headers');
     const closed=await(await attendance.GET(request(`attendance?from=${today}&to=${today}`))).json(),row=closed.rows[0];
-    assert.equal(row.in_distance_m,0);assert.equal(row.earned_credit,null);assert.equal(row.can_manage,false);
+    assert.equal(row.in_distance_m,null);assert.equal(row.has_store_location,false);assert.equal(row.in_gps_alert,false);assert.equal(row.earned_credit,null);assert.equal(row.can_manage,false);
     assert(!dto.isAttendanceSummary({...closed,rows:[{...row,earned_credit:-1}]}));
     const edit={id:row.id,original_in:row.clock_in_at,original_out:row.clock_out_at,clock_in_at:new Date(Date.parse(row.clock_in_at)-60000).toISOString(),clock_out_at:row.clock_out_at};
     assert.equal((await attendance.PATCH(request('attendance','PATCH',JSON.stringify(edit)))).status,403);
     const exporter=load(path.join(root,'lib/server/mobile-list-export'));
     await assert.rejects(()=>exporter.exportMobileList(user,'attendance',request(`list-exports/attendance?from=${today}&to=${today}`)),error=>error.status===403);
     actor={...user,id:9,role:'admin',access_role:'admin',scope_all:true};
+    const adminClosed=await(await attendance.GET(request(`attendance?from=${today}&to=${today}`))).json(),adminRow=adminClosed.rows.find(r=>String(r.id)===String(row.id));
+    assert.equal(adminRow.in_distance_m,0);assert.equal(adminRow.has_store_location,true);assert.equal(adminRow.in_gps_alert,false);assert.equal(adminRow.can_manage,true);
     assert.equal((await attendance.PATCH(request('attendance','PATCH',JSON.stringify({...edit,original_in:'2000-01-01T00:00:00.000Z'})))).status,409);
     assert.equal((await attendance.PATCH(request('attendance','PATCH',JSON.stringify(edit)))).status,200);
     assert.equal((await attendance.PATCH(request('attendance','PATCH',JSON.stringify(edit)))).status,409);

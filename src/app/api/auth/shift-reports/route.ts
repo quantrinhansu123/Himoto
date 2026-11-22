@@ -6,12 +6,14 @@ import { ShiftRequestError,shiftRequestId } from '@/lib/server/shift-report-requ
 import { listShiftReports,saveShiftReport } from '@/lib/server/shift-report-domain';
 import { deliverReportTelegram } from '@/lib/server/report-telegram';
 import { failureResponse } from '@/lib/server/public-failure';
-import { hasPermission } from '@/lib/management/permissions';
+import { hasPermission, isAdminAccount } from '@/lib/management/permissions';
+import { scheduleAdminGpsPush } from '@/lib/server/gps-audit';
 export const runtime='nodejs';
 export const maxDuration=300;
 export const GET=withAccessRequest(async(request:NextRequest)=>{
   const params=request.nextUrl.searchParams;
-  try{return NextResponse.json({data:await listShiftReports(himotoPool,params.get('store_id'),params.get('date'),undefined,params.get('all')==='1',params.get('report_type'))},{headers:{'Cache-Control':'no-store'}});}
+  const admin=isAdminAccount(dataAccess.getStore());
+  try{return NextResponse.json({data:await listShiftReports(himotoPool,params.get('store_id'),params.get('date'),undefined,params.get('all')==='1',params.get('report_type'),admin)},{headers:{'Cache-Control':'no-store'}});}
   catch(error){return error instanceof ShiftRequestError?NextResponse.json({message:error.message},{status:error.status}):failureResponse('Không tải được báo cáo ca.',error);}
 });
 export const POST=withAccessRequest(async(request:NextRequest)=>{
@@ -22,7 +24,10 @@ export const POST=withAccessRequest(async(request:NextRequest)=>{
     const raw=await request.json(),actor=dataAccess.getStore()!,requestId=shiftRequestId(request.headers);
     client=await himotoPool.connect();await client.query('BEGIN');
     const saved=await saveShiftReport(client,actor,raw,requestId);await client.query('COMMIT');
-    if(raw.status==='submitted')after(()=>deliverReportTelegram(`shift:${saved.id}`));
+    if(raw.status==='submitted'){
+      after(()=>deliverReportTelegram(`shift:${saved.id}`));
+      scheduleAdminGpsPush();
+    }
     return NextResponse.json({data:saved});
   }catch(error){
     if(client)await client.query('ROLLBACK').catch(()=>{});
