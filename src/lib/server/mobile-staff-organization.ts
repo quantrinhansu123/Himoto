@@ -1,7 +1,7 @@
 import 'server-only';
 import type {SessionUser} from './management-session';
 import {hasPermission} from '@/lib/management/permissions';
-import {withMobileData} from './mobile-context';
+import {withMobileReadData} from './mobile-context';
 import {himotoPool} from './himoto-database';
 import {MobileError} from './mobile-session';
 import {buildStaffOrganization} from '../../../shared/staff-organization';
@@ -11,7 +11,7 @@ export async function readMobileStaffOrganization(user:SessionUser,params:URLSea
   if(!hasPermission(user,'hr.read'))throw new MobileError('Không có quyền xem sơ đồ nhân sự.',403,'FORBIDDEN');
   const store=params.get('store')||'all',search=params.get('search')||'',departed=params.get('departed')||'0';
   if([...params.keys()].some(k=>!['store','search','departed'].includes(k)||params.getAll(k).length!==1)||store!=='all'&&(!/^[1-9]\d{0,14}$/.test(store)||!Number.isSafeInteger(Number(store)))||search.length>120||!['0','1'].includes(departed))throw new MobileError('Bộ lọc sơ đồ nhân sự chưa hợp lệ.');
-  return withMobileData(user,'',async()=>{const db=await himotoPool.connect();try{
+  return withMobileReadData(user,'',async()=>{const db=await himotoPool.connect();try{
     await db.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');await db.query("SET LOCAL statement_timeout='20s'");
     const stores=(await db.query('SELECT id,store_name FROM himoto.stores ORDER BY id')).rows.map(r=>({id:Number(r.id),name:String(r.store_name||'')}));
     // Same full staff source as the web chart, on the scoped pool; TLS filtering never grants access to hidden rows.

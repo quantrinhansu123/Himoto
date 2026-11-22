@@ -2,12 +2,13 @@ import { KeyboardFormScrollView } from "./keyboard-form-scroll-view";
 import { useRef, useState } from 'react';
 import { Keyboard, Text, type ScrollViewInstance } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Stack, usePreventRemove } from 'expo-router';
+import { Stack, router, usePreventRemove } from 'expo-router';
 import type { MobileRentalTerms, MobileRentalTermsInput } from '../../../shared/mobile-rental-terms';
 import { validDraftTime } from '../../../shared/mobile-draft-validation';
+import { addRentalDays, rentalDayCount } from '../../../shared/rental-time';
 import { useRentalTermsWrite } from '@/hooks/use-rental-terms-write';
 import { dateTime, money, useTheme } from '@/theme';
-import { Button, Card, InlineError, StateView } from './ui';
+import { Button, Card, InfoBanner, InlineError, StateView } from './ui';
 import { ChoiceField, FormField } from './form-fields';
 import { RentalDateTime } from './rental-date-time';
 import { ConfirmEdit } from './editor-sheet';
@@ -21,18 +22,18 @@ export function RentalTermsEditor({ id }: { id: string }) {
   return <SafeAreaView edges={['bottom']} style={{ flex: 1, backgroundColor: theme.background }}>
     <Stack.Screen options={{ title: 'Sửa tiền / ngày thuê' }} />
 
-      <KeyboardFormScrollView ref={scroll} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, gap: 16 }}>
-        {!!write.error && <InlineError message={write.error} />}{!!write.notice && <Text accessibilityLiveRegion="polite" style={muted}>{write.notice}</Text>}
-        {write.query.isPending && <StateView title="Đang tải tiền / ngày thuê" loading />}
-        {write.query.isError && <StateView title="Chưa tải được tiền / ngày thuê" message={(write.query.error as Error).message} retry={() => void write.query.refetch()} />}
-        {write.key && <Card style={{ gap: 12 }}><Text selectable style={muted}>Mã lần sửa: {write.key}</Text>
-          {write.proof ? <><Text accessibilityRole="header" style={{ ...text, fontSize: 20, fontWeight: '700' }}>Đã ghi nhận sửa tiền / ngày thuê</Text><Text style={text}>Hồ sơ #{write.proof.receipt.id} · Phiên bản {write.proof.receipt.revision}</Text><Text style={muted}>Kết quả xác nhận lần gửi; tiền/ngày trên hồ sơ có thể đã được sửa tiếp.</Text><Button label="Đã xem kết quả, mở hồ sơ" loading={write.busy} onPress={() => void write.acknowledge(disablePrevention)} /></> : <><Text style={text}>Đối chiếu lần sửa đã gửi trước khi tiếp tục.</Text><Button label="Đối chiếu kết quả sửa tiền / ngày thuê" loading={write.busy} onPress={() => void write.resolve()} /></>}
-        </Card>}
-        {profile && !write.key && <>
-          <RentalTermsForm key={`${profile.revision}:${formEpoch}`} initial={profile} disabled={write.busy} onDirty={setDirty} onReview={input => { setReview(input); Keyboard.dismiss(); }} />
-          <Button secondary label="Tải lại tiền / ngày thuê mới nhất" disabled={write.busy || write.query.isFetching} onPress={() => setReload(true)} />
-        </>}
-      </KeyboardFormScrollView>
+    <KeyboardFormScrollView ref={scroll} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, gap: 16 }}>
+      {!!write.error && <InlineError message={write.error} />}{!!write.notice && <Text accessibilityLiveRegion="polite" style={muted}>{write.notice}</Text>}
+      {write.query.isPending && <StateView title="Đang tải tiền / ngày thuê" loading />}
+      {write.query.isError && <StateView title="Chưa tải được tiền / ngày thuê" message={(write.query.error as Error).message} retry={() => void write.query.refetch()} />}
+      {write.key && <Card style={{ gap: 12 }}><Text selectable style={muted}>Mã lần sửa: {write.key}</Text>
+        {write.proof ? <><Text accessibilityRole="header" style={{ ...text, fontSize: 20, fontWeight: '700' }}>Đã ghi nhận sửa tiền / ngày thuê</Text><Text style={text}>Hồ sơ #{write.proof.receipt.id} · Phiên bản {write.proof.receipt.revision}</Text><Text style={muted}>Kết quả xác nhận lần gửi; tiền/ngày trên hồ sơ có thể đã được sửa tiếp.</Text><Button label="Đã xem kết quả, mở hồ sơ" loading={write.busy} onPress={() => void write.acknowledge(disablePrevention)} /></> : <><Text style={text}>Đối chiếu lần sửa đã gửi trước khi tiếp tục.</Text><Button label="Đối chiếu kết quả sửa tiền / ngày thuê" loading={write.busy} onPress={() => void write.resolve()} /></>}
+      </Card>}
+      {profile && !write.key && <>
+        <RentalTermsForm key={`${profile.revision}:${formEpoch}`} initial={profile} disabled={write.busy} onDirty={setDirty} onReview={input => { setReview(input); Keyboard.dismiss(); }} />
+        <Button secondary label="Tải lại tiền / ngày thuê mới nhất" disabled={write.busy || write.query.isFetching} onPress={() => setReload(true)} />
+      </>}
+    </KeyboardFormScrollView>
 
     {review && profile && <ConfirmEdit title="Lưu tiền / ngày thuê đã sửa?" message={`${profile.code} · ${profile.items.find(i => i.id === review.item_id)?.license || `Dòng xe #${review.item_id}`}\n${dateTime(review.start_at)} → ${dateTime(review.end_at)}\nĐơn giá: ${review.unit_price === '' ? 'Giữ đơn giá cũ' : money(Number(review.unit_price))}\nTổng hợp đồng: ${money(profile.total_amount)} → ${money(Number(review.total_amount))}\nĐã thu: ${money(profile.paid_amount)} (giữ theo phiếu)\nLý do: ${review.reason}\n\nChỉ sửa dòng xe đang chọn và tổng hợp đồng. Phiếu/tiền thực nhận, thời điểm trả thực tế và kho giữ theo hồ sơ. Mốc gia hạn liên quan sẽ cập nhật theo lịch mới.`} confirmLabel="Xác nhận sửa tiền / ngày thuê" busy={write.busy} onCancel={() => setReview(null)} onConfirm={() => { const input = review; setReview(null); scroll.current?.scrollTo({ y: 0, animated: false }); void write.save(input); }} />}
     {reload && <ConfirmEdit title="Tải lại tiền / ngày thuê?" message="Nội dung chưa gửi sẽ thay bằng hồ sơ mới nhất." confirmLabel="Tải lại bản mới nhất" onCancel={() => setReload(false)} onConfirm={() => { setReload(false); void write.query.refetch().then(r => { if (r.data?.profile) { setDirty(false); setFormEpoch(v => v + 1); } }); }} />}
@@ -44,9 +45,13 @@ function defaults(initial: MobileRentalTerms, itemId: number): MobileRentalTerms
   return { revision: initial.revision, item_id: line.id, item_revision: line.revision, start_at: line.start_at, end_at: line.end_at, unit_price: line.unit_price === null ? '' : String(line.unit_price), total_amount: String(initial.total_amount), reason: '' };
 }
 function RentalTermsForm({ initial, disabled, onDirty, onReview }: { initial: MobileRentalTerms; disabled: boolean; onDirty: (value: boolean) => void; onReview: (input: MobileRentalTermsInput) => void }) {
-  const theme = useTheme(), [input, setInput] = useState<MobileRentalTermsInput | null>(() => initial.items[0] ? defaults(initial, initial.items[0].id) : null), [pick, setPick] = useState<number | null>(null), [error, setError] = useState('');
+  const defaultItem = initial.items.find(i => !i.completed_at) || initial.items[0];
+  const theme = useTheme(), [input, setInput] = useState<MobileRentalTermsInput | null>(() => defaultItem ? defaults(initial, defaultItem.id) : null), [pick, setPick] = useState<number | null>(null), [error, setError] = useState('');
   const line = initial.items.find(i => i.id === input?.item_id), text = { color: theme.text, fontSize: 16, lineHeight: 24 }, muted = { color: theme.muted, fontSize: 14, lineHeight: 22 };
   const dirty = !!input && JSON.stringify(input) !== JSON.stringify(defaults(initial, input.item_id));
+  const days = input ? rentalDayCount(input.start_at, input.end_at) : '';
+  const nextTotalNum = input && /^\d+$/.test(input.total_amount) ? Number(input.total_amount) : null;
+  const overpaidAfterEdit = nextTotalNum !== null && (initial.paid_amount ?? 0) > nextTotalNum;
   function change(next: MobileRentalTermsInput) { if (!disabled) { setInput(next); onDirty(JSON.stringify(next) !== JSON.stringify(defaults(initial, next.item_id))); setError(''); } }
   function choose(id: number) { setInput(defaults(initial, id)); onDirty(false); setError(''); }
   function review() {
@@ -65,9 +70,18 @@ function RentalTermsForm({ initial, disabled, onDirty, onReview }: { initial: Mo
       <ChoiceField label="Dòng xe sửa tiền / ngày thuê" value={String(input.item_id)} searchable disabled={disabled} choices={initial.items.map(i => ({ value: String(i.id), label: `${i.license || `Xe #${i.vehicle_id}`} · Dòng #${i.id}${i.completed_at ? ' · Đã trả' : ''}` }))} onChange={v => { if (Number(v) !== input.item_id) { if (dirty) setPick(Number(v)); else choose(Number(v)); } }} />
       <Card style={{ gap: 16 }}><Text style={text}>{line.license || `Xe #${line.vehicle_id}`}{line.completed_at ? ` · Đã trả thực tế ${dateTime(line.completed_at)}` : ' · Chưa ghi trả xe'}</Text>
         <RentalDateTime label="nhận xe cần sửa" value={input.start_at} disabled={disabled} onChange={start_at => change({ ...input, start_at })} />
+        <FormField label="Số ngày thuê" value={days} keyboardType="number-pad" maxLength={4} editable={!disabled} onChangeText={v => { const nextEnd = addRentalDays(input.start_at, v.trim()); if (nextEnd) change({ ...input, end_at: nextEnd }); }} hint="Nhập số ngày để tự tính lại hạn trả xe." />
         <RentalDateTime label="hẹn trả cần sửa" value={input.end_at} disabled={disabled} onChange={end_at => change({ ...input, end_at })} />
         <FormField label="Đơn giá dòng xe (VND)" value={input.unit_price} keyboardType="number-pad" maxLength={13} editable={!disabled} onChangeText={unit_price => change({ ...input, unit_price })} hint="Để trống để giữ đơn giá cũ; 0 là sửa đơn giá về 0." />
         <FormField label="Tổng tiền hợp đồng sau sửa (VND)" value={input.total_amount} keyboardType="number-pad" maxLength={13} editable={!disabled} onChangeText={total_amount => change({ ...input, total_amount })} hint={money(Number(input.total_amount || 0))} />
+        {overpaidAfterEdit && (
+          <InfoBanner
+            tone="warning"
+            title="Đã thu vượt tổng hợp đồng sau sửa"
+            message={`Phiếu đã thu ${money(initial.paid_amount)} đang lớn hơn tổng mới ${money(nextTotalNum)}. Cần đối chiếu hoặc sửa phiếu thu nếu nhầm tiền thực thu.`}
+            action={<Button size="sm" secondary label="Mở Sửa tiền cọc / khoản đã thu" onPress={() => router.push({ pathname: '/contract-correction/[kind]/[id]', params: { kind: 'receipts', id: String(initial.id) } })} />}
+          />
+        )}
       </Card>
       <FormField label="Lý do sửa tiền / ngày thuê" value={input.reason} multiline maxLength={500} editable={!disabled} onChangeText={reason => change({ ...input, reason })} />
       {!!error && <InlineError message={error} />}<Button label="Kiểm tra tiền / ngày thuê đã sửa" disabled={disabled} onPress={review} />

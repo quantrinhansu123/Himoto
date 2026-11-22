@@ -1,9 +1,10 @@
 import React from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Linking, StyleSheet, Text, View } from "react-native";
 import type { MobileVehicleProfile } from "../../../shared/mobile-vehicles";
-import { money, useTheme } from "@/theme";
-import { Card, StatusBadge } from "./ui";
-import { Bike, Building2, Calendar, Gauge, KeyRound, Palette, ShieldAlert, Wrench } from "lucide-react-native";
+import { GPS_STATE_LABELS, gpsMapLink } from "../../../shared/mobile-gps";
+import { dateTime, money, useTheme } from "@/theme";
+import { Button, Card, StatusBadge } from "./ui";
+import { Bike, Building2, Calendar, Gauge, KeyRound, MapPin, Palette, ShieldAlert, User, Wrench } from "lucide-react-native";
 
 export function VehicleProfileCard({ profile }: { profile: MobileVehicleProfile }) {
   const theme = useTheme();
@@ -42,9 +43,65 @@ export function VehicleProfileCard({ profile }: { profile: MobileVehicleProfile 
           <Building2 size={16} color={theme.primary} />
           <Text style={{ color: theme.text, fontSize: 13, fontWeight: "600", flex: 1 }}>
             Hiện tại: {profile.storeName || "Chưa xác định cơ sở"}
+            {profile.beneficiaryStoreName && profile.beneficiaryStoreName !== profile.storeName
+              ? ` · Thụ hưởng: ${profile.beneficiaryStoreName}`
+              : ""}
           </Text>
         </View>
+        {(profile.holderName || (profile.overdueDays ?? 0) > 0) && (
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+            {!!profile.holderName && (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <User size={15} color={theme.primary} />
+                <Text style={{ color: theme.text, fontSize: 13.5, fontWeight: "700" }}>
+                  Người giữ xe: {profile.holderName}
+                </Text>
+              </View>
+            )}
+            {(profile.overdueDays ?? 0) > 0 && (
+              <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: theme.dangerBackground }}>
+                <Text style={{ color: theme.danger, fontSize: 12, fontWeight: "800" }}>
+                  Quá hạn {profile.overdueDays} ngày
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
       </Card>
+
+      {/* GPS Info Card */}
+      {profile.gps && (
+        <Card style={{ gap: 10, padding: 16 }}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <MapPin size={16} color={theme.primary} />
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>Thiết bị định vị GPS</Text>
+            </View>
+            <Text style={{ color: profile.gps.status === "online" || profile.gps.status === "stopped" ? theme.success : theme.warning, fontSize: 13, fontWeight: "800" }}>
+              {GPS_STATE_LABELS[profile.gps.status] || profile.gps.status}
+            </Text>
+          </View>
+          <Text style={{ color: theme.muted, fontSize: 13 }}>
+            Nền tảng: {profile.gps.provider || "—"} · IMEI: {profile.gps.externalDeviceId || "—"}
+            {profile.gps.lastSpeed != null ? ` · Tốc độ: ${profile.gps.lastSpeed} km/h` : ""}
+          </Text>
+          <View style={{ gap: 2 }}>
+            {!!profile.gps.syncReceivedAt && <Text style={{ color: theme.muted, fontSize: 12 }}>Đồng bộ Himoto: {dateTime(profile.gps.syncReceivedAt)}</Text>}
+            {!!profile.gps.heartbeatAt && <Text style={{ color: theme.muted, fontSize: 12 }}>Tín hiệu thiết bị: {dateTime(profile.gps.heartbeatAt)}</Text>}
+            {!!profile.gps.positionRecordedAt && <Text style={{ color: theme.muted, fontSize: 12 }}>Vị trí ghi nhận: {dateTime(profile.gps.positionRecordedAt)}</Text>}
+          </View>
+          {gpsMapLink(profile.gps.lastLatitude, profile.gps.lastLongitude) && (
+            <Button
+              secondary
+              label="Mở vị trí GPS trên Google Maps"
+              onPress={() => {
+                const url = gpsMapLink(profile.gps!.lastLatitude, profile.gps!.lastLongitude);
+                if (url) void Linking.openURL(url);
+              }}
+            />
+          )}
+        </Card>
+      )}
 
       {/* Pricing Group */}
       <Card style={{ gap: 12, padding: 16 }}>

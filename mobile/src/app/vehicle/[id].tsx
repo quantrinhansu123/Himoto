@@ -26,6 +26,8 @@ import { Button, Card, InlineError, StateView, StatusBadge } from "@/components/
 import { SectionTabs } from "@/components/section-tabs";
 import { VehicleProfileCard } from "@/components/vehicle-profile-card";
 import { FormField, ChoiceField } from "@/components/form-fields";
+import { FileExportButton } from "@/components/file-export-button";
+import { ConfirmEdit } from "@/components/editor-sheet";
 import { VehicleChanges } from "@/components/vehicle-changes";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { dateTime, useTheme } from "@/theme";
@@ -46,6 +48,9 @@ function VehicleProfile({ id }: { id: string }) {
   const [historyPage, setHistoryPage] = useState(1);
   const [historyAction, setHistoryAction] = useState("");
   const [historyInput, setHistoryInput] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
   const debouncedSearch = useDebouncedValue(historyInput);
 
   const valid = /^[1-9]\d{0,14}$/.test(id) && session!.user.permissions.includes("vehicles.read");
@@ -162,6 +167,18 @@ function VehicleProfile({ id }: { id: string }) {
                   onPress={() => router.push({ pathname: "/vehicle-transfer-editor/[id]", params: { id } })}
                 />
               </View>
+            </Card>
+          )}
+
+          {/* Draft Contract Warning Banner */}
+          {(row.hasDraftContract || openRentals.some((r) => r.status.toLowerCase() === "draft")) && (
+            <Card style={[styles.alertCard, { borderColor: theme.warning, backgroundColor: theme.warningBackground }]}>
+              <Text style={[styles.alertTitle, { color: theme.warning }]}>
+                Xe đang nằm trong hợp đồng nháp
+              </Text>
+              <Text style={{ color: theme.text, fontSize: 14, lineHeight: 20 }}>
+                Kiểm tra danh sách hợp đồng của xe trước khi tạo hợp đồng mới hoặc điều chuyển để tránh giữ trùng xe.
+              </Text>
             </Card>
           )}
 
@@ -326,6 +343,18 @@ function VehicleProfile({ id }: { id: string }) {
                 </Pressable>
               )}
             </View>
+            {!!deleteError && <InlineError message={deleteError} />}
+            {row.canDelete && !row.hasOpenContract && !row.inTransit && (
+              <Button
+                secondary
+                label="Xóa xe khỏi hệ thống"
+                loading={deleteBusy}
+                onPress={() => {
+                  setDeleteError("");
+                  setConfirmDelete(true);
+                }}
+              />
+            )}
           </Card>
         </ScrollView>
       ) : (
@@ -365,6 +394,31 @@ function VehicleProfile({ id }: { id: string }) {
                 <Text style={{ color: theme.muted, fontSize: 13, paddingHorizontal: 2 }}>
                   Tổng cộng: {historyQuery.data.total} sự kiện · {historyQuery.data.sourceLimit}
                 </Text>
+              )}
+              {historyQuery.data && !!historyQuery.data.rows.length && (
+                <FileExportButton
+                  label={`Tải Excel lịch sử xe (${historyQuery.data.rows.length})`}
+                  disabled={historyQuery.isFetching}
+                  load={(signal) =>
+                    api!.exportWorkbook(
+                      {
+                        filename: `himoto-lich-su-xe-${id}`,
+                        headers: ["Thời điểm", "Sự kiện", "Biển số", "Cơ sở đi", "Cơ sở đến", "Vị trí", "Người thực hiện", "Ghi chú"],
+                        rows: (historyQuery.data?.rows || []).map((r) => [
+                          r.at || "",
+                          r.label,
+                          r.license || "",
+                          r.responsible_store || "",
+                          r.beneficiary_store || "",
+                          r.location || "",
+                          r.actor || "",
+                          r.note || "",
+                        ]),
+                      },
+                      signal,
+                    )
+                  }
+                />
               )}
               {historyQuery.isError && <InlineError message={historyQuery.error.message} />}
             </View>
@@ -468,6 +522,29 @@ function VehicleProfile({ id }: { id: string }) {
               </View>
             ) : undefined
           }
+        />
+      )}
+      {confirmDelete && (
+        <ConfirmEdit
+          title="Xóa xe khỏi danh sách?"
+          message={`Xác nhận xóa xe ${row.values.license || row.values.name}? Chỉ xóa được xe chưa phát sinh lịch sử hợp đồng và không đang luân chuyển.`}
+          confirmLabel="Xác nhận xóa xe"
+          busy={deleteBusy}
+          onCancel={() => setConfirmDelete(false)}
+          onConfirm={() => {
+            setConfirmDelete(false);
+            setDeleteBusy(true);
+            setDeleteError("");
+            void api!
+              .deleteVehicle(id)
+              .then(() => {
+                router.replace("/(tabs)/vehicles");
+              })
+              .catch((err: unknown) => {
+                setDeleteError(err instanceof Error ? err.message : "Không xóa được xe.");
+              })
+              .finally(() => setDeleteBusy(false));
+          }}
         />
       )}
     </View>

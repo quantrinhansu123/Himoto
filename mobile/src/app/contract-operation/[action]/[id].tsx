@@ -139,13 +139,13 @@ function SwapForm({ data, swap, write }: { data: Context<'battery_swap'>; swap: 
   </>;
 }
 
-function Settlement({ data, write }: { data: Context<'payment_settlement'>; write: Write }) {
-  const theme = useTheme(), id = String(data.id), [mode, setMode] = useState<ContractSettlementMode>('partial');
+function Settlement({ data, write, initialMode }: { data: Context<'payment_settlement'>; write: Write; initialMode?: ContractSettlementMode }) {
+  const theme = useTheme(), id = String(data.id), closed = data.status === 'completed';
+  const [mode, setMode] = useState<ContractSettlementMode>(() => (!closed && initialMode && ['partial', 'full', 'close_unpaid'].includes(initialMode) ? initialMode : 'partial'));
   const [amount, setAmount] = useState(''), [method, setMethod] = useState<PaymentMethod>('cash');
   const [selected, setSelected] = useState(''), [at, setAt] = useState(vietnamPaymentTime), [note, setNote] = useState('');
   const [vehicles, setVehicles] = useState<Record<number, ContractSettlementVehicle>>({});
   const [confirm, setConfirm] = useState<ContractOperationInput>(), [error, setError] = useState('');
-  const closed = data.status === 'completed';
   const closing = !closed && mode !== 'partial';
   const entered = mode === 'partial' ? amount : mode === 'full' ? String(data.remaining ?? '') : '0';
   const receives = Number(entered) > 0, accounts = data.accounts.filter(row => row.method === method);
@@ -205,7 +205,7 @@ function Settlement({ data, write }: { data: Context<'payment_settlement'>; writ
   </>;
 }
 
-function Operation({ id, action, swapId }: { id: string; action: ContractOperation; swapId?: string }) {
+function Operation({ id, action, swapId, initialMode }: { id: string; action: ContractOperation; swapId?: string; initialMode?: ContractSettlementMode }) {
   const theme = useTheme(), write = useContractOperation(id, action), data = write.query.data;
   const receipt = write.receipt && action !== 'battery_swap';
   return <SafeAreaView edges={['left', 'right', 'bottom']} style={{ flex: 1 }}>
@@ -225,12 +225,12 @@ function Operation({ id, action, swapId }: { id: string; action: ContractOperati
           onPress={() => action === 'delete_reservation' ? router.dismissTo('/(tabs)/contracts')
             : router.dismissTo({ pathname: '/record/[kind]/[id]', params: { kind: 'contracts', id } })} />
         {action === 'payment_settlement' && <Button secondary label="Xem phiếu thu / chi"
-          onPress={() => router.push({ pathname: '/contract-history/[id]', params: { id, tab: 'receipts' } })} />}
+          onPress={() => router.push({ pathname: '/contract-history/[id]', params: { id, tab: 'cashflow' } })} />}
       </Card> : <>
         {write.query.isPending && <StateView title="Đang tải dữ liệu hợp đồng" loading />}
         {write.query.isError && <StateView title="Chưa mở được thao tác" message={write.query.error.message} retry={() => { void write.query.refetch(); }} />}
         {data?.action === 'battery_swap' && <Swap data={data} write={write} initialSwap={swapId} />}
-        {data?.action === 'payment_settlement' && <Settlement data={data} write={write} />}
+        {data?.action === 'payment_settlement' && <Settlement data={data} write={write} initialMode={initialMode} />}
         {(data?.action === 'no_show' || data?.action === 'delete_reservation') && <Reservation data={data} write={write} />}
         {data && <Button secondary label="Tải lại dữ liệu" loading={write.query.isRefetching} disabled={write.busy}
           onPress={() => { void write.query.refetch(); }} />}
@@ -240,10 +240,11 @@ function Operation({ id, action, swapId }: { id: string; action: ContractOperati
 }
 
 export default function Route() {
-  const { id, action, swapId } = useLocalSearchParams<{ id: string; action: string; swapId?: string }>(), { api, session } = useSession();
+  const { id, action, swapId, mode } = useLocalSearchParams<{ id: string; action: string; swapId?: string; mode?: string }>(), { api, session } = useSession();
   const permissions = session?.user.permissions ?? [];
+  const initialMode: ContractSettlementMode | undefined = mode === 'partial' || mode === 'full' || mode === 'close_unpaid' ? mode : undefined;
   if (!api || !session || !isContractOperation(action) || !/^[1-9]\d{0,14}$/.test(id) || !permissions.includes('contracts.read') ||
       action !== 'battery_swap' && !permissions.includes(CONTRACT_OPERATION_PERMISSIONS[action])) return <StateView title="Không mở được thao tác hợp đồng" />;
-  return <Operation key={`${api.origin}:${session.user.id}:${session.user.storeId}:${session.user.allStores}:${id}:${action}:${swapId ?? ''}`}
-    id={id} action={action} swapId={swapId} />;
+  return <Operation key={`${api.origin}:${session.user.id}:${session.user.storeId}:${session.user.allStores}:${id}:${action}:${swapId ?? ''}:${initialMode ?? ''}`}
+    id={id} action={action} swapId={swapId} initialMode={initialMode} />;
 }

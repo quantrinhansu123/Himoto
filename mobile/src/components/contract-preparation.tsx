@@ -15,10 +15,11 @@ import type {
   MobileInitialCollection,
 } from "@himoto/mobile-contract";
 import { validDraftTime } from "@himoto/mobile-draft-validation";
+import { historicalReceiptTime } from "../../../shared/rental-time";
 import { useSession } from "@/providers/session";
 import { useContractAction } from "@/hooks/use-contract-action";
 import { useTheme, money, dateTime } from "@/theme";
-import { Button, Card, InlineError, StateView } from "./ui";
+import { Button, Card, InlineError, StateView, StatusBadge } from "./ui";
 import { ChoiceField, FormField } from "./form-fields";
 import { RentalDateTime } from "./rental-date-time";
 import { ConfirmEdit } from "./editor-sheet";
@@ -57,16 +58,16 @@ function PreparationForm({ id }: { id: string }) {
   const theme = useTheme(),
     { api, session } = useSession();
   const [mode, setMode] = useState<"rental" | "reservation" | null>(null),
-    [rows, setRows] = useState<CollectionRow[]>([]),
+    [customRows, setCustomRows] = useState<CollectionRow[] | null>(null),
     [ack, setAck] = useState(false),
     [localError, setLocalError] = useState("");
   const [confirm, setConfirm] = useState<
       MobileContractIssueInput | { revision: string } | null
     >(null),
     [reload, setReload] = useState(false);
-  const serial = useRef(0),
+  const serial = useRef(10),
     list = useRef<FlatList<CollectionRow>>(null);
-  const dirty = rows.length > 0 || mode !== null || ack;
+  const dirty = customRows !== null || mode !== null || ack;
   const action = useContractAction(id, dirty);
   const query = useQuery({
     queryKey: [
@@ -89,6 +90,53 @@ function PreparationForm({ id }: { id: string }) {
       (mode ?? (data?.reservation ? "reservation" : "rental")) ===
         "reservation",
     handover = data?.status === "deposit_contract";
+  const defaultRows: CollectionRow[] = (() => {
+    if (!data || data.status !== "draft") return [];
+    const methodFromText = (raw?: string): MobileInitialCollection["method"] => {
+      if (!raw) return "transfer";
+      if (raw.includes("công ty")) return "company_transfer";
+      if (raw.includes("Tiền mặt")) return "cash";
+      return "transfer";
+    };
+    const pickAccount = (method: MobileInitialCollection["method"]) => {
+      const match = data.accounts.find((a) => a.method === method);
+      return match ? `${match.method}:${match.id}` : "";
+    };
+    const paidAt = historicalReceiptTime(data.startsAt);
+    const next: CollectionRow[] = [];
+    const rentalRemain = data.totalAmount != null && data.rentalPaid != null ? Math.max(0, data.totalAmount - data.rentalPaid) : 0;
+    const depositRemain = data.depositAmount != null ? Math.max(0, data.depositAmount - data.depositPaid) : 0;
+    if (rentalRemain > 0) {
+      const method = methodFromText(data.expectedRentalMethod);
+      next.push({
+        key: 1,
+        purpose: "rental",
+        amount: String(rentalRemain),
+        method,
+        account: pickAccount(method),
+        paidAt,
+      });
+    }
+    if (!data.reservation && depositRemain > 0) {
+      const method = methodFromText(data.expectedDepositMethod);
+      next.push({
+        key: 2,
+        purpose: "deposit",
+        amount: String(depositRemain),
+        method,
+        account: pickAccount(method),
+        paidAt,
+      });
+    }
+    return next;
+  })();
+  const rows = customRows ?? defaultRows;
+  const setRows = (updater: CollectionRow[] | ((old: CollectionRow[]) => CollectionRow[])) => {
+    setCustomRows((prev) => {
+      const base = prev ?? defaultRows;
+      return typeof updater === "function" ? updater(base) : updater;
+    });
+  };
   const active = data?.status === "draft" || handover,
     disabled =
       action.busy || action.checking || !!action.receipt || query.isFetching;
@@ -222,6 +270,16 @@ function PreparationForm({ id }: { id: string }) {
             void action.openReceipt();
           }}
         />
+        <Button
+          secondary
+          label="Mở Telegram hợp đồng"
+          onPress={() => router.replace({ pathname: "/contract-telegram/[id]", params: { id } })}
+        />
+        <Button
+          secondary
+          label="Mở Thu / Chi hợp đồng"
+          onPress={() => router.replace({ pathname: "/finance/[id]", params: { id } })}
+        />
       </SafeAreaView>
     );
   if (!data)
@@ -306,6 +364,30 @@ function PreparationForm({ id }: { id: string }) {
                   text(
                     `Cọc thế chấp: ${money(data.depositAmount)} · Đã thu: ${money(data.depositPaid)}`,
                   )}
+                {!handover && active && data.totalAmount != null && data.rentalPaid != null && (
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+                    <StatusBadge
+                      status={data.rentalPaid + rentalCollected >= data.totalAmount ? "completed" : "warning"}
+                      label={
+                        data.rentalPaid + rentalCollected > data.totalAmount
+                          ? `Tiền thuê: Dư ${money(data.rentalPaid + rentalCollected - data.totalAmount)}`
+                          : data.rentalPaid + rentalCollected === data.totalAmount
+                            ? "Tiền thuê: Đủ"
+                            : `Tiền thuê: Thiếu ${money(data.totalAmount - data.rentalPaid - rentalCollected)}`
+                      }
+                    />
+                    {!reserving && data.depositAmount != null && data.depositAmount > 0 && (
+                      <StatusBadge
+                        status={data.depositPaid + depositCollected >= data.depositAmount ? "completed" : "warning"}
+                        label={
+                          data.depositPaid + depositCollected >= data.depositAmount
+                            ? "Tiền cọc: Đủ"
+                            : `Tiền cọc: Thiếu ${money(data.depositAmount - data.depositPaid - depositCollected)}`
+                        }
+                      />
+                    )}
+                  </View>
+                )}
               </Card>
               {query.isError && (
                 <InlineError message="Chưa cập nhật được hồ sơ. Tải lại trước khi xác nhận." />
@@ -424,7 +506,7 @@ function PreparationForm({ id }: { id: string }) {
               {heading(`Khoản ${index + 1}`)}
               <ChoiceField
                 label={`Loại tiền khoản ${index + 1}`}
-                value={item.purpose}
+                value={reserving ? "rental" : item.purpose}
                 choices={[
                   {
                     value: "rental",
@@ -432,7 +514,7 @@ function PreparationForm({ id }: { id: string }) {
                       ? "Tiền giữ xe (trừ tiền thuê)"
                       : "Tiền thuê / phí",
                   },
-                  { value: "deposit", label: "Cọc thế chấp" },
+                  ...(!reserving ? [{ value: "deposit", label: "Cọc thế chấp" }] : []),
                 ]}
                 disabled={disabled}
                 onChange={(value) =>
@@ -511,7 +593,7 @@ function PreparationForm({ id }: { id: string }) {
                         amount: "",
                         method: "transfer",
                         account: "",
-                        paidAt: now(),
+                        paidAt: historicalReceiptTime(data.startsAt) || now(),
                       },
                     ]);
                   }}
@@ -576,7 +658,7 @@ function PreparationForm({ id }: { id: string }) {
           onCancel={() => setReload(false)}
           onConfirm={() => {
             setReload(false);
-            setRows([]);
+            setCustomRows(null);
             setMode(null);
             setAck(false);
             setLocalError("");

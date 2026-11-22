@@ -1,7 +1,7 @@
 import {FilteredListExport} from '@/components/filtered-list-export';
 import { useState } from "react";
 import { useQuery,useQueryClient } from "@tanstack/react-query";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { RefreshControl,ScrollView,Text,View } from "react-native";
 import type { MobileRecord } from "../../../shared/mobile-contract";
 import { useSession } from "@/providers/session";
@@ -11,8 +11,8 @@ import { Button,Card,InlineError,StateView } from "@/components/ui";
 import { ChoiceField,FormField } from "@/components/form-fields";
 import { ReminderCard } from "@/components/reminder-card";
 import { ReminderBatch } from "@/components/reminder-batch";
-function Reminders() {
-  const {api,session}=useSession(),theme=useTheme(),cache=useQueryClient(),canReadAll=Boolean(session!.user.allStores||session!.user.allStoresRead),[store,setStore]=useState(session!.user.allStores?"all":String(session!.user.storeId||"all")),[tab,setTab]=useState("history"),[page,setPage]=useState(1),[input,setInput]=useState(""),search=useDebouncedValue(input),[selection,setSelection]=useState<Record<string,MobileRecord>>({}),[batch,setBatch]=useState<number[]|null>(null);
+function Reminders({ initialTab = "history", initialStore }: { initialTab?: string; initialStore?: string }) {
+  const {api,session}=useSession(),theme=useTheme(),cache=useQueryClient(),canReadAll=Boolean(session!.user.allStores||session!.user.allStoresRead),[store,setStore]=useState(initialStore && (canReadAll || initialStore === String(session!.user.storeId)) ? initialStore : session!.user.allStores?"all":String(session!.user.storeId||"all")),[tab,setTab]=useState(initialTab === "compose" ? "compose" : "history"),[page,setPage]=useState(1),[input,setInput]=useState(""),search=useDebouncedValue(input),[selection,setSelection]=useState<Record<string,MobileRecord>>({}),[batch,setBatch]=useState<number[]|null>(null);
   const allowed=session!.user.permissions.includes("contracts.read"),canSend=allowed&&session!.user.permissions.some(p=>p==="contracts.draft"||p==="finance.write");
   const options=useQuery({queryKey:["reminder-options",session!.user.id],queryFn:({signal})=>api!.reminderOptions(signal),enabled:allowed});
   const filters=new URLSearchParams({store,page:String(page)}),params=filters.toString();filters.set("search",search);const contractParams=filters.toString();
@@ -39,4 +39,9 @@ function Reminders() {
     {batch&&<ReminderBatch ids={batch} onClose={()=>setBatch(null)} onSent={sent} />}
   </ScrollView>;
 }
-export default function Route() {const{api,session}=useSession();if(!api||!session)return <StateView title="Đăng nhập để xem nhắc nợ" />;return <Reminders key={`${api.origin}:${session.token}:${session.user.storeId}:${session.user.allStores}:${session.user.permissions.join(",")}`} />;}
+export default function Route() {
+  const{api,session}=useSession();
+  const { tab, store } = useLocalSearchParams<{ tab?: string; store?: string }>();
+  if(!api||!session)return <StateView title="Đăng nhập để xem nhắc nợ" />;
+  return <Reminders key={`${api.origin}:${session.token}:${session.user.storeId}:${session.user.allStores}:${session.user.permissions.join(",")}:${tab||""}:${store||""}`} initialTab={typeof tab==="string"?tab:undefined} initialStore={typeof store==="string"?store:undefined} />;
+}

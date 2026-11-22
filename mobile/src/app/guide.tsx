@@ -1,5 +1,5 @@
-import {useEffect,useRef,useState} from 'react';
-import {FlatList,Platform,RefreshControl,ScrollView,Text,View} from 'react-native';
+import {useEffect,useMemo,useRef,useState} from 'react';
+import {FlatList,Modal,Platform,Pressable,RefreshControl,ScrollView,Text,View} from 'react-native';
 import {useQuery} from '@tanstack/react-query';
 import {uuid} from 'expo';
 import {Image} from 'expo-image';
@@ -56,7 +56,7 @@ function FaqEditor({row,name,onClose,onSaved}:{row:GuideFaq|null;name:string;onC
   </EditorSheet>;
 }
 
-function FaqList() {
+function FaqList({onZoom}:{onZoom:(uri:string,headers?:Record<string,string>)=>void}) {
   const {api,session}=useSession(),theme=useTheme();
   const [category,setCategory]=useState(''),[status,setStatus]=useState(''),[search,setSearch]=useState(''),[page,setPage]=useState(1),[editor,setEditor]=useState<{row:GuideFaq|null}|null>(null);
   const debounced=useDebouncedValue(search,300);
@@ -77,7 +77,7 @@ function FaqList() {
         <Text style={{color:theme.muted,fontSize:13,lineHeight:21}}>{row.asker_name} · {dateTime(row.created_at)}</Text>
         {!!row.answer&&<Text selectable style={{color:theme.text,fontSize:16,lineHeight:25}}>{row.answer}</Text>}
         {!!row.answerer_name&&<Text style={{color:theme.muted}}>Trả lời: {row.answerer_name}</Text>}
-        {row.images.map(id=>{const src=api!.supportPhoto('guide-faq',String(id));return <Image cachePolicy="memory" key={id} source={{...src,cacheKey:JSON.stringify([session!.user.id,session!.sessionId||session!.expiresAt,src.uri])}} style={{width:'100%',aspectRatio:4/3,borderRadius:12}} contentFit="contain" accessibilityLabel={`Ảnh minh họa câu trả lời #${id}`}/>;})}
+        {row.images.map(id=>{const src=api!.supportPhoto('guide-faq',String(id));return <Pressable key={id} accessibilityRole="button" accessibilityLabel={`Phóng to ảnh minh họa câu trả lời #${id}`} onPress={()=>onZoom(src.uri,src.headers)}><Image cachePolicy="memory" source={{...src,cacheKey:JSON.stringify([session!.user.id,session!.sessionId||session!.expiresAt,src.uri])}} style={{width:'100%',aspectRatio:4/3,borderRadius:12}} contentFit="contain" accessibilityLabel={`Ảnh minh họa câu trả lời #${id}`}/></Pressable>;})}
         {query.data?.can_answer&&<Button secondary label={`Trả lời câu hỏi #${row.id}`} onPress={()=>setEditor({row})}/>}
       </Card>}
       ListEmptyComponent={!query.isPending&&!query.isError?<Text style={{color:theme.muted,padding:20,textAlign:'center'}}>Chưa có câu hỏi phù hợp.</Text>:undefined}
@@ -86,22 +86,58 @@ function FaqList() {
   </>;
 }
 
+const foldVi=(s:string)=>s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/gi,'d').toLowerCase();
+
 export default function Guide() {
   const theme=useTheme(),{api}=useSession();
   const [downloadError,setDownloadError]=useState('');
-  const [tab,setTab]=useState<'guide'|'faq'>('guide'),[workflow,setWorkflow]=useState(GUIDE_WORKFLOWS[0].id),[step,setStep]=useState(0);
-  const selected=GUIDE_WORKFLOWS.find(item=>item.id===workflow)!,current=selected.steps[step];
+  const [tab,setTab]=useState<'guide'|'manual'|'faq'>('guide'),[workflow,setWorkflow]=useState(GUIDE_WORKFLOWS[0].id),[step,setStep]=useState(0);
+  const [guideSearch,setGuideSearch]=useState(''),[chapterId,setChapterId]=useState('1');
+  const [zoomImage,setZoomImage]=useState<{uri:string;headers?:Record<string,string>}|null>(null);
+  const manualQuery=useQuery({queryKey:['guide-manual',api?.origin],queryFn:({signal})=>api!.guideManual(signal),enabled:!!api&&tab==='manual',staleTime:300_000});
+  const matchingWorkflows=useMemo(()=>{
+    const needle=foldVi(guideSearch.trim());
+    if(!needle)return GUIDE_WORKFLOWS;
+    return GUIDE_WORKFLOWS.filter(w=>foldVi(`${w.name} ${w.description} ${w.steps.map(s=>`${s.title} ${s.short} ${s.place} ${s.actions.join(' ')}`).join(' ')}`).includes(needle));
+  },[guideSearch]);
+  const selected=matchingWorkflows.find(item=>item.id===workflow)||matchingWorkflows[0]||GUIDE_WORKFLOWS[0];
+  const current=selected.steps[Math.min(step,selected.steps.length-1)];
+  const chapters=manualQuery.data?.chapters||[];
+  const activeChapter=chapters.find(c=>c.id===chapterId)||chapters[0];
   return <View style={{flex:1}}>
-    <View style={{paddingHorizontal:20,paddingTop:16,gap:10}}><Text accessibilityRole="header" style={{color:theme.text,fontSize:27,fontWeight:'800'}}>Hướng dẫn và hỏi đáp</Text><View style={{flexDirection:'row',gap:10}}><Button equalWidth secondary={tab!=='guide'} label="Hướng dẫn" onPress={()=>setTab('guide')}/><Button equalWidth secondary={tab!=='faq'} label="Hỏi đáp" onPress={()=>setTab('faq')}/></View></View>
-    {tab==='faq'?<FaqList/>:<ScrollView contentContainerStyle={{padding:20,gap:18,maxWidth:800,width:'100%',alignSelf:'center'}}>
-      <ChoiceField label="Nghiệp vụ cần hướng dẫn" value={workflow} choices={GUIDE_WORKFLOWS.map(item=>({value:item.id,label:item.name}))} onChange={value=>{setWorkflow(value);setStep(0);}}/>
+    <View style={{paddingHorizontal:20,paddingTop:16,gap:10}}>
+      <Text accessibilityRole="header" style={{color:theme.text,fontSize:27,fontWeight:'800'}}>Hướng dẫn và hỏi đáp</Text>
+      <View style={{flexDirection:'row',gap:8}}>
+        <Button equalWidth secondary={tab!=='guide'} label="Quy trình" onPress={()=>setTab('guide')}/>
+        <Button equalWidth secondary={tab!=='manual'} label="Sổ tay (17 mục)" onPress={()=>setTab('manual')}/>
+        <Button equalWidth secondary={tab!=='faq'} label="Hỏi đáp" onPress={()=>setTab('faq')}/>
+      </View>
+    </View>
+    {tab==='faq'?<FaqList onZoom={(uri,headers)=>setZoomImage({uri,headers})}/>:tab==='manual'?<ScrollView contentContainerStyle={{padding:20,gap:16,maxWidth:800,width:'100%',alignSelf:'center'}}>
+      {manualQuery.isPending?<StateView title="Đang tải sổ tay hướng dẫn…" loading/>:manualQuery.isError?<StateView title="Chưa tải được sổ tay" message={manualQuery.error.message} retry={()=>void manualQuery.refetch()}/>:<>
+        <ChoiceField label="Chương sổ tay hướng dẫn" value={activeChapter?.id||''} choices={chapters.map(c=>({value:c.id,label:c.title}))} searchable onChange={setChapterId}/>
+        {activeChapter&&<Card style={{gap:12}}>
+          <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'800'}}>{activeChapter.title}</Text>
+          {activeChapter.body.split(/\r?\n\r?\n/).map((block,idx)=>{
+            const img=/^!\[([^\]]*)\]\(([^)]+)\)$/.exec(block.trim());
+            if(img){
+              const uri=img[2].startsWith('images/')?`${api!.origin}/help/${img[2]}`:img[2];
+              return <Pressable key={idx} accessibilityRole="button" accessibilityLabel={`Phóng to ảnh ${img[1]}`} onPress={()=>setZoomImage({uri})}><View style={{gap:4}}><Image cachePolicy="memory-disk" source={{uri}} style={{width:'100%',aspectRatio:16/10,borderRadius:12,backgroundColor:theme.background}} contentFit="contain"/><Text style={{color:theme.muted,fontSize:12,textAlign:'center'}}>{img[1]} (Chạm để phóng to)</Text></View></Pressable>;
+            }
+            return <Text key={idx} selectable style={{color:theme.text,fontSize:15,lineHeight:23}}>{block.replace(/\*\*([^*]+)\*\*/g,'$1')}</Text>;
+          })}
+        </Card>}
+      </>}
+    </ScrollView>:<ScrollView contentContainerStyle={{padding:20,gap:18,maxWidth:800,width:'100%',alignSelf:'center'}}>
+      <FormField label="Tìm nhanh quy trình / bước thao tác" value={guideSearch} onChangeText={v=>{setGuideSearch(v);setStep(0);}} placeholder="Nhập từ khóa: thuê xe, gia hạn, trả xe, chấm công…" maxLength={120}/>
+      <ChoiceField label="Nghiệp vụ cần hướng dẫn" value={selected.id} choices={matchingWorkflows.map(item=>({value:item.id,label:item.name}))} onChange={value=>{setWorkflow(value);setStep(0);}}/>
       <Text style={{color:theme.muted,fontSize:15,lineHeight:24}}>{selected.description}</Text>
       <Button secondary label="Tải hướng dẫn và ảnh" onPress={()=>{void openURL(api!.origin+'/help/HIMOTO-huong-dan-su-dung.zip').catch(()=>setDownloadError('Chưa mở được tệp hướng dẫn. Kiểm tra mạng rồi thử lại.'));}}/>
       {!!downloadError&&<InlineError message={downloadError}/>}
-      <ChoiceField label="Bước thao tác" value={String(step)} choices={selected.steps.map((item,index)=>({value:String(index),label:`${index+1}. ${item.short}`}))} onChange={value=>setStep(Number(value))}/>
-      <Card style={{gap:16}}><Text style={{color:theme.primary,fontSize:13,fontWeight:'700'}}>BƯỚC {step+1} / {selected.steps.length}</Text><Text accessibilityRole="header" style={{color:theme.text,fontSize:22,fontWeight:'800',lineHeight:30}}>{current.title}</Text>
+      <ChoiceField label="Bước thao tác" value={String(Math.min(step,selected.steps.length-1))} choices={selected.steps.map((item,index)=>({value:String(index),label:`${index+1}. ${item.short}`}))} onChange={value=>setStep(Number(value))}/>
+      <Card style={{gap:16}}><Text style={{color:theme.primary,fontSize:13,fontWeight:'700'}}>BƯỚC {Math.min(step,selected.steps.length-1)+1} / {selected.steps.length}</Text><Text accessibilityRole="header" style={{color:theme.text,fontSize:22,fontWeight:'800',lineHeight:30}}>{current.title}</Text>
         <Text style={{color:theme.muted,lineHeight:23}}>{current.place}</Text>
-        {current.image&&<Image cachePolicy="memory-disk" source={{uri:`${api!.origin}/help/images/${current.image}`}} style={{width:'100%',aspectRatio:16/10,borderRadius:12,backgroundColor:theme.background}} contentFit="contain" accessibilityLabel={`Ảnh minh họa ${current.title}`}/>}
+        {current.image&&<Pressable accessibilityRole="button" accessibilityLabel={`Phóng to ảnh minh họa ${current.title}`} onPress={()=>setZoomImage({uri:`${api!.origin}/help/images/${current.image}`})}><Image cachePolicy="memory-disk" source={{uri:`${api!.origin}/help/images/${current.image}`}} style={{width:'100%',aspectRatio:16/10,borderRadius:12,backgroundColor:theme.background}} contentFit="contain" accessibilityLabel={`Ảnh minh họa ${current.title}`}/></Pressable>}
         {current.actions.map((action,index)=><View key={action} style={{flexDirection:'row',gap:10}}><Text style={{color:theme.primary,fontWeight:'700'}}>{index+1}.</Text><Text style={{color:theme.text,fontSize:16,lineHeight:25,flex:1}}>{action}</Text></View>)}
         {current.note&&<Text style={{color:theme.muted,fontSize:15,lineHeight:24}}>{current.note}</Text>}
         {current.table&&<View style={{gap:12}}>{current.table.rows.map((row,index)=><View key={index} style={{paddingVertical:8,borderBottomWidth:1,borderColor:theme.border,gap:5}}>{row.map((cell,column)=><Text key={column} style={{color:theme.text,lineHeight:22}}>{current.table!.headers[column]}: {cell}</Text>)}</View>)}</View>}
@@ -110,5 +146,11 @@ export default function Guide() {
       </Card>
       <Button label="Bước tiếp theo" disabled={step>=selected.steps.length-1} onPress={()=>setStep(value=>value+1)}/><Button secondary label="Bước trước" disabled={step<=0} onPress={()=>setStep(value=>value-1)}/>
     </ScrollView>}
+    {zoomImage&&<Modal visible transparent animationType="fade" onRequestClose={()=>setZoomImage(null)}>
+      <View style={{flex:1,backgroundColor:'rgba(0,0,0,0.88)',justifyContent:'center',padding:16,gap:14}}>
+        <Image cachePolicy="memory-disk" source={zoomImage} style={{width:'100%',height:'78%'}} contentFit="contain"/>
+        <Button secondary label="Đóng ảnh phóng to" onPress={()=>setZoomImage(null)}/>
+      </View>
+    </Modal>}
   </View>;
 }

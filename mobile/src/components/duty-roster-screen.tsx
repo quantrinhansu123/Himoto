@@ -70,12 +70,15 @@ export function DutyRosterScreen({initialStore}:{initialStore?:string}={}) {
   const [week, setWeek] = useState(() => dutyWeekStart(dutyToday()));
   const [showShifts,setShowShifts]=useState(false);
   const [store, setStore] = useState(initialStore || "all");
+  const [staffFilter, setStaffFilter] = useState("all");
   const [day, setDay] = useState("all"), [editor, setEditor] = useState<{ row: MobileDutySchedule | null } | null>(null), [deleting, setDeleting] = useState<MobileDutySchedule | null>(null);
   const readable = session!.user.permissions.includes("hr.read"), writable = session!.user.permissions.includes("hr.write");
   const roster = useQuery({ queryKey: ["duty-roster", session!.user.id, week, store], queryFn: ({ signal }) => api!.dutyRoster(new URLSearchParams({ week, ...(store === "all" ? {} : { store_id: store }) }).toString(), signal), enabled: readable });
   if (!readable) return <StateView title="Không có quyền xem lịch trực" />;
   const days = Array.from({ length: 7 }, (_, index) => dutyAddDays(week, index));
+  const staffOptions = [...new Map((roster.data?.schedules || []).map(r => [String(r.staff_id), r.staff_name])).entries()].map(([value, label]) => ({ value, label }));
   const visible = (roster.data?.schedules || []).filter(row => {
+    if (staffFilter !== "all" && String(row.staff_id) !== staffFilter) return false;
     if (day === "all") return true;
     if (!row.starts_at || !row.ends_at) return row.duty_date === day;
     return Date.parse(row.starts_at) < Date.parse(`${dutyAddDays(day, 1)}T00:00:00+07:00`) && Date.parse(row.ends_at) > Date.parse(`${day}T00:00:00+07:00`);
@@ -92,9 +95,10 @@ export function DutyRosterScreen({initialStore}:{initialStore?:string}={}) {
         <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 26, fontWeight: "800" }}>Lịch trực cơ sở</Text>
         <View style={{ flexDirection: "row", gap: 10 }}><Button equalWidth secondary label="Tuần trước" onPress={() => moveWeek(dutyAddDays(week, -7))} /><Button equalWidth secondary label="Tuần này" onPress={() => moveWeek(dutyToday())} /><Button equalWidth secondary label="Tuần sau" onPress={() => moveWeek(dutyAddDays(week, 7))} /></View>
         <DateField label="Ngày trong tuần cần xem" value={week} onChange={moveWeek} />
-        <ChoiceField label="Cơ sở" value={store} choices={[{ value: "all", label: "Tất cả cơ sở" }, ...stores.map(item => ({ value: String(item.id), label: item.name }))]} onChange={setStore} searchable />
+        <ChoiceField label="Cơ sở" value={store} choices={[{ value: "all", label: "Tất cả cơ sở" }, ...stores.map(item => ({ value: String(item.id), label: item.name }))]} onChange={v => { setStore(v); setStaffFilter("all"); }} searchable />
+        <ChoiceField label="Nhân viên trực" value={staffFilter} choices={[{ value: "all", label: "Tất cả nhân viên" }, ...staffOptions]} onChange={setStaffFilter} searchable />
         <ChoiceField label="Ngày trực" value={day} choices={[{ value: "all", label: `Cả tuần: ${week} → ${days[6]}` }, ...days.map(value => ({ value, label: value.split("-").reverse().join("/") }))]} onChange={setDay} />
-<FilteredListExport kind="duties" filters={new URLSearchParams({week,day,...store==='all'?{}:{store_id:store}}).toString()} disabled={roster.isFetching||roster.isError||!visible.length}/>
+<FilteredListExport kind="duties" filters={new URLSearchParams({week,day,...(store==='all'?{}:{store_id:store}),...(staffFilter==='all'?{}:{staff_id:staffFilter})}).toString()} disabled={roster.isFetching||roster.isError||!visible.length}/>
         <Text style={{ color: theme.muted }}>{visible.length} ca trực trong phạm vi đang xem</Text>
         {writable && <Button label="Tạo ca trực" onPress={() => setEditor({ row: null })} />}
         {roster.isError && <><InlineError message={roster.error.message} /><Button secondary label="Tải lại lịch trực" onPress={() => { void roster.refetch(); }} /></>}

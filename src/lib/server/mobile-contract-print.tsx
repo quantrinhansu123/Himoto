@@ -34,7 +34,9 @@ export async function previewMobileDraftPrint(user: SessionUser, request: NextRe
   const staff = draft.staff_id ? (await readMobileDraftStaff(user)).rows
     .filter(person=>String(person.id)===draft.staff_id)
     .map(person=>({id:person.id,code:'',status:'active',name:person.name,position:person.position})) : [];
-  const document = await withMobileDraft(user, '', async client => {
+  const draftIdRaw = request.nextUrl.searchParams.get('id') || '';
+  const draftId = /^[1-9]\d{0,14}$/.test(draftIdRaw) ? Number(draftIdRaw) : null;
+  const prepared = await withMobileDraft(user, '', async client => {
     const ids = [draft.store_id, contractStaffStoreId(draft)].filter(value=>/^[1-9]\d{0,14}$/.test(value));
     const vehicleIds = draft.vehicles.map(vehicle=>vehicle.id).filter(value=>/^[1-9]\d{0,14}$/.test(value));
     const storesResult = await client.query('SELECT id,store_name,store_address,store_phone FROM himoto.store_directory() WHERE id=ANY($1::bigint[])',[ids]);
@@ -47,9 +49,20 @@ export async function previewMobileDraftPrint(user: SessionUser, request: NextRe
     if (!branch || Object.keys(errors).length) {
       throw new MobileError('Kiểm tra các mục bắt buộc trước khi xem mẫu in.', 422, 'PRINT_FIELDS', errors);
     }
-    return buildContractDocument(draft,branch,staff[0]??{id:-1,code:'',status:'active',name:draft.staff_name.trim(),position:''});
+    let qr: ContractQrData | null = null;
+    if (draftId) {
+      await client.query('SAVEPOINT draft_print_qr');
+      try { qr = await readContractQr(client, draftId); }
+      catch { await client.query('ROLLBACK TO SAVEPOINT draft_print_qr'); }
+      finally { await client.query('RELEASE SAVEPOINT draft_print_qr'); }
+    }
+    return { document: buildContractDocument(draft,branch,staff[0]??{id:-1,code:'',status:'active',name:draft.staff_name.trim(),position:''}), qr };
   });
-  return {html:await mobilePrintHtml('Himoto · Mẫu in hợp đồng', <ContractPrintBody doc={document} />)};
+  let image: string | undefined;
+  if (prepared.qr?.configured && prepared.qr.qr_url) {
+    try { image = await mobilePrintQrImage(prepared.qr.qr_url); } catch { image = undefined; }
+  }
+  return {html:await mobilePrintHtml('Himoto · Mẫu in hợp đồng', <ContractPrintBody doc={prepared.document} paymentQr={image && prepared.qr ? <ContractPaymentQrMarkup data={prepared.qr} image={image} /> : undefined} />)};
 }
 
 /** Web's legal template and draft builder, rendered without client effects. */

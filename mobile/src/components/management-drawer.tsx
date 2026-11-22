@@ -12,7 +12,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { usePathname, useRouter, type Href } from "expo-router";
 import {
   AlarmClock,
+  AlertTriangle,
   BatteryCharging,
+  Bell,
   BookOpen,
   Building2,
   CalendarDays,
@@ -46,7 +48,6 @@ interface DrawerItem {
   route: Href & string;
   icon: React.ComponentType<{ size: number; color: string }>;
   permission?: string | null;
-  badge?: string;
 }
 
 interface DrawerSection {
@@ -67,73 +68,93 @@ export function ManagementDrawer({
   const { session, logout } = useSession();
   const workspace = useWorkspace();
   const { width } = useWindowDimensions();
-  const drawerWidth = Math.min(width * 0.85, 340);
+  const drawerWidth = Math.min(width * 0.84, 328);
 
   const permissions = session?.user.permissions || [];
 
   const currentStore = useMemo(() => {
     if (session?.user.allStores) return "Toàn bộ cơ sở";
-    const homeName = workspace.data?.stores.find((s) => s.id === session?.user.storeId)?.name || "Cơ sở được phân công";
-    return session?.user.allStoresRead ? `${homeName} · Xem toàn hệ thống` : homeName;
+    const homeName =
+      workspace.data?.stores.find((s) => s.id === session?.user.storeId)?.name ||
+      "Cơ sở được phân công";
+    return session?.user.allStoresRead
+      ? `${homeName} · Xem toàn hệ thống`
+      : homeName;
   }, [session, workspace.data?.stores]);
 
-  const sections: DrawerSection[] = useMemo(() => [
-    {
-      title: "VẬN HÀNH & QUẦY",
-      items: [
-        { id: "attendance", label: "Chấm công", route: "/attendance", icon: AlarmClock, permission: null },
-        { id: "mid-shift-reports", label: "Báo cáo giữa ca", route: "/mid-shift-reports", icon: ReceiptText, permission: "contracts.read" },
-        { id: "shift-reports", label: "Báo cáo Hết ca", route: "/shift-reports", icon: ReceiptText, permission: "contracts.read" },
-        { id: "operations", label: "Thao tác nhanh", route: "/(tabs)", icon: House, permission: null },
-        { id: "dashboard", label: "Dashboard · Tổng quan", route: "/dashboard", icon: LayoutDashboard, permission: "contracts.read" },
-        { id: "staff-sales", label: "Báo cáo doanh thu", route: "/staff-sales", icon: ReceiptText, permission: "contracts.read" },
-      ],
-    },
-    {
-      title: "HỢP ĐỒNG & KHÁCH HÀNG",
-      items: [
-        { id: "customers", label: "Khách hàng", route: "/(tabs)/customers", icon: UsersRound, permission: "customers.read" },
-        { id: "contracts", label: "Danh sách hợp đồng", route: "/(tabs)/contracts", icon: Files, permission: "contracts.read" },
-        { id: "drafts", label: "Hợp đồng nháp", route: "/contracts-workspace/drafts", icon: FilePenLine, permission: "contracts.read" },
-        { id: "vat", label: "Hợp đồng VAT", route: "/contracts-workspace/vat", icon: ReceiptText, permission: "contracts.read" },
-        { id: "overdue", label: "Hợp đồng quá hạn", route: "/contracts-workspace/overdue", icon: AlarmClock, permission: "contracts.read" },
-        { id: "due", label: "Đến hạn đóng tiền", route: "/contracts-workspace/due", icon: CalendarDays, permission: "contracts.read" },
-        { id: "debt-reminders", label: "Gửi nhắc nợ", route: "/debt-reminders", icon: MessageCircle, permission: "contracts.read" },
-        { id: "telegram-pending", label: "Chưa gửi Telegram", route: "/telegram-pending", icon: MessageCircle, permission: "contracts.read" },
-        { id: "ownership", label: "Hợp đồng thuê sở hữu", route: "/contracts-workspace/ownership", icon: KeyRound, permission: "contracts.read" },
-        { id: "battery", label: "Hợp đồng thuê pin / sạc", route: "/battery-contracts", icon: BatteryCharging, permission: "contracts.read" },
-        { id: "contract-types", label: "Loại hợp đồng", route: "/contract-types", icon: Files, permission: "settings.write" },
-      ],
-    },
-    {
-      title: "ĐỘI XE & ĐỊNH VỊ",
-      items: [
-        { id: "vehicles", label: "Danh sách xe", route: "/(tabs)/vehicles", icon: CarFront, permission: "vehicles.read" },
-        { id: "fleet-inventory", label: "Kho xe toàn hệ thống", route: "/fleet-inventory", icon: CarFront, permission: "vehicles.read" },
-        { id: "vehicle-transfers", label: "Lịch sử luân chuyển", route: "/vehicle-transfers", icon: History, permission: "vehicles.read" },
-        { id: "gps", label: "Định vị GPS", route: "/gps", icon: MapPin, permission: "vehicles.read" },
-      ],
-    },
-    {
-      title: "NHÂN SỰ & CƠ SỞ",
-      items: [
-        { id: "attendance-history", label: "Lịch sử chấm công", route: "/attendance-history", icon: History },
-        { id: "staff", label: "Nhân sự", route: "/directory/staff", icon: UsersRound, permission: "hr.read" },
-        { id: "shift-registrations", label: "Đăng ký ca", route: "/shift-registrations", icon: CalendarDays, permission: "hr.read" },
-        { id: "duty-roster", label: "Lịch trực cơ sở", route: "/duty-roster", icon: CalendarDays, permission: "hr.read" },
-        { id: "stores", label: "Cơ sở", route: "/directory/stores", icon: Building2, permission: "contracts.read" },
-      ],
-    },
-    {
-      title: "TÀI CHÍNH & HỆ THỐNG",
-      items: [
-        { id: "cashbook", label: "Sổ quỹ / Sổ két", route: "/cashbook", icon: Wallet, permission: "finance.read" },
-        { id: "integrations", label: "Tích hợp GPS & Telegram", route: "/integrations", icon: Settings, permission: "settings.write" },
-        { id: "accounts", label: "Tài khoản & Phân quyền", route: "/managed-accounts", icon: UsersRound, permission: "accounts.manage" },
-        { id: "guide", label: "Hướng dẫn sử dụng", route: "/guide", icon: BookOpen, permission: null },
-      ],
-    },
-  ], []);
+  // Exact Web ManagementShell.tsx section structure so staff transition seamlessly.
+  const sections: DrawerSection[] = useMemo(
+    () => [
+      {
+        title: "TỔNG QUAN & CHẤM CÔNG",
+        items: [
+          { id: "operations", label: "Thao tác nhanh", route: "/(tabs)", icon: House, permission: null },
+          { id: "attendance", label: "Chấm công", route: "/attendance", icon: AlarmClock, permission: null },
+          { id: "attendance-history", label: "Lịch sử chấm công", route: "/attendance-history", icon: History, permission: null },
+          { id: "dashboard", label: "Dashboard · Tổng quan", route: "/dashboard", icon: LayoutDashboard, permission: "contracts.read" },
+          { id: "notifications", label: "Thông báo công việc", route: "/notifications", icon: Bell, permission: null },
+        ],
+      },
+      {
+        title: "HỢP ĐỒNG",
+        items: [
+          { id: "contracts", label: "Danh sách hợp đồng", route: "/(tabs)/contracts", icon: Files, permission: "contracts.read" },
+          { id: "drafts", label: "Hợp đồng nháp", route: "/contracts-workspace/drafts", icon: FilePenLine, permission: "contracts.read" },
+          { id: "vat", label: "Hợp đồng VAT", route: "/contracts-workspace/vat", icon: ReceiptText, permission: "contracts.read" },
+          { id: "overdue", label: "Hợp đồng quá hạn", route: "/contracts-workspace/overdue", icon: AlarmClock, permission: "contracts.read" },
+          { id: "due", label: "Đến hạn đóng tiền", route: "/contracts-workspace/due", icon: CalendarDays, permission: "contracts.read" },
+          { id: "ownership", label: "Hợp đồng thuê sở hữu", route: "/contracts-workspace/ownership", icon: KeyRound, permission: "contracts.read" },
+          { id: "battery", label: "Hợp đồng thuê pin / sạc", route: "/battery-contracts", icon: BatteryCharging, permission: "contracts.read" },
+          { id: "telegram-pending", label: "Chưa gửi Telegram", route: "/telegram-pending", icon: MessageCircle, permission: "contracts.read" },
+          { id: "contract-types", label: "Loại hợp đồng", route: "/contract-types", icon: Files, permission: "settings.write" },
+        ],
+      },
+      {
+        title: "HCNS",
+        items: [
+          { id: "staff", label: "Nhân sự", route: "/directory/staff", icon: UsersRound, permission: "hr.read" },
+          { id: "shift-registrations", label: "Đăng ký ca", route: "/shift-registrations", icon: CalendarDays, permission: "hr.read" },
+          { id: "duty-roster", label: "Lịch trực cơ sở", route: "/duty-roster", icon: CalendarDays, permission: "hr.read" },
+        ],
+      },
+      {
+        title: "KẾ TOÁN",
+        items: [
+          { id: "cashbook", label: "Sổ quỹ / Sổ két", route: "/cashbook", icon: Wallet, permission: "finance.read" },
+          { id: "staff-sales", label: "Báo cáo doanh thu", route: "/staff-sales", icon: ReceiptText, permission: "contracts.read" },
+          { id: "debt-reminders", label: "Gửi nhắc nợ", route: "/debt-reminders", icon: MessageCircle, permission: "contracts.read" },
+          { id: "collection-report", label: "Báo cáo nợ chậm", route: "/collection-report", icon: AlertTriangle, permission: "contracts.read" },
+        ],
+      },
+      {
+        title: "BÁO CÁO",
+        items: [
+          { id: "mid-shift-reports", label: "Báo cáo giữa ca", route: "/mid-shift-reports", icon: ReceiptText, permission: "contracts.read" },
+          { id: "shift-reports", label: "Báo cáo Hết ca", route: "/shift-reports", icon: ReceiptText, permission: "contracts.read" },
+        ],
+      },
+      {
+        title: "VẬN HÀNH",
+        items: [
+          { id: "customers", label: "Khách hàng", route: "/(tabs)/customers", icon: UsersRound, permission: "customers.read" },
+          { id: "stores", label: "Cơ sở", route: "/directory/stores", icon: Building2, permission: "contracts.read" },
+          { id: "vehicles", label: "Danh sách xe", route: "/(tabs)/vehicles", icon: CarFront, permission: "vehicles.read" },
+          { id: "fleet-inventory", label: "Kho xe toàn hệ thống", route: "/fleet-inventory", icon: CarFront, permission: "vehicles.read" },
+          { id: "vehicle-transfers", label: "Lịch sử luân chuyển", route: "/vehicle-transfers", icon: History, permission: "vehicles.read" },
+          { id: "gps", label: "Định vị GPS", route: "/gps", icon: MapPin, permission: "vehicles.read" },
+        ],
+      },
+      {
+        title: "HỆ THỐNG",
+        items: [
+          { id: "integrations", label: "Tích hợp GPS & Telegram", route: "/integrations", icon: Settings, permission: "settings.write" },
+          { id: "accounts", label: "Tài khoản & Phân quyền", route: "/managed-accounts", icon: UsersRound, permission: "accounts.manage" },
+          { id: "guide", label: "Hướng dẫn sử dụng", route: "/guide", icon: BookOpen, permission: null },
+        ],
+      },
+    ],
+    [],
+  );
 
   const hasAccess = (item: DrawerItem) => {
     if (item.id === "integrations") return isAdminAccount(session?.user);
@@ -145,23 +166,24 @@ export function ManagementDrawer({
 
   const isItemActive = (item: DrawerItem) =>
     pathname === (item.route.replace(/\/\([^/]+\)/g, "") || "/");
-  const activeSection = sections.find(section =>
-    section.items.some(item => hasAccess(item) && isItemActive(item)),
-  )?.title ?? null;
+  const activeSection =
+    sections.find((section) =>
+      section.items.some((item) => hasAccess(item) && isItemActive(item)),
+    )?.title ?? null;
   const [expandedSection, setExpandedSection] = useState<{
     pathname: string;
     title: string | null;
   } | null>(null);
-  const expandedTitle = expandedSection?.pathname === pathname
-    ? expandedSection.title
-    : activeSection;
+  const expandedTitle =
+    expandedSection?.pathname === pathname
+      ? expandedSection.title
+      : activeSection;
 
   const handleNavigate = (route: Href & string) => {
     onClose();
-    // Small timeout ensures smooth drawer close before navigation
     setTimeout(() => {
       router.push(route);
-    }, 120);
+    }, 100);
   };
 
   const handleLogout = async () => {
@@ -171,7 +193,9 @@ export function ManagementDrawer({
     } catch {}
   };
 
-  const userRoleLabel = session?.user?.role ? (roles[session.user.role] || session.user.role) : "Nhân viên";
+  const userRoleLabel = session?.user?.role
+    ? roles[session.user.role] || session.user.role
+    : "Nhân viên";
 
   if (!visible) return null;
 
@@ -183,14 +207,12 @@ export function ManagementDrawer({
       onRequestClose={onClose}
     >
       <View style={styles.overlay}>
-        {/* Backdrop */}
         <Pressable
           style={styles.backdrop}
           onPress={onClose}
           accessibilityLabel="Đóng menu điều hướng"
         />
 
-        {/* Drawer Content */}
         <SafeAreaView
           edges={["top", "bottom", "left"]}
           style={[
@@ -202,7 +224,6 @@ export function ManagementDrawer({
             },
           ]}
         >
-          {/* Top Brand Header */}
           <View style={[styles.header, { borderBottomColor: theme.border }]}>
             <View style={{ flex: 1, gap: 2 }}>
               <Brand small />
@@ -227,39 +248,35 @@ export function ManagementDrawer({
             </Pressable>
           </View>
 
-          {/* Workspace Pill */}
-          <View style={[styles.workspaceCard, { backgroundColor: theme.tint, borderColor: theme.border }]}>
-            <View style={[styles.workspaceIcon, { backgroundColor: theme.primary }]}>
-              <Building2 size={16} color={theme.primaryText} />
-            </View>
-            <View style={{ flex: 1, gap: 1 }}>
-              <Text style={[styles.workspaceTitle, { color: theme.text }]}>
-                HIMOTO Workspace
-              </Text>
-              <Text style={[styles.workspaceSub, { color: theme.muted }]}>
-                Quản lý vận hành
-              </Text>
-            </View>
-          </View>
-
-          {/* User Profile Mini Bar */}
-          <View style={[styles.userBar, { backgroundColor: theme.background, borderColor: theme.border }]}>
-            <View style={[styles.userAvatar, { backgroundColor: theme.primary }]}>
+          <View
+            style={[
+              styles.userBar,
+              { backgroundColor: theme.background, borderColor: theme.border },
+            ]}
+          >
+            <View
+              style={[styles.userAvatar, { backgroundColor: theme.primary }]}
+            >
               <Text style={styles.userAvatarText}>
                 {(session?.user?.name || "H").charAt(0).toUpperCase()}
               </Text>
             </View>
             <View style={{ flex: 1 }}>
-              <Text numberOfLines={1} style={[styles.userName, { color: theme.text }]}>
+              <Text
+                numberOfLines={1}
+                style={[styles.userName, { color: theme.text }]}
+              >
                 {session?.user?.name || "Nhân viên"}
               </Text>
-              <Text numberOfLines={1} style={[styles.userRole, { color: theme.muted }]}>
+              <Text
+                numberOfLines={1}
+                style={[styles.userRole, { color: theme.muted }]}
+              >
                 {userRoleLabel} · {currentStore}
               </Text>
             </View>
           </View>
 
-          {/* Navigation Item List */}
           <ScrollView
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.scrollList}
@@ -276,80 +293,103 @@ export function ManagementDrawer({
                     accessibilityLabel={section.title}
                     accessibilityState={{ expanded }}
                     aria-expanded={expanded}
-                    onPress={() => setExpandedSection(current => ({
-                      pathname,
-                      title: (current?.pathname === pathname ? current.title : activeSection) === section.title
-                        ? null : section.title,
-                    }))}
+                    onPress={() =>
+                      setExpandedSection((current) => ({
+                        pathname,
+                        title:
+                          (current?.pathname === pathname
+                            ? current.title
+                            : activeSection) === section.title
+                            ? null
+                            : section.title,
+                      }))
+                    }
                     style={({ pressed }) => [
                       styles.sectionToggle,
-                      { backgroundColor: pressed ? theme.background : "transparent" },
+                      {
+                        backgroundColor: pressed
+                          ? theme.background
+                          : "transparent",
+                      },
                     ]}
                   >
-                    <Text style={[styles.sectionTitle, { color: activeSection === section.title ? theme.primary : theme.muted }]}>
+                    <Text
+                      style={[
+                        styles.sectionTitle,
+                        {
+                          color:
+                            activeSection === section.title
+                              ? theme.primary
+                              : theme.muted,
+                        },
+                      ]}
+                    >
                       {section.title}
                     </Text>
                     <ChevronDown
-                      size={18}
+                      size={16}
                       color={theme.muted}
                       accessible={false}
-                      style={{ transform: [{ rotate: expanded ? "180deg" : "0deg" }] }}
+                      style={{
+                        transform: [{ rotate: expanded ? "180deg" : "0deg" }],
+                      }}
                     />
                   </Pressable>
-                  {expanded && <View style={styles.sectionItems}>
-                    {visibleItems.map((item) => {
-                      const Icon = item.icon;
-                      const isActive = isItemActive(item);
+                  {expanded && (
+                    <View style={styles.sectionItems}>
+                      {visibleItems.map((item) => {
+                        const Icon = item.icon;
+                        const isActive = isItemActive(item);
 
-                      return (
-                        <Pressable
-                          key={item.id}
-                          accessibilityRole="button"
-                          accessibilityState={{ selected: isActive }}
-                          onPress={() => handleNavigate(item.route)}
-                          style={({ pressed }) => [
-                            styles.navItem,
-                            {
-                              backgroundColor: isActive
-                                ? theme.tint
-                                : pressed
-                                ? theme.background
-                                : "transparent",
-                            },
-                          ]}
-                        >
-                          <View
-                            style={[
-                              styles.navIconBox,
-                              isActive && { backgroundColor: theme.primary },
-                            ]}
-                          >
-                            <Icon
-                              size={18}
-                              color={isActive ? theme.primaryText : theme.text}
-                            />
-                          </View>
-                          <Text
-                            style={[
-                              styles.navLabel,
+                        return (
+                          <Pressable
+                            key={item.id}
+                            accessibilityRole="button"
+                            accessibilityState={{ selected: isActive }}
+                            onPress={() => handleNavigate(item.route)}
+                            style={({ pressed }) => [
+                              styles.navItem,
                               {
-                                color: isActive ? theme.primary : theme.text,
-                                fontWeight: isActive ? "700" : "500",
+                                backgroundColor: isActive
+                                  ? theme.tint
+                                  : pressed
+                                    ? theme.background
+                                    : "transparent",
                               },
                             ]}
                           >
-                            {item.label}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>}
+                            <View
+                              style={[
+                                styles.navIconBox,
+                                isActive && { backgroundColor: theme.primary },
+                              ]}
+                            >
+                              <Icon
+                                size={17}
+                                color={isActive ? theme.primaryText : theme.text}
+                              />
+                            </View>
+                            <Text
+                              style={[
+                                styles.navLabel,
+                                {
+                                  color: isActive ? theme.primary : theme.text,
+                                  fontWeight: isActive ? "700" : "500",
+                                },
+                              ]}
+                            >
+                              {item.label}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  )}
                 </View>
               );
             })}
           </ScrollView>
 
-          {/* Drawer Footer Actions */}
           <View style={[styles.footer, { borderTopColor: theme.border }]}>
             <Pressable
               onPress={() => handleNavigate("/change-password")}
@@ -358,7 +398,7 @@ export function ManagementDrawer({
                 { opacity: pressed ? 0.7 : 1 },
               ]}
             >
-              <KeyRound size={17} color={theme.muted} />
+              <KeyRound size={16} color={theme.muted} />
               <Text style={[styles.footerButtonText, { color: theme.text }]}>
                 Đổi mật khẩu
               </Text>
@@ -370,7 +410,7 @@ export function ManagementDrawer({
                 { opacity: pressed ? 0.7 : 1 },
               ]}
             >
-              <LogOut size={17} color={theme.danger} />
+              <LogOut size={16} color={theme.danger} />
               <Text style={[styles.footerButtonText, { color: theme.danger }]}>
                 Đăng xuất
               </Text>
@@ -383,13 +423,10 @@ export function ManagementDrawer({
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    flexDirection: "row",
-  },
+  overlay: { flex: 1, flexDirection: "row" },
   backdrop: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: "rgba(0, 0, 0, 0.45)",
+    backgroundColor: "rgba(15, 23, 42, 0.48)",
   },
   drawer: {
     height: "100%",
@@ -397,13 +434,13 @@ const styles = StyleSheet.create({
     elevation: 16,
     shadowColor: "#000",
     shadowOffset: { width: 4, height: 0 },
-    shadowOpacity: 0.15,
+    shadowOpacity: 0.14,
     shadowRadius: 10,
   },
   header: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     paddingTop: 8,
-    paddingBottom: 14,
+    paddingBottom: 12,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -412,7 +449,7 @@ const styles = StyleSheet.create({
   brandSubtitle: {
     fontSize: 10,
     fontWeight: "700",
-    letterSpacing: 1.2,
+    letterSpacing: 1.1,
     marginTop: 2,
   },
   closeButton: {
@@ -423,34 +460,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  workspaceCard: {
-    marginHorizontal: 14,
-    marginTop: 10,
-    marginBottom: 6,
-    padding: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  workspaceIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  workspaceTitle: {
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  workspaceSub: {
-    fontSize: 11,
-  },
   userBar: {
-    marginHorizontal: 14,
-    marginBottom: 10,
+    marginHorizontal: 12,
+    marginTop: 10,
+    marginBottom: 8,
     padding: 10,
     borderRadius: 10,
     borderWidth: 1,
@@ -465,26 +478,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  userAvatarText: {
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "800",
-  },
-  userName: {
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  userRole: {
-    fontSize: 11,
-  },
-  scrollList: {
-    paddingHorizontal: 10,
-    paddingBottom: 24,
-    gap: 6,
-  },
-  sectionContainer: {
-    gap: 4,
-  },
+  userAvatarText: { color: "#fff", fontSize: 14, fontWeight: "800" },
+  userName: { fontSize: 13.5, fontWeight: "700" },
+  userRole: { fontSize: 11.5 },
+  scrollList: { paddingHorizontal: 10, paddingBottom: 20, gap: 4 },
+  sectionContainer: { gap: 2 },
   sectionTitle: {
     flex: 1,
     fontSize: 11,
@@ -492,51 +490,45 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
   },
   sectionToggle: {
-    minHeight: 48,
+    minHeight: 42,
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
     paddingHorizontal: 8,
-    paddingVertical: 10,
+    paddingVertical: 8,
     borderRadius: 8,
   },
-  sectionItems: {
-    gap: 2,
-  },
+  sectionItems: { gap: 2, paddingBottom: 4 },
   navItem: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    paddingVertical: 9,
+    gap: 10,
+    paddingVertical: 8,
     paddingHorizontal: 10,
     borderRadius: 8,
   },
   navIconBox: {
-    width: 28,
-    height: 28,
+    width: 26,
+    height: 26,
     borderRadius: 6,
     alignItems: "center",
     justifyContent: "center",
   },
-  navLabel: {
-    fontSize: 14,
-    flex: 1,
-  },
+  navLabel: { fontSize: 13.5, flex: 1 },
   footer: {
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingVertical: 10,
     borderTopWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
     gap: 8,
   },
   footerButton: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 8,
+    gap: 7,
+    paddingVertical: 6,
+    paddingHorizontal: 6,
   },
-  footerButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-  },
+  footerButtonText: { fontSize: 13.5, fontWeight: "600" },
 });

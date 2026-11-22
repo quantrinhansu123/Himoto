@@ -6,7 +6,7 @@ import type {SessionUser} from './management-session';
 import {requestPermission} from './access-request';
 import {hasPermission} from '@/lib/management/permissions';
 import {withMobileData} from './mobile-context';
-import {himotoPool} from './himoto-database';
+import {himotoPool,ownerDatabase} from './himoto-database';
 import {MobileError} from './mobile-session';
 import {bulkDelete,parseBulkDelete,BulkDeleteError} from './bulk-delete';
 import {mobileBody,mobileRequestKey,idempotentMobileWrite} from './mobile-writes';
@@ -17,7 +17,7 @@ function allowed(user:SessionUser,target:MobileBulkKind){const permission=reques
 function selectedIds(target:MobileBulkKind,body:unknown){try{return parseBulkDelete(target,body).ids.sort((a,b)=>a-b);}catch(error){if(error instanceof BulkDeleteError)throw new MobileError(error.message,error.status);throw error;}}
 const tables:Record<MobileBulkKind,string>={staff:'staff_profiles',stores:'stores',customers:'customers',vehicles:'vehicles',contracts:'orders'};
 const names:Record<MobileBulkKind,string>={staff:'full_name',stores:'store_name',customers:'name',vehicles:'name',contracts:'contract_number'};
-async function transaction<T>(user:SessionUser,read:boolean,task:(db:PoolClient)=>Promise<T>){return withMobileData(user,'',async()=>{const db=await himotoPool.connect();try{await db.query(read?'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY':'BEGIN');await db.query("SET LOCAL statement_timeout='30s'");await db.query("SET LOCAL lock_timeout='5s'");const result=await task(db);await db.query('COMMIT');return result;}catch(error){await db.query('ROLLBACK').catch(()=>{});if(error instanceof BulkDeleteError)throw new MobileError(error.message,error.status,error.status===409?'CONFLICT':'INVALID_REQUEST');throw error;}finally{db.release();}});}
+async function transaction<T>(user:SessionUser,read:boolean,task:(db:PoolClient)=>Promise<T>,useOwner=false){return withMobileData(user,'',async()=>{const db=await(useOwner?ownerDatabase:himotoPool).connect();try{await db.query(read?'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY':'BEGIN');await db.query("SET LOCAL statement_timeout='30s'");await db.query("SET LOCAL lock_timeout='5s'");const result=await task(db);await db.query('COMMIT');return result;}catch(error){await db.query('ROLLBACK').catch(()=>{});if(error instanceof BulkDeleteError)throw new MobileError(error.message,error.status,error.status===409?'CONFLICT':'INVALID_REQUEST');throw error;}finally{db.release();}});}
 async function selection(db:PoolClient,user:SessionUser,target:MobileBulkKind,ids:number[],lock=false):Promise<MobileBulkReview>{
   const rows=(await db.query(target==='contracts'?`SELECT p.id,p.xmin::text AS revision,COALESCE(c.name,'') AS name,p.order_status AS status,
     COALESCE(NULLIF(p.contract_number,''),NULLIF(p.draft_reference,''),'#'||p.id::text) AS code,
@@ -39,7 +39,7 @@ export async function deleteMobileBulk(user:SessionUser,rawKind:string,request:N
     if(target==='vehicles'||target==='stores')await db.query(`LOCK TABLE himoto.${tables[target]} IN SHARE ROW EXCLUSIVE MODE`);
     const reviewed=await selection(db,user,target,ids,true);if(reviewed.review!==body.review)throw new MobileError('Hồ sơ đã thay đổi sau khi rà soát. Tải lại xác nhận trước khi xóa.',409,'CONFLICT');
     const deleted=await bulkDelete(db,target,ids);return{id:deleted.length,revision:'1'};
-  });return deletion(key,target,receipt.id,receipt.revision,receipt.replayed);});
+  });return deletion(key,target,receipt.id,receipt.revision,receipt.replayed);},target==='contracts');
 }
 export async function readMobileBulkDeletion(user:SessionUser,key:string){mobileRequestKey(key);return transaction(user,true,async db=>{const row=(await db.query('SELECT operation,resource_id,resource_revision FROM himoto.management_mobile_requests WHERE user_id=$1 AND request_id=$2',[user.id,key])).rows[0];if(!row||!isBulkDeleteOperation(row.operation))throw new MobileError('Chưa có xác nhận xóa. Giữ mã để đối chiếu.',404,'NOT_FOUND');const target=kind(String(row.operation).split('.')[1]);allowed(user,target);return deletion(key,target,Number(row.resource_id),String(row.resource_revision),true);});}
 export async function resolveMobileBulkDelete(user:SessionUser,key:string,operation:string):Promise<MobileWriteResolution>{

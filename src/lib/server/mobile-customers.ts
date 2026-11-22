@@ -2,7 +2,7 @@ import "server-only";
 import type { NextRequest } from "next/server";
 import { hasPermission } from "@/lib/management/permissions";
 import { parseCustomerRelatives } from "@/lib/management/customer-relatives";
-import type { MobileCustomerProfile } from "../../../shared/mobile-contract";
+import type { MobileCustomerDetail, MobileCustomerPayment, MobileCustomerProfile } from "../../../shared/mobile-contract";
 import type { SessionUser } from "./management-session";
 import {
   CustomerWriteError,
@@ -11,8 +11,14 @@ import {
   parseCustomerWrite,
   updateCustomer,
 } from "./customer-writes";
+import {
+  CustomerBlacklistError,
+  changeCustomerBlacklist,
+  parseBlacklistChange,
+} from "./customer-blacklist";
+import { readCustomerCashflow } from "./contract-history";
 import { MobileError } from "./mobile-session";
-import { withMobileData } from "./mobile-context";
+import { withMobileData, withMobileReadData } from "./mobile-context";
 import { himotoPool } from "./himoto-database";
 import {
   idempotentMobileWrite,
@@ -275,5 +281,176 @@ export async function readMobileCustomerReceipt(
         replayed: true,
       },
     };
+  });
+}
+
+export async function readMobileCustomerDetail(
+  user: SessionUser,
+  id: number,
+): Promise<MobileCustomerDetail> {
+  if (!hasPermission(user, "customers.read"))
+    throw new MobileError("Tài khoản không có quyền xem khách hàng.", 403, "FORBIDDEN");
+  return withMobileReadData(user, "", async () => {
+    const result = await himotoPool.query(
+      `SELECT c.id,c.name,c.phone,c.email,c.address,c.id_card,c.customer_type,c.nationality,c.contact_channel,c.contact_detail,
+        c.store_id,COALESCE(s.store_name,'') AS store_name,c.status,c.warning,c.driver_license_number,
+        c.driver_license_issued_on::text AS driver_license_issued_on,c.id_card_issued_on::text AS id_card_issued_on,
+        c.id_card_issued_by,c.relatives,c.xmin::text AS revision,
+        (SELECT count(*)::int FROM himoto.orders o WHERE o.customer_id=c.id AND o.deleted_at IS NULL) AS contract_count
+       FROM himoto.customers c
+       LEFT JOIN himoto.store_directory() s ON s.id=c.store_id
+       WHERE c.id=$1`,
+      [id],
+    );
+    const row = result.rows[0];
+    if (!row)
+      throw new MobileError("Không tìm thấy hồ sơ khách hàng trong phạm vi được cấp.", 404, "NOT_FOUND");
+    const text = (key: string) => (row[key] == null ? "" : String(row[key]));
+    let relatives: MobileCustomerDetail["relatives"] = [];
+    try {
+      relatives = parseCustomerRelatives(row.relatives ?? []);
+    } catch {
+      relatives = [];
+    }
+    return {
+      id: Number(row.id),
+      code: `KH-${String(row.id).padStart(4, "0")}`,
+      name: text("name"),
+      phone: text("phone"),
+      email: text("email"),
+      address: text("address"),
+      id_card: text("id_card"),
+      customer_type: row.customer_type === "foreign" ? "foreign" : "vietnam",
+      nationality: text("nationality"),
+      contact_channel: text("contact_channel"),
+      contact_detail: text("contact_detail"),
+      store_id: row.store_id == null ? null : Number(row.store_id),
+      store_name: text("store_name"),
+      status:
+        Number(row.status) === 2
+          ? "blacklist"
+          : Number(row.status) === 0
+            ? "draft"
+            : text("warning").trim()
+              ? "warning"
+              : "active",
+      warning_note: text("warning"),
+      driver_license_number: text("driver_license_number"),
+      driver_license_issued_on: text("driver_license_issued_on"),
+      id_card_issued_on: text("id_card_issued_on"),
+      id_card_issued_by: text("id_card_issued_by"),
+      relatives,
+      revision: text("revision"),
+      contract_count: Number(row.contract_count || 0),
+    };
+  });
+}
+
+export async function readMobileCustomerPayments(
+  user: SessionUser,
+  id: number,
+): Promise<{ id: number; rows: MobileCustomerPayment[] }> {
+  if (!hasPermission(user, "customers.read"))
+    throw new MobileError("Tài khoản không có quyền xem thanh toán khách hàng.", 403, "FORBIDDEN");
+  return withMobileReadData(user, "", async () => {
+    const visible = await himotoPool.query("SELECT id FROM himoto.customers WHERE id=$1", [id]);
+    if (!visible.rowCount)
+      throw new MobileError("Không tìm thấy hồ sơ khách hàng trong phạm vi được cấp.", 404, "NOT_FOUND");
+    const cashflow = await readCustomerCashflow(himotoPool, id);
+    return {
+      id,
+      rows: cashflow.map((row) => ({
+        id: row.id,
+        at: row.at,
+        type: row.type,
+        reason: row.reason,
+        note: row.note,
+        amount: Number.isFinite(row.amount) ? row.amount : null,
+        method: row.method,
+        account: row.account,
+        actor: row.actor,
+        status: row.status,
+        status_code: row.status_code || "",
+        order_id: row.order_id ?? null,
+        contract_code: row.contract_code || "",
+      })),
+    };
+  });
+}
+
+export async function writeMobileCustomerBlacklist(
+  user: SessionUser,
+  request: NextRequest,
+  id: number,
+): Promise<{ id: number; status: string; revision: string }> {
+  requireCustomerWrite(user);
+  const body = await mobileBody(request);
+  let parsed: ReturnType<typeof parseBlacklistChange>;
+  try {
+    parsed = parseBlacklistChange(body);
+  } catch (error) {
+    if (error instanceof CustomerBlacklistError)
+      throw new MobileError(error.message, error.status, "INVALID_BLACKLIST");
+    throw error;
+  }
+  return withMobileData(user, "", async () => {
+    const client = await himotoPool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SET LOCAL statement_timeout='20s'");
+      const updated = await changeCustomerBlacklist(client, id, parsed);
+      await client.query("COMMIT");
+      return {
+        id: Number(updated.id),
+        status: updated.status,
+        revision: String(updated.customer_revision),
+      };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
+      if (error instanceof CustomerBlacklistError)
+        throw new MobileError(error.message, error.status, error.status === 409 ? "CUSTOMER_CONFLICT" : "INVALID_BLACKLIST");
+      throw error;
+    } finally {
+      client.release();
+    }
+  });
+}
+
+export async function deleteMobileCustomer(
+  user: SessionUser,
+  id: number,
+): Promise<{ id: number; deleted: true }> {
+  if (!hasPermission(user, "settings.write") || !hasPermission(user, "customers.read"))
+    throw new MobileError("Tài khoản không có quyền xóa khách hàng.", 403, "FORBIDDEN");
+  return withMobileData(user, "", async () => {
+    const client = await himotoPool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SET LOCAL statement_timeout='20s'");
+      await client.query("SET LOCAL lock_timeout='5s'");
+      const customer = await client.query("SELECT id FROM himoto.customers WHERE id=$1 FOR UPDATE", [id]);
+      if (!customer.rowCount) {
+        await client.query("ROLLBACK");
+        throw new MobileError("Không tìm thấy khách hàng cần xóa.", 404, "NOT_FOUND");
+      }
+      const linkedOrders = await client.query("SELECT count(*)::int AS count FROM himoto.orders WHERE customer_id=$1", [id]);
+      const count = Number(linkedOrders.rows[0]?.count || 0);
+      if (count > 0) {
+        await client.query("ROLLBACK");
+        throw new MobileError(
+          `Không thể xóa hồ sơ này vì đang liên kết với ${count} đơn thuê. Hãy giữ lại hồ sơ để bảo toàn lịch sử hợp đồng.`,
+          409,
+          "CUSTOMER_LINKED_CONTRACTS",
+        );
+      }
+      await client.query("DELETE FROM himoto.customers WHERE id=$1", [id]);
+      await client.query("COMMIT");
+      return { id, deleted: true as const };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw error;
+    } finally {
+      client.release();
+    }
   });
 }

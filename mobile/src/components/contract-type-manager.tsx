@@ -8,6 +8,7 @@ import { pendingWrites } from '@/lib/pending-writes';
 import { useTheme } from '@/theme';
 import { Button,Card,InlineError,StateView } from './ui';
 import { ChoiceField,FormField } from './form-fields';
+import { FileExportButton } from './file-export-button';
 import { ShiftNumberField } from './shift-number-field';
 import { ConfirmEdit,EditorSheet } from './editor-sheet';
 import { ContractTypeResult } from './contract-type-result';
@@ -32,6 +33,21 @@ export function ContractTypeManager({onClose,onCreated}:{onClose?:()=>void;onCre
     {editor?<Card style={{gap:16}}><Text style={{color:theme.text,fontSize:22,fontWeight:'700'}}>{editing?'Đổi tên loại hợp đồng':'Thêm loại hợp đồng'}</Text><FormField label="Tên loại hợp đồng" value={label} onChangeText={setLabel} maxLength={80} editable={!busy&&!pending} autoCapitalize="sentences" />{editing?<><Text style={{color:theme.text}}>Cách tính tiền: {CONTRACT_TYPE_BILLING.find(t=>t.value===editing.rental_type)?.label||'Theo loại đã lưu'}</Text><Text style={{color:theme.muted,lineHeight:24}}>Cách tính tiền và thời hạn gợi ý giữ nguyên. Tạo loại mới nếu cần cách tính khác.</Text><Text style={{color:theme.text}}>Thời hạn: {editing.term_months===null?'Không gợi ý':`${editing.term_months} tháng`} · {editing.active?'Đang dùng':'Đã ẩn'}</Text></>:<><ChoiceField label="Cách tính tiền loại hợp đồng" value={billing} choices={[...CONTRACT_TYPE_BILLING]} disabled={busy||pending} onChange={v=>{setBilling(v as ContractTypeInput['rental_type']);if(v==='daily')setMonths(null);}} /><ShiftNumberField label="Thời hạn gợi ý loại hợp đồng (tháng)" value={months} nullable disabled={busy||pending||billing==='daily'} onChange={setMonths} /></>}<Button label={editing?'Rà soát tên loại hợp đồng':'Rà soát thêm loại hợp đồng'} disabled={pending} loading={busy} onPress={review} /><Button secondary label="Hủy sửa loại hợp đồng" disabled={busy||pending} onPress={()=>{if(dirty)setExit(()=>reset);else reset();}} /></Card>:canWrite&&<Button label="Thêm loại hợp đồng" disabled={pending||query.isPending||query.isError} onPress={()=>{reset();setEditor(true);}} />}
     {!canWrite&&<Text style={{color:theme.muted}}>Tài khoản có thể xem danh mục. Quản lý cần quyền cấu hình và ghi thu/chi.</Text>}
     <FormField label="Tìm tên loại hợp đồng" value={search} onChangeText={setSearch} /><ChoiceField label="Trạng thái loại hợp đồng" value={status} choices={[{value:'',label:'Tất cả'},{value:'active',label:'Đang dùng'},{value:'hidden',label:'Đã ẩn'}]} onChange={setStatus} />
+    {query.data&&<FileExportButton
+      label="Tải Excel danh mục loại hợp đồng"
+      disabled={query.isFetching}
+      load={signal=>api.exportWorkbook({
+        filename:'himoto-loai-hop-dong',
+        headers:['Mã loại','Tên loại hợp đồng','Cách tính tiền','Thời hạn gợi ý (tháng)','Trạng thái'],
+        rows:query.data.filter(t=>(!status||t.active===(status==='active'))&&t.label.toLocaleLowerCase('vi').includes(search.trim().toLocaleLowerCase('vi'))).map(t=>[
+          t.id,
+          t.label,
+          CONTRACT_TYPE_BILLING.find(b=>b.value===t.rental_type)?.label||t.rental_type,
+          t.term_months??'',
+          t.active?'Đang dùng':'Đã ẩn',
+        ]),
+      },signal)}
+    />}
     {query.isPending?<StateView title="Đang tải danh mục loại hợp đồng" loading />:query.isError?<StateView title="Chưa tải được loại hợp đồng" message={query.error.message} retry={()=>{void query.refetch();}} />:query.data.filter(t=>(!status||t.active===(status==='active'))&&t.label.toLocaleLowerCase('vi').includes(search.trim().toLocaleLowerCase('vi'))).map(t=><Card key={t.id} style={{gap:12}}><Text style={{color:theme.text,fontSize:21,fontWeight:'800'}}>{t.label}</Text><Text style={{color:theme.text}}>{t.active?'Đang dùng':'Đã ẩn'}{t.term_months?` · ${t.term_months} tháng`:''}</Text><Text style={{color:theme.muted}}>{CONTRACT_TYPE_BILLING.find(b=>b.value===t.rental_type)?.label||'Theo loại đã lưu'}</Text>{canWrite&&<><Button secondary label={`Đổi tên loại · ${t.label}`} disabled={busy||pending||editor} onPress={()=>{setEditing(t);setLabel(t.label);setMonths(t.term_months);setEditor(true);setError('');}} /><Button secondary label={`${t.active?'Ẩn':'Hiện'} loại · ${t.label}`} disabled={busy||pending||editor} onPress={()=>setPlan({editing:true,input:{id:t.id,revision:t.revision,label:t.label,active:!t.active}})} /></>}</Card>)}
     <Button secondary label="Làm mới danh mục loại hợp đồng" loading={query.isFetching} disabled={busy||pending} onPress={()=>{void query.refetch();}} />
   </ScrollView></KeyboardAvoidingView>;

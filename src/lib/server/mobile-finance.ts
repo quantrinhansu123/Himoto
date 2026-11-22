@@ -6,6 +6,7 @@ import type { PaymentContext } from "@/lib/management/contract-payments";
 import { canAddExtraReceipt, PAYABLE_STATUSES,RENEWABLE_STATUSES, paymentAccounts } from "@/lib/management/contract-payments";
 import { hasPermission } from "@/lib/management/permissions";
 import { ContractPaymentError, parseContractPayment, readPaymentContext, recordContractPayment } from "./contract-payments";
+import { queueContractNotification } from "./contract-notifications";
 import { withMobileData, withMobileReadData } from "./mobile-context";
 import { himotoPool } from "./himoto-database";
 import { MobileError } from "./mobile-session";
@@ -152,6 +153,10 @@ export async function recordMobilePayment(user: SessionUser, value: string, requ
         const result = await recordContractPayment(client, id, user.id, input, readOptions);
         if (!Number.isSafeInteger(result.transaction_id) || result.transaction_id <= 0)
           throw new MobileError("Chưa xác nhận được phiếu thu/chi. Giữ mã để đối chiếu.", 503, "INVALID_WRITE_RECEIPT");
+        if (normalized.purpose === "renewal" && !result.replayed) {
+          const renewalRow = (await client.query("SELECT renewal_payload FROM himoto.management_contract_payments WHERE transaction_id=$1 AND order_id=$2", [result.transaction_id, id])).rows[0];
+          await queueContractNotification(client, id, "renewal", `renewal-receipt:${id}:${result.transaction_id}`, user.id, `renewal-receipt-${result.transaction_id}`, { ...(renewalRow?.renewal_payload || {}), transaction_id: result.transaction_id });
+        }
         return { id, revision: result.context.revision };
       });
       const found = await receipt(client, user, key);

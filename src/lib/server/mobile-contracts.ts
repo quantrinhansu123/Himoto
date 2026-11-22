@@ -258,6 +258,9 @@ export async function readMobileContractPreparation(
               : ("transfer" as const),
       })),
       issues,
+      expectedRentalMethod: d.payment_method,
+      expectedDepositMethod: d.deposit_payment_method,
+      extraChargesTotal: (d.extra_charges || []).reduce((sum, item) => sum + (Number(item.amount) || 0), 0),
     };
   });
 }

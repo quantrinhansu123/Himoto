@@ -41,25 +41,35 @@ export function returnFeeInput(preparation:MobileReturnPreparation,lines:ReturnL
   })};
 }
 export function returnSettlementInput(preparation:MobileReturnPreparation,fees:MobileReturnPreview,lines:MobileReturnPreviewInput,
-  receipts:ReturnReceiptDraft[],rentalRefund:ReturnMoneyDraft|null,depositRefund:ReturnMoneyDraft|null,acknowledged=false,now=Date.now()):MobileReturnSettlementInput {
+  receipts:ReturnReceiptDraft[],rentalRefund:ReturnMoneyDraft|null,depositRefund:ReturnMoneyDraft|null,acknowledged=false,now=Date.now(),
+  deferredRecipient?:{bank:string;recipientAccount:string;recipientName:string}):MobileReturnSettlementInput {
   if(preparation.id!==fees.id||preparation.revision!==fees.revision||receipts.length>50)throw Error('Hợp đồng hoặc danh sách khoản thu đã thay đổi. Rà soát phí lại.');
+  function parseRecipient(rec:{bank:string;recipientAccount:string;recipientName:string},label:string){
+    if([rec.bank,rec.recipientAccount,rec.recipientName].some(text=>text.trim().length>150))throw Error(label+': thông tin người nhận tối đa 150 ký tự.');
+    const acct=rec.recipientAccount.trim().replace(/[\s.]/g,'');
+    if(acct&&!/^[A-Z0-9-]{3,34}$/i.test(acct))throw Error(label+': số tài khoản người nhận chưa hợp lệ.');
+    const out:{bank?:string;account?:string;name?:string}={};
+    if(rec.bank.trim())out.bank=rec.bank.trim();
+    if(acct)out.account=acct;
+    if(rec.recipientName.trim())out.name=rec.recipientName.trim();
+    return Object.keys(out).length?out:undefined;
+  }
   function parse(row:ReturnMoneyDraft,label:string,refund=false):MobileReturnRefund {
     const value=amount(row.amount,label,true);date(row.paidAt,label+' · thời gian',now);
     if(!/^[1-9]\d{0,14}$/.test(row.account)||!preparation.accounts.some(a=>a.method===row.method&&a.id===Number(row.account)))
       throw Error(label+': chọn tài khoản đúng phương thức thu/chi.');
     const result:MobileReturnRefund={amount:value,method:row.method,account_id:Number(row.account),paid_at:row.paidAt};
     if(refund&&row.method!=='cash'){
-      if([row.bank,row.recipientAccount,row.recipientName].some(text=>text.trim().length>150))throw Error(label+': thông tin người nhận tối đa 150 ký tự.');
-      const account=row.recipientAccount.trim().replace(/[\s.]/g,'');
-      if(account&&!/^[A-Z0-9-]{3,34}$/i.test(account))throw Error(label+': số tài khoản người nhận chưa hợp lệ.');
-      if(row.bank.trim())result.recipient_bank=row.bank.trim();
-      if(account)result.recipient_account=account;
-      if(row.recipientName.trim())result.recipient_name=row.recipientName.trim();
+      const rec=parseRecipient(row,label);
+      if(rec?.bank)result.recipient_bank=rec.bank;
+      if(rec?.account)result.recipient_account=rec.account;
+      if(rec?.name)result.recipient_name=rec.name;
     }
     return result;
   }
+  const deferredRec=!depositRefund&&fees.after.depositHeld>0&&deferredRecipient?parseRecipient(deferredRecipient,'Người nhận hoàn cọc'):undefined;
   return{...lines,fee_snapshot:fees.snapshot,settlement:{receipts:receipts.map((row,i)=>({...parse(row,'Khoản thu '+(i+1)),kind:row.kind})),
     ...(rentalRefund?{rental_refund:parse(rentalRefund,'Hoàn tiền thuê',true)}:{}),
-    ...(depositRefund?{refund:parse(depositRefund,'Hoàn cọc',true)}:fees.after.depositHeld>0?{refund_deferred:true}:{})},
+    ...(depositRefund?{refund:parse(depositRefund,'Hoàn cọc',true)}:fees.after.depositHeld>0?{refund_deferred:true,...(deferredRec?{refund_recipient:deferredRec}:{})}:{})},
     ...(acknowledged?{acknowledge_overpayment:true}:{})};
 }

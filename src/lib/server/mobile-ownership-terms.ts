@@ -39,7 +39,7 @@ export async function readMobileOwnershipTerms(user: SessionUser, value: string)
   const id = mobileContractId(value);
   return transaction(user, false, async client => {
     const state = await readOwnershipTerms(client, id, user);
-    const profile = { id: state.id, code: state.code, revision: state.revision, status: state.status, term_months: state.term_months, daily_amount: state.daily_amount, can_edit: state.can_edit };
+    const profile = { id: state.id, code: state.code, revision: state.revision, status: state.status, term_months: state.term_months, daily_amount: state.daily_amount, can_edit: state.can_edit, history: state.history };
     if (!isMobileOwnershipTerms(profile)) throw new MobileError('Thời hạn / mức đóng sở hữu cần đối chiếu trên web.', 409, 'DATA_REVIEW_REQUIRED');
     return profile;
   });

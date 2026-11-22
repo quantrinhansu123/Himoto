@@ -9,7 +9,11 @@ import type {IntegrationSettings} from '../../../shared/mobile-integrations';
 export function IntegrationHistory({settings}:{settings:IntegrationSettings}){
   const{api,session}=useSession(),theme=useTheme();
   const query=useQuery({queryKey:['integration-health',api?.origin,session?.user.id],queryFn:({signal})=>api!.integrationHealth(signal),retry:false,staleTime:60_000,refetchOnWindowFocus:false});
-  if(query.isPending)return <StateView title="Đang đọc thống kê lịch sử GPS" loading/>;
-  if(query.isError)return <><InlineError message="Chưa đọc được thống kê lịch sử; cấu hình vẫn được giữ."/><Button label="Tải lại thống kê GPS" secondary onPress={()=>void query.refetch()}/></>;
-  return <><Text style={{color:theme.muted}}>Thống kê sự kiện lúc {dateTime(query.data.counts_at)}</Text><IntegrationStatus section="history" settings={{...settings,gps_history:{...settings.gps_history,...query.data,pending:false}}}/></>;
+  return <>
+    {query.isPending&&<StateView title="Đang đọc thống kê lịch sử GPS" loading/>}
+    {query.isError&&<InlineError message="Chưa đọc được thống kê lịch sử mới nhất; cấu hình kênh GPS vẫn hiển thị bên dưới."/>}
+    {query.data&&<Text style={{color:theme.muted}}>Thống kê sự kiện lúc {dateTime(query.data.counts_at)}</Text>}
+    <Button label="Tải lại thống kê GPS" secondary loading={query.isFetching} onPress={()=>void query.refetch()}/>
+    <IntegrationStatus section="history" settings={{...settings,gps_history:{...settings.gps_history,...(query.data||{}),pending:query.isPending}}}/>
+  </>;
 }

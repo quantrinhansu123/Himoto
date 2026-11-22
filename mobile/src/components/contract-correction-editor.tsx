@@ -5,6 +5,8 @@ import { Stack, usePreventRemove } from 'expo-router';
 import type { MobileCorrectionKind, MobileReceiptCorrections, MobileReceiptCorrectionInput, MobileRenewalCorrections, MobileRenewalCorrectionInput, MobileRenewalCorrectionPeriod, MobileRenewalCorrectionReceipt, MobileCorrectionAccount, MobileReceiptSplit } from '../../../shared/mobile-contract-corrections';
 import type { MobileCollectionMethod } from '@himoto/mobile-contract';
 import { validDraftTime } from '@himoto/mobile-draft-validation';
+import { addRentalDuration } from '../../../shared/rental-time';
+import { DEFAULT_RENEWAL_HOURLY_RATE, renewalDurationUnits, renewalRateSuggestion } from '../../../shared/renewal-duration';
 import { useContractCorrectionWrite } from '@/hooks/use-contract-correction-write';
 import { dateTime, money, useTheme } from '@/theme';
 import { Button, Card, InlineError, StateView } from './ui';
@@ -116,6 +118,8 @@ function RenewalCorrectionForm({ initial, disabled, onDirty, onReview }: { initi
         ? `receipt:${initial.receipts[0].id}`
         : '';
   const [selected, setSelected] = useState(defaultTarget);
+  const [calcUnit, setCalcUnit] = useState<'day' | 'hour'>('day');
+  const [calcRate, setCalcRate] = useState('');
   const [forms, setForms] = useState<Record<string, { method: MobileCollectionMethod; account_id: number; paidAt: string; collected: string; before: string; end: string; amount: string; reason: string }>>({}), [error, setError] = useState('');
   const receipt = selected.startsWith('receipt:') ? initial.receipts.find(r => `receipt:${r.id}` === selected) : undefined;
   const renewal: MobileRenewalCorrectionPeriod | undefined = selected.startsWith('version:') ? periods.find(p => `version:${p.version}` === selected) : undefined;
@@ -182,6 +186,43 @@ function RenewalCorrectionForm({ initial, disabled, onDirty, onReview }: { initi
         {collecting && <CorrectionRouting label={receipt ? `phiếu gia hạn ${receipt.id}` : `kỳ gia hạn v${renewal!.version}`} value={form} accounts={initial.accounts} disabled={disabled} onChange={routing => change({ ...form, ...routing })} />}
         <RentalDateTime label="bắt đầu kỳ gia hạn" value={form.before} disabled={disabled} onChange={before => change({ ...form, before })} />
         <RentalDateTime label="kết thúc kỳ gia hạn" value={form.end} disabled={disabled} onChange={end => change({ ...form, end })} />
+        {feeEditable && !!form.before && (
+          <View style={{ padding: 12, borderRadius: 10, backgroundColor: theme.background, borderWidth: 1, borderColor: theme.border, gap: 10 }}>
+            <Text style={{ color: theme.text, fontSize: 14, fontWeight: '700' }}>Tính nhanh thời lượng & phí gia hạn</Text>
+            <ChoiceField label="Đơn vị tính" value={calcUnit} choices={[{ value: 'day', label: 'Theo ngày' }, { value: 'hour', label: 'Theo giờ' }]} disabled={disabled} onChange={v => {
+              const nextUnit = v as 'day' | 'hour';
+              setCalcUnit(nextUnit);
+              if (nextUnit === 'hour' && !calcRate) setCalcRate(DEFAULT_RENEWAL_HOURLY_RATE);
+            }} />
+            <FormField
+              label={calcUnit === 'day' ? 'Số ngày gia hạn' : 'Số giờ gia hạn'}
+              value={String(renewalDurationUnits(new Date(`${form.before}:00+07:00`).toISOString(), form.end || '', calcUnit) || '')}
+              keyboardType="number-pad"
+              maxLength={3}
+              editable={!disabled}
+              onChangeText={countText => {
+                const count = Number(countText.replace(/\D/g, ''));
+                if (!count || count < 1) return;
+                const nextEnd = addRentalDuration(new Date(`${form.before}:00+07:00`).toISOString(), count, calcUnit);
+                const suggested = calcRate ? renewalRateSuggestion(new Date(`${form.before}:00+07:00`).toISOString(), nextEnd, calcRate, calcUnit) : null;
+                change({ ...form, end: nextEnd, ...(suggested !== null ? { amount: String(suggested) } : {}) });
+              }}
+            />
+            <FormField
+              label={calcUnit === 'day' ? 'Đơn giá ngày để tính gợi ý (VND)' : 'Đơn giá giờ để tính gợi ý (VND)'}
+              value={calcRate}
+              keyboardType="number-pad"
+              maxLength={10}
+              editable={!disabled}
+              onChangeText={rateText => {
+                const cleaned = rateText.replace(/\D/g, '');
+                setCalcRate(cleaned);
+                const suggested = cleaned ? renewalRateSuggestion(new Date(`${form.before}:00+07:00`).toISOString(), form.end, cleaned, calcUnit) : null;
+                if (suggested !== null) change({ ...form, amount: String(suggested) });
+              }}
+            />
+          </View>
+        )}
         <FormField label="Phí gia hạn của kỳ (VND)" value={form.amount} keyboardType="number-pad" maxLength={13} editable={!disabled && feeEditable} onChangeText={amount => change({ ...form, amount: amount.replace(/\D/g, '') })} hint={feeEditable ? 'Phí hợp đồng của kỳ, khác với số thực thu trên phiếu.' : 'Kỳ này không cho sửa phí tại đây (phiếu đã hủy, xe đã trả hoặc hợp đồng đã chốt).'} />
         {receipt?.status === 'cancelled' && <Text style={muted}>Phiếu đã hủy giữ nguyên ngày và tiền thực thu; chỉ chỉnh thông tin gia hạn/hình thức theo điều kiện cho phép.</Text>}
       </Card>

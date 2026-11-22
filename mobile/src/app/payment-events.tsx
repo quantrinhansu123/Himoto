@@ -1,7 +1,6 @@
 import { RefreshControl, ScrollView, Text } from 'react-native';
 import { router } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { nativePushConfigured } from '@/lib/push-notifications';
 import { readSePaySound, setSePaySound } from '@/lib/sepay-notification-sound';
 import { useSession } from '@/providers/session';
 import { dateTime, money, useTheme } from '@/theme';
@@ -17,7 +16,7 @@ export default function Route() {
   if (!allowed) return <StateView title="Không có quyền xem tiền về qua SePay" />;
   return <ScrollView contentContainerStyle={{ padding: 20, gap: 14, paddingBottom: 40, maxWidth: 760, width: '100%', alignSelf: 'center' }}
     refreshControl={<RefreshControl refreshing={query.isRefetching} tintColor={theme.primary} onRefresh={() => { void query.refetch(); }} />}>
-    {nativePushConfigured && session && <SoundSetting key={session.user.id} userId={session.user.id} />}
+    {session && <SoundSetting key={session.user.id} userId={session.user.id} />}
     {query.isPending ? <StateView title="Đang tải giao dịch SePay" loading />
       : query.isError ? <StateView title="Chưa tải được giao dịch SePay" message={query.error.message} retry={() => { void query.refetch(); }} />
         : !query.data.length ? <StateView title="Chưa có giao dịch SePay đã đối chiếu" />

@@ -76,8 +76,10 @@ export async function exportMobileList(user:SessionUser,kind:string,request:Next
   }
   if(kind==='duties'){
     const day=localFilter(params,'day','all');
+    const staffId=localFilter(params,'staff_id','all');
     if(day!=='all'&&(!/^\d{4}-\d{2}-\d{2}$/.test(day)||!Number.isFinite(Date.parse(day))||new Date(day).toISOString().slice(0,10)!==day))throw new MobileError('Ngày trực không hợp lệ.');
-    const data=await readMobileDuties(user,params),visible=data.schedules.filter(row=>day==='all'||(!row.starts_at||!row.ends_at?row.duty_date===day:Date.parse(row.starts_at)<Date.parse(`${dutyAddDays(day,1)}T00:00:00+07:00`)&&Date.parse(row.ends_at)>Date.parse(`${day}T00:00:00+07:00`)));
+    if(staffId!=='all'&&!/^[1-9]\d{0,14}$/.test(staffId))throw new MobileError('Nhân viên trực không hợp lệ.');
+    const data=await readMobileDuties(user,params),visible=data.schedules.filter(row=>(staffId==='all'||String(row.staff_id)===staffId)&&(day==='all'||(!row.starts_at||!row.ends_at?row.duty_date===day:Date.parse(row.starts_at)<Date.parse(`${dutyAddDays(day,1)}T00:00:00+07:00`)&&Date.parse(row.ends_at)>Date.parse(`${day}T00:00:00+07:00`))));
     return mobileFilteredWorkbook('himoto-lich-truc',DUTY_EXPORT_HEADERS,dutyExportRows(visible));
   }
   return mobileFilteredWorkbook('himoto-lich-su-nhac-no',REMINDER_EXPORT_HEADERS,reminderExportRows(await readMobileReminderExportRows(user,params)));

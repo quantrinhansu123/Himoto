@@ -55,7 +55,7 @@ export async function exportMobileSalesReport(user: SessionUser, rawKind: string
       count = data.rows.length; name = kind === "by-staff" ? "doanh-so-nvkd" : "doanh-thu-co-so";
     } else if (kind === "assigned") {
       const data = await staffSales(client, from, to, store), rows = data.rows.filter(row => !query.get("department") || row.department === query.get("department"));
-      lines = [["Nhân viên", "Bộ phận", "Cách tính", "Hợp đồng", "Khách", "Khách mới", "Doanh số"], ...rows.map(row => [row.name, row.department, row.department === "NVKD" ? "Tiền thuê thực thu, gồm gia hạn" : "Tiền thuê HĐ mở mới đầu tiên", row.contracts, row.customers, row.new_customers, row.revenue])];
+      lines = [["Nhân viên", "Bộ phận", "Cách tính", "Hợp đồng", "Khách", "Khách mới", "Doanh số"], ...rows.map(row => [row.name, row.department, row.department === "NVKD" ? "Tiền thuê kỳ đầu của HĐ đầu tiên" : "Tiền thuê HĐ mở mới đầu tiên", row.contracts, row.customers, row.new_customers, row.revenue])];
       count = rows.length; name = "doanh-so";
     } else if (kind === "new-customers") {
       const data = await newCustomersBySource(client, from, to, store), filtered = filterNewCustomersBySource(data, { search: query.get("search") || "", source: query.get("source") || "", sourcePresence: (query.get("sourcePresence") || "") as "" | "with" | "without" });

@@ -29,7 +29,10 @@ function TransferHistory() {
       <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 26, fontWeight: "800" }}>Điều chuyển toàn hệ thống</Text>
       <Text style={{ color: theme.muted, lineHeight: 22 }}>Lịch sử chuyển/nhận/từ chối/hủy theo nghiệp vụ web. Mở xe để thực hiện thao tác trên trạng thái hiện tại.</Text>
       <FormField label="Tìm biển số, xe, cơ sở, người thực hiện" value={input} onChangeText={value => change(setInput, value)} maxLength={200} />
-      <Button secondary label={filters ? "Ẩn bộ lọc điều chuyển" : "Bộ lọc điều chuyển"} onPress={() => setFilters(!filters)} />
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+        <Button secondary label="Hôm nay" onPress={() => { const today = dutyToday(); setFrom(today); setTo(today); setPage(1); }} />
+        <Button secondary label={filters ? "Ẩn bộ lọc điều chuyển" : "Bộ lọc điều chuyển"} onPress={() => setFilters(!filters)} />
+      </View>
       {filters && <Card style={{ gap: 14 }}>
         <DateField label="Từ ngày điều chuyển" value={from} onChange={value => change(setFrom, value)} />
         <DateField label="Đến ngày điều chuyển" value={to} onChange={value => change(setTo, value)} />
@@ -41,7 +44,7 @@ function TransferHistory() {
       </Card>}
       {!validDates && <InlineError message="Chọn đủ ngày; ngày kết thúc phải từ ngày bắt đầu trở đi." />}
       {workspace.isError && <><InlineError message="Chưa tải được danh sách cơ sở." /><Button secondary label="Tải lại cơ sở" onPress={() => { void workspace.refetch(); }} /></>}
-      {query.data && <Text style={{ color: theme.muted }}>{query.data.total} sự kiện · {query.data.from.split("-").reverse().join("/")} → {query.data.to.split("-").reverse().join("/")}</Text>}
+      {query.data && <Text style={{ color: theme.muted }}>{query.data.total}/{query.data.scopeCount} sự kiện trong phạm vi · {query.data.from.split("-").reverse().join("/")} → {query.data.to.split("-").reverse().join("/")}</Text>}
 
 <FilteredListExport kind="transfers" filters={new URLSearchParams({from,to,store,from_store:fromStore,to_store:toStore,action,search}).toString()} disabled={!validDates||query.isFetching||query.isError||!query.data?.total||input!==search}/>
       {query.isError && <InlineError message={query.error.message} />}

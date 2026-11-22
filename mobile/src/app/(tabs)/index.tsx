@@ -40,8 +40,9 @@ import {
 import type { CatalogueKind } from "@himoto/mobile-contract";
 import { Brand, Button, Card, InlineError } from "@/components/ui";
 import { useSession } from "@/providers/session";
+import { useGlobalBranch } from "@/providers/branch";
 import { useWorkspace } from "@/hooks/use-workspace";
-import { useTheme, roles } from "@/theme";
+import { cardShadow, useTheme, roles } from "@/theme";
 import { WorkspaceLinks } from "@/components/workspace-links";
 import { ManagementDrawer } from "@/components/management-drawer";
 import { backfillActions } from "../../../../shared/mobile-backfill";
@@ -81,7 +82,7 @@ export default function Overview() {
   const initialStore = session?.user.storeId
     ? String(session.user.storeId)
     : "all";
-  const [selectedStore, setSelectedStore] = useState(initialStore);
+  const { selectedStore, selectStore: setSelectedStore } = useGlobalBranch(initialStore);
 
   const available = modules.filter((item) =>
     session?.user.permissions.includes(`${item.kind}.read`),
@@ -1091,6 +1092,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
+    ...cardShadow,
   },
   row: {
     flexDirection: "row",
@@ -1107,7 +1109,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    minHeight: 46,
+    minHeight: 44,
   },
   grid: {
     flexDirection: "row",
@@ -1117,20 +1119,21 @@ const styles = StyleSheet.create({
   gridItem: {
     width: "48.5%",
     borderWidth: 1,
-    borderRadius: 12,
-    padding: 14,
-    gap: 6,
+    borderRadius: 13,
+    padding: 13,
+    gap: 5,
+    ...cardShadow,
   },
   gridIcon: {
-    width: 40,
-    height: 40,
+    width: 38,
+    height: 38,
     borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 4,
+    marginBottom: 2,
   },
   gridTitle: {
-    fontSize: 15,
+    fontSize: 14.5,
     fontWeight: "700",
   },
   gridDesc: {
@@ -1139,11 +1142,12 @@ const styles = StyleSheet.create({
   },
   statCard: {
     borderWidth: 1,
-    borderRadius: 12,
-    padding: 14,
+    borderRadius: 13,
+    padding: 13,
     flexDirection: "row",
     alignItems: "center",
     gap: 14,
+    ...cardShadow,
   },
   statNumber: {
     fontSize: 24,

@@ -6,6 +6,7 @@ import type { MobileSalesReport, ReportAction, ReportFormat, ReportRow, ReportSe
 import { useSession } from "@/providers/session";
 import { money, useTheme } from "@/theme";
 import { Button, Card } from "./ui";
+import { FileExportButton } from "./file-export-button";
 
 export function reportValue(value: ReportValue, format: ReportFormat) {
   if (value === null) return "—";
@@ -49,13 +50,118 @@ function RowCard({ row, section }: { row: ReportRow; section: ReportSection }) {
     {row.action && actionAllowed && <Button secondary label={`${row.action.label} · ${title}`} onPress={() => openReportAction(row.action!)} />}
   </Card>;
 }
-function Section({ section, onPage }: { section: ReportSection; onPage: ReportPageChange }) {
-  const theme = useTheme(), [localPage, setLocalPage] = useState(1), size = section.paging?.size || 20, total = section.paging?.total ?? section.rows.length;
+const RACE_COLORS = ["#E11D48", "#2563EB", "#059669", "#D97706", "#7C3AED", "#0D9488"];
+
+function SectionCharts({ section }: { section: ReportSection }) {
+  const theme = useTheme();
+  const metricIdx = section.columns.findIndex((c) => ["revenue", "rent", "customers"].includes(c.key));
+  if (metricIdx < 0 || section.rows.length < 2) return null;
+  const col = section.columns[metricIdx];
+  const scored = section.rows
+    .map((r) => ({
+      key: r.key,
+      name: reportValue(r.values[0], section.columns[0]?.format || "text"),
+      value: typeof r.values[metricIdx] === "number" ? Number(r.values[metricIdx]) : 0,
+      series: r.series,
+    }))
+    .filter((r) => r.value > 0)
+    .sort((a, b) => b.value - a.value);
+  if (!scored.length) return null;
+  const maxVal = Math.max(1, scored[0].value);
+  const totalVal = scored.reduce((s, r) => s + r.value, 0);
+  const leader = scored[0];
+  const runnerUp = scored[1];
+  const sharePct = totalVal > 0 ? Math.round((leader.value / totalVal) * 100) : 0;
+  const raceRows = scored.filter((r) => r.series && r.series.values.length > 1).slice(0, 5);
+  const raceHigh = Math.max(1, ...raceRows.flatMap((r) => r.series!.values));
+
+  return (
+    <Card style={{ gap: 14 }}>
+      <View style={{ gap: 4 }}>
+        <Text style={{ color: theme.primary, fontSize: 12, fontWeight: "800", textTransform: "uppercase" }}>
+          Biểu đồ so sánh · {col.label}
+        </Text>
+        <Text style={{ color: theme.text, fontSize: 15, fontWeight: "700", lineHeight: 22 }}>
+          Dẫn đầu: {leader.name} ({reportValue(leader.value, col.format)} · {sharePct}% tổng)
+          {runnerUp ? ` · Hơn vị trí #2 (${runnerUp.name}) ${reportValue(leader.value - runnerUp.value, col.format)}` : ""}
+        </Text>
+      </View>
+
+      {/* Horizontal Comparison Bars */}
+      <View style={{ gap: 8 }}>
+        {scored.slice(0, 8).map((item, idx) => {
+          const pct = Math.max(4, Math.round((item.value / maxVal) * 100));
+          const barColor = RACE_COLORS[idx % RACE_COLORS.length];
+          return (
+            <View key={item.key} style={{ gap: 3 }}>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 8 }}>
+                <Text numberOfLines={1} style={{ color: theme.text, fontSize: 13, fontWeight: "600", flex: 1 }}>
+                  #{idx + 1} {item.name}
+                </Text>
+                <Text style={{ color: theme.text, fontSize: 13, fontWeight: "700" }}>
+                  {reportValue(item.value, col.format)}
+                </Text>
+              </View>
+              <View style={{ height: 8, borderRadius: 4, backgroundColor: theme.background, overflow: "hidden" }}>
+                <View style={{ width: `${pct}%`, height: "100%", borderRadius: 4, backgroundColor: barColor }} />
+              </View>
+            </View>
+          );
+        })}
+      </View>
+
+      {/* Multi-line Cumulative Progress Race Chart */}
+      {raceRows.length > 1 && (
+        <View style={{ gap: 8, paddingTop: 6, borderTopWidth: 1, borderTopColor: theme.border }}>
+          <Text style={{ color: theme.muted, fontSize: 12.5, fontWeight: "700" }}>
+            Đường đua lũy kế theo ngày (Top {raceRows.length})
+          </Text>
+          <Svg height={96} width="100%" viewBox="0 0 300 90" accessible={false}>
+            {raceRows.map((item, rIdx) => {
+              const vals = item.series!.values;
+              const pts = vals
+                .map((v, i) => `${6 + (i / Math.max(1, vals.length - 1)) * 288},${84 - (Math.max(0, v) / raceHigh) * 76}`)
+                .join(" ");
+              return <Polyline key={item.key} points={pts} fill="none" stroke={RACE_COLORS[rIdx % RACE_COLORS.length]} strokeWidth={2.2} />;
+            })}
+          </Svg>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+            {raceRows.map((item, rIdx) => (
+              <View key={item.key} style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+                <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: RACE_COLORS[rIdx % RACE_COLORS.length] }} />
+                <Text style={{ color: theme.muted, fontSize: 12 }}>{item.name}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+    </Card>
+  );
+}
+
+function Section({ section, onPage, showSectionExport }: { section: ReportSection; onPage: ReportPageChange; showSectionExport?: boolean }) {
+  const theme = useTheme(), { api } = useSession(), [localPage, setLocalPage] = useState(1), size = section.paging?.size || 20, total = section.paging?.total ?? section.rows.length;
   const pages = Math.max(1, Math.ceil(total / size)), page = section.paging?.page || Math.min(localPage, pages);
   const rows = section.paging ? section.rows : section.rows.slice((page - 1) * size, page * size);
   const choose = (value: number) => { if (section.paging) onPage(value, size, section.key); else setLocalPage(value); };
   return <View style={{ gap: 14 }}>
     <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 21, fontWeight: "800" }}>{section.title}</Text>
+    <SectionCharts section={section} />
+    {showSectionExport && !!api && section.rows.length > 0 && (
+      <FileExportButton
+        label={`Tải Excel · ${section.title}`}
+        load={(signal) =>
+          api.exportWorkbook(
+            {
+              filename: `himoto-bao-cao-${section.key}`,
+              headers: section.columns.map((c) => c.label),
+              rows: section.rows.map((r) => r.values),
+            },
+            signal,
+          )
+        }
+      />
+    )}
     {rows.map(row => <RowCard key={row.key} row={row} section={section} />)}
     {!rows.length && <Text style={{ color: theme.muted, lineHeight: 23 }}>Không có dữ liệu phù hợp trong kỳ.</Text>}
     {section.total && <Card style={{ gap: 10 }}><Text style={{ color: theme.text, fontSize: 18, fontWeight: "800" }}>Tổng toàn bộ kết quả</Text>{section.columns.slice(1).map((col, index) => <Text key={col.key} style={{ color: theme.text, lineHeight: 23 }}>{col.label}: {reportValue(section.total![index + 1], col.format)}</Text>)}</Card>}
@@ -81,6 +187,6 @@ export function SalesReportView({ report, onPage }: { report: MobileSalesReport;
     <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 25, fontWeight: "800" }}>{report.title}</Text>
     {report.notes.map(note => <Text key={note} style={{ color: theme.muted, lineHeight: 23 }}>{note}</Text>)}
     {[...groups].map(([group, metrics]) => <Card key={group} style={{ gap: 14 }}><Text style={{ color: theme.text, fontSize: 19, fontWeight: "800" }}>{group}</Text>{metrics.map((metric, index) => <View key={metric.label} style={{ gap: 8 }}><Text style={{ color: theme.muted }}>{metric.label}</Text><Text style={{ color: theme.text, fontSize: index === 0 ? 25 : 18, fontWeight: "700" }}>{reportValue(metric.value, metric.format)}</Text>{metric.action && <Button secondary label={`${metric.action.label} · ${metric.label}`} disabled={!metric.value} onPress={() => openReportAction(metric.action!)} />}</View>)}</Card>)}
-    {report.sections.map(section => <Section key={section.key} section={section} onPage={onPage} />)}
+    {report.sections.map(section => <Section key={section.key} section={section} onPage={onPage} showSectionExport={report.sections.length > 1} />)}
   </View>;
 }

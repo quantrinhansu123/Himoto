@@ -3,7 +3,13 @@ export const ownershipTermChoices = [
   { value: 'custom', label: 'Chưa phân loại' }, { value: '6', label: '6 tháng' }, { value: '9', label: '9 tháng' }, { value: '12', label: '12 tháng' }, { value: '18', label: '18 tháng' }, { value: '24', label: '24 tháng' },
 ] as const;
 export type MobileOwnershipTerm = typeof ownershipTermChoices[number]['value'];
-export interface MobileOwnershipTerms { id: number; code: string; revision: string; status: string; term_months: MobileOwnershipTerm; daily_amount: number | null; can_edit: boolean }
+export interface MobileOwnershipTermsHistoryItem {
+  at: string;
+  actor: string;
+  before: { term_months: string; daily_amount: number | null };
+  after: { term_months: string; daily_amount: number | null };
+}
+export interface MobileOwnershipTerms { id: number; code: string; revision: string; status: string; term_months: MobileOwnershipTerm; daily_amount: number | null; can_edit: boolean; history?: MobileOwnershipTermsHistoryItem[] }
 export interface MobileOwnershipTermsInput { revision: string; term_months: MobileOwnershipTerm; daily_amount: string | null }
 export interface MobileOwnershipTermsResult { key: string; operation: string; receipt: MobileWriteReceipt }
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);

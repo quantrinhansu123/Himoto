@@ -1,4 +1,4 @@
-import { ACCESS_PERMISSIONS,ACCESS_ROLES,canManageAccounts as coreCanManageAccounts,isOwnershipManager as coreIsOwnershipManager,canSettleContract as coreCanSettleContract,canRecoverAccountPasswords as coreCanRecoverAccountPasswords,type PermissionAccount,type AccessRole } from './access-permissions';
+import { ACCESS_PERMISSIONS,ADMIN_PERMISSIONS,ACCESS_ROLES,canManageAccounts as coreCanManageAccounts,isOwnershipManager as coreIsOwnershipManager,canSettleContract as coreCanSettleContract,canRecoverAccountPasswords as coreCanRecoverAccountPasswords,type PermissionAccount,type AccessRole } from './access-permissions';
 import type { AccountValues } from './account-management';
 import type { MobileUser,MobileWriteReceipt } from './mobile-contract';
 import { isStaffCredentials,type MobileStaffCredentials } from './mobile-staff';
@@ -28,14 +28,14 @@ export interface ManagedAccountResult {key:string;operation:string;receipt:Mobil
 export interface ManagedPasswordResult extends MobileWriteReceipt {password:string|null;changedAt:string|null}
 export const accountWriteOperations=(id:number|string)=>[`account.update:${id}`,`account.delete:${id}`,`account.password:${id}`];
 export const ACCOUNT_PERMISSION_GROUPS=[
-  {title:'Hợp đồng',permissions:['contracts.read','contracts.draft','contracts.finalize','contracts.renew','contracts.return']},
+  {title:'Hợp đồng',permissions:['contracts.read','contracts.draft','contracts.finalize','contracts.renew','contracts.return','contracts.delete']},
   {title:'Khách hàng',permissions:['customers.read','customers.write']},
   {title:'Xe và kho',permissions:['vehicles.read','vehicles.transfer','vehicles.receive','vehicles.write']},
   {title:'Nhân sự',permissions:['hr.read','hr.write']},
   {title:'Tài chính và đối soát',permissions:['finance.read','finance.write','shift.review']},
   {title:'Hệ thống',permissions:['settings.write']},
 ] as const;
-export function managedAccountInput(row:ManagedAccount):ManagedAccountInput{return{name:row.name,login_name:row.login_name||row.email.split('@')[0],password:'',access_role:row.access_role||'admin',store_id:row.store_id,scope_all:row.scope_all,permissions:row.access_role==='admin'?[...ACCESS_PERMISSIONS]:row.permissions||[...ACCESS_PERMISSIONS],enabled:row.enabled??row.status==='active'};}
+export function managedAccountInput(row:ManagedAccount):ManagedAccountInput{return{name:row.name,login_name:row.login_name||row.email.split('@')[0],password:'',access_role:row.access_role||'admin',store_id:row.store_id,scope_all:row.scope_all,permissions:row.access_role==='admin'?[...ADMIN_PERMISSIONS]:row.permissions||[...ADMIN_PERMISSIONS],enabled:row.enabled??row.status==='active'};}
 export function newManagedAccount(store:number|null=null):ManagedAccountInput{return{name:'',login_name:'',password:'',access_role:'branch_staff',store_id:store,scope_all:false,permissions:[...ACCESS_ROLES.branch_staff.permissions],enabled:true};}
 export function changeManagedAccountRole(input:ManagedAccountInput,role:AccessRole):ManagedAccountInput{return{...input,access_role:role,permissions:[...ACCESS_ROLES[role].permissions],scope_all:['admin','hr','accounting','internal_control','headquarters_sales','headquarters_debt'].includes(role)};}
 const object=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object'&&!Array.isArray(v),id=(v:unknown)=>Number.isSafeInteger(v)&&Number(v)>0;

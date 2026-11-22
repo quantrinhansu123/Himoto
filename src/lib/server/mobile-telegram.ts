@@ -39,7 +39,7 @@ export async function writeMobileContractTelegram(user:SessionUser,rawId:string,
   permission(user);const target=id(rawId),key=mobileRequestKey(request.headers.get('idempotency-key')),body=await mobileBody(request,4096),action=String(body.action) as MobileTelegramAction;
   if(request.nextUrl.search||!actions.includes(action)||Object.keys(body).some(k=>!['action','event_key','hash','notice_id','confirmed_absent','reason','confirmed'].includes(k)))throw new MobileError('Chọn đúng thao tác Telegram cần thực hiện.');
   return transaction(user,false,true,async db=>{
-    const operation=`telegram.contract:${target}`,receipt=await idempotentMobileWrite(db,user.id,key,operation,body,async()=>{await saveContractTelegram(db,target,user.id,user,{...body,request_id:key});return{id:target,revision:String(actions.indexOf(action)+1)};});
+    const operation=`telegram.contract:${target}`,receipt=await idempotentMobileWrite(db,user.id,key,operation,body,async()=>{const outcome=await saveContractTelegram(db,target,user.id,user,{...body,request_id:key});const effective:MobileTelegramAction=outcome==='retract'?'retract':action;return{id:target,revision:String(actions.indexOf(effective)+1)};});
     return result(db,user,key,{operation,resource_id:target,resource_revision:receipt.revision},receipt.replayed);
   });
 }

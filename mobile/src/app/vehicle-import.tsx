@@ -12,6 +12,7 @@ import { pickWorkbook, type PickedWorkbook } from '@/lib/pick-workbook';
 import { useTheme } from '@/theme';
 import { Button, Card, InlineError, StateView } from '@/components/ui';
 import { ChoiceField } from '@/components/form-fields';
+import { FileExportButton } from '@/components/file-export-button';
 import { ConfirmEdit } from '@/components/editor-sheet';
 import { VehicleImportReceipt } from '@/components/vehicle-import-receipt';
 import { VehicleImportReferences } from '@/components/vehicle-import-references';
@@ -73,6 +74,31 @@ function Importer() {
         </>}
         {review && <><Card style={{ gap: 10 }}><Text accessibilityRole="header" style={{ ...text, fontSize: 20, fontWeight: '700' }}>Đối chiếu {review.total} dòng xe</Text><Text style={text}>Hợp lệ {review.valid} · Lỗi {review.invalid} · Bỏ qua {review.skipped}</Text><Text style={text}>Cập nhật {review.updated} · Thêm {review.inserted} · Chưa có màu {review.blankColors}</Text><Text style={muted}>{mode === 'sync' ? `Giữ ${review.retained} xe ngoài phần nhập.` : `Sẽ thay ${review.existing} xe hiện tại.`}</Text>{review.blocking.map(b => <InlineError key={b} message={b} />)}<VehicleImportReferences references={review.references} /></Card>
           <ChoiceField label="Lọc dòng xe Excel" value={filter} choices={[{ value: 'all', label: 'Tất cả dòng' }, { value: 'issues', label: 'Dòng lỗi / cần đối chiếu' }, { value: 'valid', label: 'Hợp lệ' }, { value: 'invalid', label: 'Lỗi' }, { value: 'skipped', label: 'Bỏ qua' }]} disabled={busy} onChange={v => { setFilter(v); setPage(1); }} />
+          {!!visible.length && (
+            <FileExportButton
+              label={`Tải Excel kết quả kiểm tra xe (${visible.length} dòng)`}
+              disabled={busy}
+              load={(signal) =>
+                api!.exportWorkbook(
+                  {
+                    filename: 'himoto-kiem-tra-excel-xe',
+                    headers: ['Dòng', 'Trạng thái', 'Biển số', 'Tên xe', 'Hãng', 'Màu', 'Cơ sở', 'Lỗi / Cảnh báo'],
+                    rows: visible.map((r) => [
+                      r.rowNumber,
+                      r.state === 'skipped' ? 'Bỏ qua' : r.state === 'invalid' ? 'Lỗi' : r.action === 'update' ? 'Cập nhật' : 'Thêm mới',
+                      r.values.license || '',
+                      r.values.name || '',
+                      r.values.brand || '',
+                      r.values.color || '',
+                      r.values.store || '',
+                      [...r.errors, ...r.warnings].join('; '),
+                    ]),
+                  },
+                  signal,
+                )
+              }
+            />
+          )}
           {hasWarnings && <ChoiceField label="Xác nhận đối chiếu cảnh báo xe" value={accepted ? 'yes' : 'no'} choices={[{ value: 'no', label: 'Chưa xác nhận' }, { value: 'yes', label: 'Đã đối chiếu; màu chưa rõ để trống, giữ liên kết' }]} disabled={disabled} onChange={v => setAccepted(v === 'yes')} />}
           <Text style={muted}>{visible.length} kết quả · Trang {current}/{pages}</Text>
         </>}

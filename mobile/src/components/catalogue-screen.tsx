@@ -23,9 +23,11 @@ import {
   Check,
   ChevronRight,
   ChevronDown,
+  Download,
   MapPin,
   Menu,
   MoreHorizontal,
+  Plus,
   Search,
   SlidersHorizontal,
   X,
@@ -43,6 +45,7 @@ import {
 import { CatalogueFilters } from "@/components/catalogue-filters";
 import { catalogueConfig, catalogueStatuses, catalogueAllLabel, activeRentalCount, contextualStatusLabel } from "@/lib/catalogue-config";
 import { useSession } from "@/providers/session";
+import { useGlobalBranch } from "@/providers/branch";
 import { useWorkspace } from "@/hooks/use-workspace";
 import { dateTime, money, statuses, useTheme } from "@/theme";
 import { rememberRecordPreview } from '@/lib/record-preview';
@@ -85,31 +88,57 @@ const RecordCard = memo(function RecordCard({
     }
   };
 
+  const canReceiveTransfer = kind === "vehicles" && record.status === "in_transit" && Boolean(session?.user.permissions.includes("vehicles.receive") || session?.user.permissions.includes("vehicles.transfer"));
+  const contractBalance =
+    kind === "contracts" && record.totalAmount !== null && record.paidAmount !== null
+      ? Math.max(0, record.totalAmount - record.paidAmount)
+      : null;
+
   return (
-    <Card style={{ gap: 12, padding: 16 }}>
+    <Card style={{ gap: 9, padding: 13 }}>
       <View style={styles.row}>
         {kind === 'vehicles' && <VehicleThumbnail id={record.id} revision={record.thumbnailRevision} />}
         <Pressable
-          style={{ flex: 1 }}
+          style={{ flex: 1, gap: 3 }}
           accessibilityRole="button"
           accessibilityLabel={`Xem ${kind === "vehicles" ? record.license || record.name : record.code}, ${record.name}`}
           onPress={handlePress}
         >
-          <Text
-            style={{
-              color: theme.text,
-              fontSize: 18,
-              fontWeight: "700",
-            }}
-          >
-            {kind === "vehicles"
-              ? record.license || record.code
-              : kind === "customers"
-                ? record.name
-                : record.code}
-          </Text>
+          {kind === "contracts" ? (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+              <Text style={{ color: theme.primary, fontSize: 13.5, fontWeight: "800" }}>
+                {record.code}
+              </Text>
+              <Text numberOfLines={1} style={{ color: theme.text, fontSize: 15.5, fontWeight: "700", flexShrink: 1 }}>
+                {record.name || "Chưa có tên"}
+              </Text>
+            </View>
+          ) : (
+            <Text
+              numberOfLines={1}
+              style={{
+                color: theme.text,
+                fontSize: 16,
+                fontWeight: "700",
+              }}
+            >
+              {kind === "vehicles"
+                ? record.license || record.code
+                : record.name}
+            </Text>
+          )}
+          {kind === "vehicles" && (
+            <Text numberOfLines={1} style={{ color: theme.muted, fontSize: 13 }}>
+              {[record.name, record.brand, record.color, record.odometer !== null ? `${record.odometer.toLocaleString("vi-VN")} km` : ""].filter(Boolean).join(" · ")}
+            </Text>
+          )}
+          {kind === "customers" && (
+            <Text numberOfLines={1} style={{ color: theme.muted, fontSize: 13 }}>
+              {[record.code, record.phone || record.contactDetail].filter(Boolean).join(" · ")}
+            </Text>
+          )}
         </Pressable>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
           {!!onOpenActions && (
             <Pressable
               accessibilityRole="button"
@@ -124,11 +153,11 @@ const RecordCard = memo(function RecordCard({
                 },
               ]}
             >
-              <MoreHorizontal size={18} color={theme.text} />
+              <MoreHorizontal size={17} color={theme.text} />
             </Pressable>
           )}
           <Pressable onPress={handlePress} hitSlop={10}>
-            <ChevronRight size={19} color={theme.muted} accessible={false} />
+            <ChevronRight size={18} color={theme.muted} accessible={false} />
           </Pressable>
         </View>
       </View>
@@ -137,70 +166,79 @@ const RecordCard = memo(function RecordCard({
         accessibilityRole="button"
         accessibilityLabel={`Chi tiết ${record.code || record.name}`}
         onPress={handlePress}
-        style={({ pressed }) => ({ gap: 12, opacity: pressed ? 0.72 : 1 })}
+        style={({ pressed }) => ({ gap: 7, opacity: pressed ? 0.72 : 1 })}
       >
-        {kind !== "customers" && (
-          <Text style={{ color: theme.muted, fontSize: 15, lineHeight: 23 }}>
-            {record.name || "Chưa có tên"}
-            {kind === "contracts" && record.license
-              ? ` · ${record.license}`
-              : ""}
-          </Text>
-        )}
-        {kind === "vehicles" && (
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: -4 }}>
-            {!!record.brand && (
-              <Text style={{ color: theme.muted, fontSize: 13, fontWeight: "500" }}>
-                {record.brand}
+        {kind === "contracts" && (
+          <View style={styles.contractMetaRow}>
+            {!!record.license && (
+              <View style={[styles.platePill, { backgroundColor: theme.background, borderColor: theme.border }]}>
+                <Text style={{ color: theme.text, fontSize: 12.5, fontWeight: "700" }}>{record.license}</Text>
+              </View>
+            )}
+            {record.totalAmount !== null && (
+              <Text style={{ color: theme.text, fontSize: 13.5, fontWeight: "700" }}>
+                {money(record.totalAmount)}
               </Text>
             )}
-            {record.odometer !== null && (
-              <Text style={{ color: theme.text, fontSize: 13, fontWeight: "600" }}>
-                · {record.odometer.toLocaleString("vi-VN")} km
+            {contractBalance !== null && contractBalance > 0 && (
+              <Text style={{ color: theme.warning, fontSize: 12.5, fontWeight: "600" }}>
+                Còn {money(contractBalance)}
               </Text>
             )}
-            {!!record.color && (
-              <Text style={{ color: theme.muted, fontSize: 13 }}>
-                · {record.color}
+            {!!record.endsAt && (
+              <Text style={{ color: theme.muted, fontSize: 12.5 }}>
+                Trả: {dateTime(record.endsAt)}
               </Text>
             )}
           </View>
         )}
-        {kind === "customers" && !!(record.phone || record.contactDetail) && (
-          <Text numberOfLines={2} style={{ color: theme.muted, fontSize: 15 }}>
-            {record.phone || record.contactDetail}
-          </Text>
-        )}
-        <View
-          style={[styles.row, { flexWrap: "wrap", alignItems: "flex-start" }]}
-        >
+
+        <View style={[styles.row, { flexWrap: "wrap", alignItems: "center", gap: 8 }]}>
           <StatusBadge
             status={record.status}
             label={kind === 'contracts' && scope === 'drafts' && record.status === 'draft' ? 'Lưu nháp' : contextualStatusLabel(kind, record.status)}
           />
           <Text
+            numberOfLines={1}
             style={{
               color: theme.muted,
-              fontSize: 13,
-              lineHeight: 20,
+              fontSize: 12.5,
               flexShrink: 1,
             }}
           >
-            {record.storeName || "Chưa xác định cơ sở"}
+            {kind === "vehicles" ? `Kho: ${record.storeName || "Chưa xác định"}` : (record.storeName || "Chưa xác định cơ sở")}
           </Text>
         </View>
+
+        {kind === "customers" && !!record.customerNote && (
+          <Text numberOfLines={2} style={{ color: theme.warning, fontSize: 12.5, lineHeight: 17 }}>
+            Lưu ý: {record.customerNote}
+          </Text>
+        )}
+
         {kind === "contracts" && record.monitoring && (
-          <View style={{ gap: 5 }}>
-            {!!record.monitoring.contractTypeName && <Text style={{ color: theme.muted, fontSize: 13 }}>{record.monitoring.contractTypeName}</Text>}
-            {!!record.monitoring.nextDueAt && <Text style={{ color: theme.text, fontSize: 13 }}>Kỳ tiếp theo: {dateTime(record.monitoring.nextDueAt)}</Text>}
-            {scope !== 'overdue' && record.monitoring.dueAmount !== null && <Text style={{ color: record.monitoring.collectionOverdue ? theme.danger : theme.text, fontSize: 14, fontWeight: "600" }}>Còn phải đóng theo kỳ: {money(record.monitoring.dueAmount)}</Text>}
-            {(scope === "overdue" || scope === "ownership") && record.monitoring.rentalDebt !== null && <Text style={{ color: theme.text, fontSize: 13 }}>Tiền thuê còn thiếu: {money(record.monitoring.rentalDebt)}</Text>}
-            {scope === "overdue" && record.status !== 'bad_debt' && (record.monitoring.basis === 'payment' ? record.monitoring.dueAmount : record.monitoring.lateFeeEstimate) !== null && <Text style={{ color: theme.warning, fontSize: 13 }}>{record.monitoring.basis === 'payment' ? 'Tiền đến hạn' : 'Phí trễ tạm tính'}: {money((record.monitoring.basis === 'payment' ? record.monitoring.dueAmount : record.monitoring.lateFeeEstimate)!)}</Text>}
-            {scope === 'overdue' && record.status !== 'bad_debt' && record.monitoring.basis === 'return' && record.monitoring.referencePrice && <Text style={{ color: theme.muted, fontSize: 13 }}>Theo bảng giá ngày tham chiếu</Text>}
-            {scope === "vat" && <Text style={{ color: theme.text, fontSize: 14, fontWeight: "600" }}>Đã thu vào TK công ty: {money(record.monitoring.companyPaidAmount)}</Text>}
+          <View style={{ gap: 3, paddingTop: 2 }}>
+            {!!record.monitoring.contractTypeName && <Text style={{ color: theme.muted, fontSize: 12.5 }}>{record.monitoring.contractTypeName}</Text>}
+            {!!record.monitoring.nextDueAt && <Text style={{ color: theme.text, fontSize: 12.5 }}>Kỳ tiếp theo: {dateTime(record.monitoring.nextDueAt)}</Text>}
+            {scope !== 'overdue' && record.monitoring.dueAmount !== null && <Text style={{ color: record.monitoring.collectionOverdue ? theme.danger : theme.text, fontSize: 13, fontWeight: "700" }}>Còn phải đóng theo kỳ: {money(record.monitoring.dueAmount)}</Text>}
+            {(scope === "overdue" || scope === "ownership") && record.monitoring.rentalDebt !== null && <Text style={{ color: theme.text, fontSize: 12.5 }}>Tiền thuê còn thiếu: {money(record.monitoring.rentalDebt)}</Text>}
+            {scope === "overdue" && record.status !== 'bad_debt' && (record.monitoring.basis === 'payment' ? record.monitoring.dueAmount : record.monitoring.lateFeeEstimate) !== null && <Text style={{ color: theme.warning, fontSize: 12.5, fontWeight: "600" }}>{record.monitoring.basis === 'payment' ? 'Tiền đến hạn' : 'Phí trễ tạm tính'}: {money((record.monitoring.basis === 'payment' ? record.monitoring.dueAmount : record.monitoring.lateFeeEstimate)!)}</Text>}
+            {scope === 'overdue' && record.status !== 'bad_debt' && record.monitoring.basis === 'return' && record.monitoring.referencePrice && <Text style={{ color: theme.muted, fontSize: 12 }}>Theo bảng giá ngày tham chiếu</Text>}
+            {scope === "vat" && <Text style={{ color: theme.text, fontSize: 13, fontWeight: "700" }}>Đã thu vào TK công ty: {money(record.monitoring.companyPaidAmount)}</Text>}
           </View>
         )}
       </Pressable>
+
+      {canReceiveTransfer && (
+        <View style={{ flexDirection: "row", gap: 8, paddingTop: 2 }}>
+          <Button
+            size="sm"
+            equalWidth
+            label={session?.user.permissions.includes("vehicles.receive") ? "Nhận / Từ chối xe" : "Xem / Huỷ chuyển"}
+            onPress={() => router.push({ pathname: "/vehicle-transfer-editor/[id]", params: { id: String(record.id) } })}
+          />
+        </View>
+      )}
     </Card>
   );
 });
@@ -249,7 +287,26 @@ export function CatalogueScreen({
         ? String(session.user.storeId)
         : "all";
   const canReadAllStores = Boolean(session?.user.allStores || session?.user.allStoresRead);
-  const [store, setStore] = useState(kind === 'vehicles' || canReadAllStores ? initialStore || defaultStore : defaultStore);
+  const { selectedStore: globalStore, selectStore: setGlobalStore } = useGlobalBranch(defaultStore);
+  const [storeOverride, setStoreOverride] = useState<string | null>(
+    initialStore ? (kind === "vehicles" || canReadAllStores ? initialStore : defaultStore) : null,
+  );
+  const store =
+    kind !== "vehicles" && !canReadAllStores
+      ? defaultStore
+      : storeOverride !== null
+        ? storeOverride
+        : kind === "vehicles"
+          ? "all"
+          : globalStore || defaultStore;
+  const setStore = (next: string) => {
+    if (kind !== "vehicles" && !canReadAllStores) return;
+    if (initialStore || kind === "vehicles") setStoreOverride(next);
+    else {
+      setStoreOverride(null);
+      setGlobalStore(next);
+    }
+  };
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -258,9 +315,13 @@ export function CatalogueScreen({
   const [extraFilters, setExtraFilters] = useState<{
     rentalType?: string;
     ownershipTerm?: string;
+    overdueBucket?: string;
+    sort?: string;
+    direction?: string;
     vehicleType?: string;
     warehouseStore?: string;
     beneficiaryStore?: string;
+    missingContract?: string;
   }>({});
   const list = useRef<FlatList<MobileRecord>>(null);
   const nextPageGesture = useRef(true);
@@ -275,10 +336,13 @@ export function CatalogueScreen({
     list.current?.scrollToOffset({ offset: 0, animated: false });
   }, [search, status, store, scope, from, to, storeBasis, customerId, extraFilters]);
   const extraParams = useMemo(() => ({
+    ...(extraFilters.sort ? { sort: extraFilters.sort } : {}),
+    ...(extraFilters.direction ? { direction: extraFilters.direction } : {}),
     ...(kind === "contracts"
       ? {
           ...(extraFilters.rentalType ? { rental_type: extraFilters.rentalType } : {}),
           ...(extraFilters.ownershipTerm ? { ownership_term_months: extraFilters.ownershipTerm } : {}),
+          ...(extraFilters.overdueBucket ? { overdue_bucket: extraFilters.overdueBucket } : {}),
         }
       : {}),
     ...(kind === "vehicles"
@@ -286,6 +350,7 @@ export function CatalogueScreen({
           ...(extraFilters.vehicleType ? { vehicle_type: extraFilters.vehicleType } : {}),
           ...(extraFilters.warehouseStore ? { warehouse_store_id: extraFilters.warehouseStore } : {}),
           ...(extraFilters.beneficiaryStore ? { beneficiary_store_id: extraFilters.beneficiaryStore } : {}),
+          ...(extraFilters.missingContract ? { missing_contract: extraFilters.missingContract } : {}),
         }
       : {}),
   }), [kind, extraFilters]);
@@ -468,60 +533,148 @@ export function CatalogueScreen({
 
       {!compact && kind !== 'customers' && (
         <View style={styles.row}>
-          <Text style={{ color: theme.muted, fontSize: 13, flex: 1 }}>
+          <Text style={{ color: theme.muted, fontSize: 12.5, flex: 1 }}>
             {query.data
               ? `${query.data.pages[0].total.toLocaleString("vi-VN")} ${settings.noun}`
               : "Đang tải…"}
+            {kind === "vehicles" ? " · Chưa gồm xe đã bán" : ""}
           </Text>
         </View>
       )}
-      {kind === 'vehicles' && <Text style={{ color: theme.muted, fontSize: 13 }}>Xe đang quản lý không gồm xe đã bán. Chọn “Đã bán” để tra cứu lịch sử.</Text>}
-      {kind === 'vehicles' && <>
-        <Button secondary label="Kho xe toàn hệ thống" onPress={()=>router.push('/fleet-inventory')} />
-        <View style={{flexDirection:'row',gap:10}}>
-          <Button equalWidth secondary label="Lịch sử luân chuyển" onPress={()=>router.push('/vehicle-transfers')} />
-          {session?.user.permissions.includes('vehicles.transfer') && <Button equalWidth secondary label="Chuyển xe" onPress={()=>router.push({pathname:'/fleet-inventory',params:{purpose:'transfer',store}})} />}
-        </View>
-      </>}
-      {kind === "vehicles" && session?.user.permissions.includes("vehicles.write") && (
-        <Button label="+ Thêm xe" onPress={() => router.push({ pathname: "/vehicle-editor/[id]", params: { id: "new", store } })} />
-      )}
-      {kind === "customers" && session?.user.permissions.includes("customers.write") && (
-        <Button label="+ Thêm khách hàng" onPress={() => router.push("/customer/new")} />
-      )}
+      {/* Compact Primary CTA Row */}
       {kind === "contracts" && session?.user.permissions.includes("contracts.draft") && (
-        <View style={{ flexDirection: "row", gap: 10 }}>
+        <View style={{ flexDirection: "row", gap: 8 }}>
           <Button
+            size="sm"
             equalWidth
-            secondary
-            label="+ Nhận cọc giữ xe"
-            onPress={() => router.push({ pathname: "/draft/new", params: { store_id: store, reservation: "1" } })}
-          />
-          <Button
-            equalWidth
-            label="+ Nhập hợp đồng"
+            label="Nhập hợp đồng"
+            icon={<Plus size={15} color={theme.primaryText} />}
             onPress={() => router.push({ pathname: "/draft/new", params: { store_id: store } })}
           />
+          <Button
+            size="sm"
+            equalWidth
+            secondary
+            label="Cọc giữ xe"
+            icon={<Plus size={15} color={theme.text} />}
+            onPress={() => router.push({ pathname: "/draft/new", params: { store_id: store, reservation: "1" } })}
+          />
         </View>
       )}
-      {kind === 'contracts' && !operationsCatalogue && !!backfillActions(session!.user.permissions).length && <Button secondary label="+ Nhập bổ sung giao dịch" onPress={() => router.push({ pathname: '/backfill', params: { store_id: store } })} />}
-      {!operationsCatalogue && <Button secondary label="Tải Excel theo bộ lọc" disabled={!datesValid || query.isPending || query.isError || input.trim() !== search} onPress={() => router.push({ pathname: '/catalogue-export/[kind]', params: { kind, filters: exportFilters } })} />}
-      {actions.length > 0 && <View style={{ gap: 8 }}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Thao tác khác"
-          accessibilityState={{ expanded: actionsOpen }}
-          aria-expanded={actionsOpen}
-          onPress={() => setActionsOpen(open => !open)}
-          style={({ pressed }) => ({ minHeight: 48, paddingHorizontal: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8, opacity: pressed ? 0.72 : 1 })}
-        >
-          <Text style={{ color: theme.muted, fontSize: 15, fontWeight: "600", flex: 1 }}>Thao tác khác</Text>
-          <ChevronDown size={20} color={theme.muted} accessible={false} style={{ transform: [{ rotate: actionsOpen ? "180deg" : "0deg" }] }} />
-        </Pressable>
-        {actionsOpen && <Card style={{ gap: 8, padding: 12 }}>
-          {actions.map(action => <Button key={action.label} secondary {...action} />)}
-        </Card>}
-      </View>}
+      {kind === "vehicles" && session?.user.permissions.includes("vehicles.write") && (
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <Button
+            size="sm"
+            equalWidth
+            label="Thêm xe"
+            icon={<Plus size={15} color={theme.primaryText} />}
+            onPress={() => router.push({ pathname: "/vehicle-editor/[id]", params: { id: "new", store } })}
+          />
+          {session?.user.permissions.includes("vehicles.transfer") && (
+            <Button
+              size="sm"
+              equalWidth
+              secondary
+              label="Chuyển xe"
+              onPress={() => router.push({ pathname: "/fleet-inventory", params: { purpose: "transfer", store } })}
+            />
+          )}
+        </View>
+      )}
+      {kind === "customers" && session?.user.permissions.includes("customers.write") && (
+        <Button
+          size="sm"
+          label="Thêm khách hàng"
+          icon={<Plus size={15} color={theme.primaryText} />}
+          onPress={() => router.push("/customer/new")}
+        />
+      )}
+      {/* Compact Horizontal Secondary Action Strip */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 7 }}>
+        {kind === "vehicles" && (
+          <>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => router.push("/fleet-inventory")}
+              style={({ pressed }) => [styles.actionPill, { borderColor: theme.border, backgroundColor: theme.surface, opacity: pressed ? 0.72 : 1 }]}
+            >
+              <Text style={{ color: theme.text, fontSize: 12.5, fontWeight: "600" }}>Kho xe toàn hệ thống</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => router.push("/vehicle-transfers")}
+              style={({ pressed }) => [styles.actionPill, { borderColor: theme.border, backgroundColor: theme.surface, opacity: pressed ? 0.72 : 1 }]}
+            >
+              <Text style={{ color: theme.text, fontSize: 12.5, fontWeight: "600" }}>Lịch sử luân chuyển</Text>
+            </Pressable>
+          </>
+        )}
+        {kind === "contracts" && !operationsCatalogue && (scope === "due" || scope === "overdue") && (session?.user.permissions.includes("contracts.draft") || session?.user.permissions.includes("finance.write")) && (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push({ pathname: "/debt-reminders", params: { tab: "compose", store } })}
+            style={({ pressed }) => [styles.actionPill, { borderColor: theme.primary, backgroundColor: theme.tint, opacity: pressed ? 0.72 : 1 }]}
+          >
+            <Text style={{ color: theme.primary, fontSize: 12.5, fontWeight: "700" }}>Gửi nhắc nợ hàng loạt</Text>
+          </Pressable>
+        )}
+        {kind === "contracts" && !operationsCatalogue && !!backfillActions(session!.user.permissions).length && (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push({ pathname: "/backfill", params: { store_id: store } })}
+            style={({ pressed }) => [styles.actionPill, { borderColor: theme.border, backgroundColor: theme.surface, opacity: pressed ? 0.72 : 1 }]}
+          >
+            <Text style={{ color: theme.text, fontSize: 12.5, fontWeight: "600" }}>+ Bổ sung giao dịch</Text>
+          </Pressable>
+        )}
+        {!operationsCatalogue && (
+          <Pressable
+            accessibilityRole="button"
+            disabled={!datesValid || query.isPending || query.isError || input.trim() !== search}
+            onPress={() => router.push({ pathname: "/catalogue-export/[kind]", params: { kind, filters: exportFilters } })}
+            style={({ pressed }) => [
+              styles.actionPill,
+              {
+                borderColor: theme.border,
+                backgroundColor: theme.surface,
+                opacity: !datesValid || query.isPending || query.isError || input.trim() !== search ? 0.45 : pressed ? 0.72 : 1,
+              },
+            ]}
+          >
+            <Download size={13} color={theme.text} accessible={false} />
+            <Text style={{ color: theme.text, fontSize: 12.5, fontWeight: "600" }}>Xuất Excel</Text>
+          </Pressable>
+        )}
+        {actions.length > 0 && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Thao tác khác"
+            accessibilityState={{ expanded: actionsOpen }}
+            aria-expanded={actionsOpen}
+            onPress={() => setActionsOpen((open) => !open)}
+            style={({ pressed }) => [
+              styles.actionPill,
+              {
+                borderColor: actionsOpen ? theme.primary : theme.border,
+                backgroundColor: actionsOpen ? theme.tint : theme.surface,
+                opacity: pressed ? 0.72 : 1,
+              },
+            ]}
+          >
+            <Text style={{ color: actionsOpen ? theme.primary : theme.text, fontSize: 12.5, fontWeight: "600" }}>
+              Thao tác khác ({actions.length})
+            </Text>
+            <ChevronDown size={14} color={actionsOpen ? theme.primary : theme.muted} accessible={false} style={{ transform: [{ rotate: actionsOpen ? "180deg" : "0deg" }] }} />
+          </Pressable>
+        )}
+      </ScrollView>
+      {actionsOpen && actions.length > 0 && (
+        <Card style={{ gap: 8, padding: 10 }}>
+          {actions.map((action) => (
+            <Button key={action.label} size="sm" secondary {...action} />
+          ))}
+        </Card>
+      )}
       <View style={{ flexDirection: "row", gap: 8 }}>
         <View
           style={[
@@ -545,8 +698,8 @@ export function CatalogueScreen({
               color: theme.text,
               flex: 1,
               minWidth: 0,
-              minHeight: 52,
-              fontSize: 16,
+              minHeight: 44,
+              fontSize: 15,
             }}
             maxLength={120}
           />
@@ -652,6 +805,75 @@ export function CatalogueScreen({
 
           {!!customerId && <Text style={{ color: theme.text, fontSize: 14 }}>Hợp đồng của khách: {customerName || `#${customerId}`}</Text>}
           {kind === 'contracts' && statistics.isError && <Button label="Tải lại số lượng theo trạng thái" secondary loading={statistics.isFetching} onPress={() => void statistics.refetch()} />}
+
+          {/* Contract Summary Totals & Due Reminder Banner */}
+          {kind === "contracts" && (statistics.data?.summary || query.data?.pages[0]?.summary) && (() => {
+            const sum = statistics.data?.summary || query.data?.pages[0]?.summary;
+            if (!sum || (sum.totalAmount === null && sum.receivableAmount === null)) return null;
+            return (
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 10, backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.border }}>
+                {sum.totalAmount !== null && <Text style={{ color: theme.text, fontSize: 12.5, fontWeight: "700" }}>Tổng HĐ: {money(sum.totalAmount)}</Text>}
+                {sum.receivableAmount !== null && <Text style={{ color: theme.warning, fontSize: 12.5, fontWeight: "700" }}>Còn phải thu: {money(sum.receivableAmount)}</Text>}
+                {sum.badDebtAmount !== null && sum.badDebtAmount > 0 && <Text style={{ color: theme.danger, fontSize: 12.5, fontWeight: "700" }}>Nợ xấu: {money(sum.badDebtAmount)}</Text>}
+              </View>
+            );
+          })()}
+
+          {kind === "contracts" && !scope && (statistics.data?.dueCount || 0) > 0 && (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => router.push({ pathname: "/contracts-workspace/[scope]", params: { scope: "due" } })}
+              style={[styles.scopeBanner, { backgroundColor: theme.warningBackground, borderColor: theme.warning }]}
+            >
+              <Text style={{ color: theme.warning, fontSize: 12.5, fontWeight: "700", flex: 1 }}>
+                Có {statistics.data!.dueCount} hợp đồng thuê sở hữu đến hạn đóng tiền → Mở danh sách
+              </Text>
+            </Pressable>
+          )}
+
+          {/* Overdue Bucket Chips on Overdue tab/workspace */}
+          {kind === "contracts" && (scope === "overdue" || status === "overdue") && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+              {[
+                { key: "", label: "Tất cả mức trễ" },
+                { key: "d1_3", label: "1–3 ngày" },
+                { key: "d4_7", label: "4–7 ngày" },
+                { key: "d8_15", label: "8–15 ngày" },
+                { key: "d16_30", label: "16–30 ngày" },
+                { key: "gt30", label: "> 30 ngày" },
+              ].map((b) => {
+                const active = (extraFilters.overdueBucket || "") === b.key;
+                const bCount = b.key ? new Map(statistics.data?.overdueCounts || query.data?.pages[0]?.overdueCounts || []).get(b.key) : undefined;
+                return (
+                  <Pressable
+                    key={b.key || "all_buckets"}
+                    accessibilityRole="button"
+                    onPress={() => setExtraFilters((cur) => ({ ...cur, overdueBucket: b.key || undefined }))}
+                    style={[styles.chip, { backgroundColor: active ? theme.warning : theme.surface, borderColor: active ? theme.warning : theme.border }]}
+                  >
+                    <Text style={{ color: active ? "#FFFFFF" : theme.text, fontSize: 12, fontWeight: "700" }}>
+                      {b.label}{bCount !== undefined ? ` (${bCount})` : ""}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          )}
+
+          {/* Vehicle Missing Contract Filter Chip */}
+          {kind === "vehicles" && ((query.data?.pages[0]?.missingOpenContractCount || 0) > 0 || extraFilters.missingContract === "1") && (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setExtraFilters((cur) => ({ ...cur, missingContract: cur.missingContract === "1" ? undefined : "1" }))}
+              style={[styles.scopeBanner, { backgroundColor: extraFilters.missingContract === "1" ? theme.warning : theme.warningBackground, borderColor: theme.warning }]}
+            >
+              <Text style={{ color: extraFilters.missingContract === "1" ? "#FFFFFF" : theme.warning, fontSize: 12.5, fontWeight: "700", flex: 1 }}>
+                {extraFilters.missingContract === "1"
+                  ? "Đang lọc: Xe đang thuê nhưng thiếu hợp đồng mở (Chạm để bỏ lọc)"
+                  : `Cảnh báo: ${query.data?.pages[0]?.missingOpenContractCount} xe đang thuê thiếu hợp đồng mở · Chạm để lọc`}
+              </Text>
+            </Pressable>
+          )}
 
           {/* Scope notification banner if filtered by specialized workspace */}
           {kind === "contracts" && !!scope && (
@@ -867,9 +1089,13 @@ export function CatalogueScreen({
             setExtraFilters({
               rentalType: selection.rentalType || undefined,
               ownershipTerm: selection.ownershipTerm || undefined,
+              overdueBucket: selection.overdueBucket || undefined,
+              sort: selection.sort || undefined,
+              direction: selection.direction || undefined,
               vehicleType: selection.vehicleType || undefined,
               warehouseStore: selection.warehouseStore || undefined,
               beneficiaryStore: selection.beneficiaryStore || undefined,
+              missingContract: selection.missingContract || undefined,
             });
             setFiltersOpen(false);
           }}
@@ -1058,19 +1284,41 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   list: {
-    paddingHorizontal: 20,
-    paddingBottom: 12,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
     width: "100%",
     maxWidth: 760,
     alignSelf: "center",
     flexGrow: 1,
   },
-  title: { fontSize: 28, fontWeight: "800", letterSpacing: -0.6 },
+  title: { fontSize: 24, fontWeight: "800", letterSpacing: -0.5 },
   row: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    gap: 12,
+    gap: 10,
+  },
+  contractMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  platePill: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  actionPill: {
+    minHeight: 34,
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    borderRadius: 9,
+    borderWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
   },
   search: {
     flexDirection: "row",
@@ -1078,20 +1326,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
     borderWidth: 1,
-    borderRadius: 14,
-    paddingLeft: 14,
+    borderRadius: 11,
+    paddingLeft: 12,
   },
   iconButton: {
-    minWidth: 48,
-    minHeight: 48,
+    minWidth: 40,
+    minHeight: 40,
     justifyContent: "center",
     alignItems: "center",
   },
   filterButton: {
-    minWidth: 52,
-    minHeight: 52,
-    paddingHorizontal: 12,
-    borderRadius: 14,
+    minWidth: 44,
+    minHeight: 44,
+    paddingHorizontal: 11,
+    borderRadius: 11,
     borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
@@ -1099,11 +1347,11 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   chip: {
-    minHeight: 48,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    minHeight: 36,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
     justifyContent: "center",
-    borderRadius: 12,
+    borderRadius: 9,
     borderWidth: 1,
   },
   modalBackdrop: {

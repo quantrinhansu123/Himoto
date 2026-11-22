@@ -19,7 +19,25 @@ function ReportDetail({ kind, filters }: { kind: SalesReportKind; filters: strin
   if (report.isPending) return <StateView title="Đang mở chi tiết báo cáo" loading />;
   if (report.isError) return <StateView title="Chưa mở được chi tiết báo cáo" message={report.error.message} retry={() => { void report.refetch(); }} />;
   return <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40, gap: 16, maxWidth: 760, width: "100%", alignSelf: "center" }} refreshControl={<RefreshControl refreshing={report.isRefetching} tintColor={theme.primary} onRefresh={() => { void report.refetch(); }} />}>
-    {report.data.canExport && <FileExportButton key={params} disabled={report.isFetching||report.isError} load={signal => api!.salesReportExport(kind, params, signal)} />}
+    {report.data.canExport ? (
+      <FileExportButton key={params} disabled={report.isFetching||report.isError} load={signal => api!.salesReportExport(kind, params, signal)} />
+    ) : report.data.sections[0]?.rows.length ? (
+      <FileExportButton
+        key={`${params}:section0`}
+        label={`Tải Excel · ${report.data.sections[0].title}`}
+        disabled={report.isFetching || report.isError}
+        load={(signal) =>
+          api!.exportWorkbook(
+            {
+              filename: `himoto-bao-cao-${kind}`,
+              headers: report.data.sections[0].columns.map((c) => c.label),
+              rows: report.data.sections[0].rows.map((r) => r.values),
+            },
+            signal,
+          )
+        }
+      />
+    ) : null}
     <SalesReportView key={params} report={report.data} onPage={(page, size, section) => {
       if (section && kind !== 'ledger' && kind !== 'vehicles' && kind !== 'fleet') setSectionPages(previous => ({ ...previous, [section]: page }));
       else setPaging({ page, size });

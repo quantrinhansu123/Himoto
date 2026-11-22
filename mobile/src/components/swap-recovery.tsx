@@ -1,5 +1,5 @@
 import {useCallback,useEffect,useMemo,useRef,useState} from 'react';
-import {ScrollView,Text} from 'react-native';
+import {ScrollView,Text,View} from 'react-native';
 import {router,useFocusEffect} from 'expo-router';
 import {useQueryClient} from '@tanstack/react-query';
 import {SafeAreaView} from 'react-native-safe-area-context';
@@ -103,6 +103,10 @@ function Recovery({id}:{id:string}) {
           <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>Lượt đổi xe giữ nguyên kỳ thuê, giá, tiền cọc và các khoản đã thu/hoàn.</Text>
         </Card>
         <Button label="Xác nhận đã kiểm tra phiếu đổi xe" loading={busy} onPress={()=>{void acknowledge();}}/>
+        <View style={{flexDirection:'row',flexWrap:'wrap',gap:8}}>
+          <Button secondary label="Ảnh & video đổi xe" disabled={busy} onPress={()=>router.push({pathname:'/record-media/[entity]/[id]',params:{entity:'contracts',id}})}/>
+          <Button secondary label="Gửi Telegram đổi xe" disabled={busy} onPress={()=>router.push({pathname:'/contract-telegram/[id]',params:{id}})}/>
+        </View>
         <Button label="Tải lại phiếu đổi xe" secondary loading={busy} onPress={()=>{void load();}}/>
       </>}
     </ScrollView>

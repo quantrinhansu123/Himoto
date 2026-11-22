@@ -5,7 +5,7 @@ import { Stack, useLocalSearchParams } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { useSession } from '@/providers/session';
 import { dateTime, money, useTheme } from '@/theme';
-import { Button, Card, InlineError, StateView } from '@/components/ui';
+import { Button, Card, InfoBanner, InlineError, StateView } from '@/components/ui';
 import { ChoiceField, FormField } from '@/components/form-fields';
 import { BillPhoto } from '@/components/bill-photo';
 export default function ContractQrScreen() {
@@ -21,13 +21,21 @@ function ContractQr({ id }: { id: string }) {
   const p = query.data, text = { color: theme.text, fontSize: 16, lineHeight: 24 }, muted = { color: theme.muted, fontSize: 14, lineHeight: 22 };
   function applyAmount() {
     Keyboard.dismiss(); if (amountText !== '' && !/^(0|[1-9]\d{0,12})$/.test(amountText)) { setError('Nhập số tiền nguyên VND từ 0 đến 9.999.999.999.999.'); return; }
-    setError(''); const next = amountText === '' ? null : Number(amountText); if (next === amount) void query.refetch(); else setAmount(next);
+    const next = amountText === '' ? null : Number(amountText);
+    const remainingDebt = p && p.total !== null && p.paid !== null ? Math.max(0, p.total - p.paid) : null;
+    if (next !== null && next > 0 && remainingDebt !== null && remainingDebt > 0 && next > remainingDebt) {
+      setError(`Số tiền tạo QR (${money(next)}) đang vượt công nợ hiện tại (${money(remainingDebt)}). Kiểm tra lại trước khi gửi khách.`);
+      return;
+    }
+    setError(''); if (next === amount) void query.refetch(); else setAmount(next);
   }
+  const paidInFull = Boolean(p && p.total !== null && p.paid !== null && p.total > 0 && p.paid >= p.total);
   return <SafeAreaView edges={['bottom']} style={{ flex: 1, backgroundColor: theme.background }}><Stack.Screen options={{ title: 'Chuyển khoản theo hợp đồng' }} /><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, gap: 16 }}>
     {query.isPending && <StateView title="Đang lấy tài khoản nhận và công nợ" loading />}
     {query.isError && <StateView title="Chưa xác nhận được QR hiện tại" message={(query.error as Error).message} retry={() => void query.refetch()} />}
     {!!error && <InlineError message={error} />}
     {p && <>
+      {paidInFull && <InfoBanner tone="success" title="Hợp đồng đã thanh toán đủ" message={`Đã thu ${money(p.paid)} / ${money(p.total)}. Chỉ tạo mã QR mới nếu có khoản thu phát sinh thêm.`} />}
       <Card style={{ gap: 10 }}><Text accessibilityRole="header" style={{ ...text, fontSize: 22, fontWeight: '700' }}>{p.code}</Text><Text style={text}>Giá trị hợp đồng: {money(p.total)} · Đã thu tiền thuê: {money(p.paid)}</Text><Text style={text}>Số tiền QR: {money(p.amount)}</Text><Text style={muted}>Cập nhật: {dateTime(new Date(query.dataUpdatedAt).toISOString())}. Tự kiểm tra khoản thu khi màn hình đang mở.</Text>
         {p.mode === 'test' && <Text style={text}>SePay đang ở chế độ thử. QR vẫn trỏ đến tài khoản ngân hàng đã cấu hình; giao dịch mô phỏng không thay công nợ thật. Đã nhận mô phỏng: {money(p.receivedDemo)}.</Text>}
       </Card>

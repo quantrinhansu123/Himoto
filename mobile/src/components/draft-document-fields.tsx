@@ -10,8 +10,9 @@ import type {
 import { useTheme, money, dateTime } from "@/theme";
 import { draftWindowDifferences } from "@himoto/mobile-draft-validation";
 import { staffRoles, hasSalesCommissionRole } from '../../../shared/staff-positions';
+import { rentalDayCount } from '../../../shared/rental-time';
 import { emptyDraftVehicle, type DraftErrors } from "@/lib/draft-form";
-import { Card, Button } from "./ui";
+import { Card, Button, Chip } from "./ui";
 import { FormField, ChoiceField } from "./form-fields";
 import { DateField } from "./date-field";
 import { RentalDateTime } from "./rental-date-time";
@@ -258,6 +259,17 @@ export function DraftPeople<T extends MobileContractFormInput>({
         onChangeText={changeSource}
         maxLength={4000}
       />
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+        {["Cửa hàng", "TLS", "PKD1", "PKD2"].map((preset) => (
+          <Chip
+            key={preset}
+            label={preset}
+            selected={d.customer_source === preset}
+            disabled={disabled}
+            onPress={() => changeSource(preset)}
+          />
+        ))}
+      </View>
       <FormField
         label="Đường dẫn nguồn khách"
         value={d.customer_source_url}
@@ -747,6 +759,25 @@ export function DraftFees<T extends MobileContractFormInput>({ input, change, di
     key: K,
     value: MobileContractDraft[K],
   ) => change({ ...input, draft: { ...d, [key]: value } });
+  const vehicleCount = Math.max(1, d.vehicles.filter((v) => v.id).length);
+  const days = Number(rentalDayCount(d.start_date, d.end_date) || "0");
+  const unitPriceNum = /^\d+$/.test(d.unit_price) ? Number(d.unit_price) : 0;
+  const extraChargesSum = (d.extra_charges || []).reduce(
+    (sum, item) => sum + (/^\d+$/.test(item.amount) ? Number(item.amount) : 0),
+    0,
+  );
+  const totalAmountNum = /^\d+$/.test(d.total_amount) ? Number(d.total_amount) : 0;
+  const depositAmountNum = /^\d+$/.test(d.deposit_amount) ? Number(d.deposit_amount) : 0;
+  const suggestedBase =
+    unitPriceNum > 0 && days > 0
+      ? d.package_name === "Theo tháng"
+        ? Math.round((unitPriceNum * days) / 30)
+        : d.package_name === "Theo tuần"
+          ? Math.round((unitPriceNum * days) / 7)
+          : unitPriceNum * days
+      : 0;
+  const suggestedTotalSingle = suggestedBase + extraChargesSum;
+  const suggestedTotalMulti = suggestedBase * vehicleCount + extraChargesSum;
   return (
     <>
       <DraftSection title="Giá trị dự kiến">
@@ -774,6 +805,28 @@ export function DraftFees<T extends MobileContractFormInput>({ input, change, di
           disabled={disabled}
           error={errors.unit_price}
         />
+        {suggestedBase > 0 && (
+          <View style={{ gap: 6, padding: 10, borderRadius: 10, borderWidth: 1, borderColor: theme.border, backgroundColor: theme.background }}>
+            <Text style={{ color: theme.muted, fontSize: 12.5 }}>
+              Tạm tính ({days} ngày{extraChargesSum > 0 ? ` + ${money(extraChargesSum)} phí khác` : ""}):{" "}
+              <Text style={{ color: theme.text, fontWeight: "700" }}>{money(suggestedTotalSingle)}</Text>
+            </Text>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+              <Chip
+                label={`Áp dụng tổng ${money(suggestedTotalSingle)}`}
+                disabled={disabled}
+                onPress={() => set("total_amount", String(suggestedTotalSingle))}
+              />
+              {vehicleCount > 1 && (
+                <Chip
+                  label={`Tính cho cả ${vehicleCount} xe (${money(suggestedTotalMulti)})`}
+                  disabled={disabled}
+                  onPress={() => set("total_amount", String(suggestedTotalMulti))}
+                />
+              )}
+            </View>
+          </View>
+        )}
         <MoneyField
           label="Tổng giá trị hợp đồng (VND)"
           value={d.total_amount}
@@ -788,6 +841,11 @@ export function DraftFees<T extends MobileContractFormInput>({ input, change, di
           disabled={disabled}
           error={errors.deposit_amount}
         />
+        {(totalAmountNum > 0 || depositAmountNum > 0) && (
+          <Text style={{ color: theme.primary, fontSize: 14, fontWeight: "700" }}>
+            Tổng cần thu gồm cọc: {money(totalAmountNum + depositAmountNum)}
+          </Text>
+        )}
         <Text style={{ color: theme.muted, fontSize: 14, lineHeight: 22 }}>
           Đã nhận tiền thuê:{" "}
           {/^\d+$/.test(d.paid_amount)
@@ -802,17 +860,50 @@ export function DraftFees<T extends MobileContractFormInput>({ input, change, di
           multiline
           maxLength={4000}
         />
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+          {["CCCD", "BLX", "Hộ chiếu", "Không giữ giấy tờ"].map((tag) => (
+            <Chip
+              key={tag}
+              label={tag}
+              selected={d.collateral_description.includes(tag)}
+              disabled={disabled}
+              onPress={() => {
+                if (tag === "Không giữ giấy tờ") {
+                  set("collateral_description", tag);
+                  return;
+                }
+                const parts = d.collateral_description
+                  .split(",")
+                  .map((p) => p.trim())
+                  .filter((p) => p && p !== "Không giữ giấy tờ");
+                const next = parts.includes(tag)
+                  ? parts.filter((p) => p !== tag)
+                  : [...parts, tag];
+                set("collateral_description", next.join(", "));
+              }}
+            />
+          ))}
+        </View>
       </DraftSection>
-      {input.status !== 'draft' && <Disclosure title="Hình thức dự kiến nhận tiền">
+      <Disclosure title="Hình thức dự kiến nhận tiền">
         {(['deposit_payment_method', 'payment_method'] as const).map(key => {
           const selected = d[key].split(',').map(v => v.trim()).filter(Boolean);
-          return <View key={key} style={{ gap: 12 }}>
-            <Text style={{ color: theme.text, fontSize: 16, fontWeight: '700' }}>{key === 'deposit_payment_method' ? 'Dự kiến nhận cọc' : 'Dự kiến thu thuê / phí'}</Text>
-            {['Tiền mặt', 'CK tk cá nhân', 'CK tk công ty'].map(method => <ChoiceField key={method} label={`${key === 'deposit_payment_method' ? 'Nhận cọc' : 'Thu thuê / phí'} bằng ${method}`} value={selected.includes(method) ? 'yes' : 'no'} choices={[{ value: 'yes', label: 'Có chọn' }, { value: 'no', label: 'Không chọn' }]} disabled={disabled} onChange={v => set(key, (v === 'yes' ? [...selected.filter(s => s !== method), method] : selected.filter(s => s !== method)).join(', '))} />)}
+          return <View key={key} style={{ gap: 8 }}>
+            <Text style={{ color: theme.text, fontSize: 15, fontWeight: '700' }}>{key === 'deposit_payment_method' ? 'Dự kiến nhận cọc' : 'Dự kiến thu thuê / phí'}</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              {['Tiền mặt', 'CK tk cá nhân', 'CK tk công ty'].map(method => {
+                const active = selected.includes(method);
+                return <Pressable key={method} accessibilityRole="checkbox" accessibilityState={{ checked: active, disabled }} disabled={disabled}
+                  onPress={() => set(key, (active ? selected.filter(s => s !== method) : [...selected, method]).join(', '))}
+                  style={{ minHeight: 40, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: active ? theme.primary : theme.controlBorder, backgroundColor: active ? theme.tint : theme.surface, opacity: disabled ? 0.5 : 1 }}>
+                  <Text style={{ color: active ? theme.primary : theme.text, fontSize: 13.5, fontWeight: active ? '700' : '600' }}>{active ? `✓ ${method}` : method}</Text>
+                </Pressable>;
+              })}
+            </View>
           </View>;
         })}
-        <Text style={{ color: theme.muted, fontSize: 14, lineHeight: 22 }}>Có thể chọn nhiều hình thức. Phiếu thực thu được giữ riêng theo tài khoản/két đã nhận.</Text>
-      </Disclosure>}
+        <Text style={{ color: theme.muted, fontSize: 13.5, lineHeight: 20 }}>Có thể chọn nhiều hình thức. Phiếu thực thu được giữ riêng theo tài khoản/két đã nhận.</Text>
+      </Disclosure>
       <Disclosure
         title="Các khoản phí khác"
         initial={

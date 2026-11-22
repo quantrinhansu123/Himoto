@@ -5,7 +5,7 @@ import { Stack, router, useLocalSearchParams, usePreventRemove } from 'expo-rout
 import { ownershipTermChoices, type MobileOwnershipTermsInput, type MobileOwnershipTerm } from '../../../../shared/mobile-ownership-terms';
 import { useSession } from '@/providers/session';
 import { useOwnershipTermsWrite } from '@/hooks/use-ownership-terms-write';
-import { money, useTheme } from '@/theme';
+import { dateTime, money, useTheme } from '@/theme';
 import { Button, Card, InlineError, StateView } from '@/components/ui';
 import { ChoiceField, FormField } from '@/components/form-fields';
 import { ConfirmEdit } from '@/components/editor-sheet';
@@ -39,7 +39,20 @@ function OwnershipTermsEditor({ id }: { id: string }) {
         <FormField label="Tổng mức đóng mỗi ngày (VND)" value={value.daily_amount || ''} keyboardType="number-pad" maxLength={13} editable={!disabled} onChangeText={v => change({ ...value, daily_amount: v || null })} hint="Để trống nếu chưa xác định. Nhập tổng mức đóng của tất cả xe trong hợp đồng." />
         {p.can_edit && <Button label="Kiểm tra thời hạn / mức đóng" disabled={disabled} onPress={check} />}
         <Button secondary label="Tải lại thời hạn sở hữu mới nhất" disabled={write.busy || write.query.isFetching} onPress={() => setReload(true)} />
-        <Button secondary label="Xem lịch sử thay đổi thời hạn" onPress={() => router.push({ pathname: '/contract-history/[id]', params: { id } })} />
+        <Button secondary label="Xem lịch sử thay đổi đầy đủ" onPress={() => router.push({ pathname: '/contract-history/[id]', params: { id } })} />
+        {!!p.history?.length && (
+          <Card style={{ gap: 10 }}>
+            <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 16, fontWeight: '800' }}>
+              Lịch sử sửa thời hạn & mức đóng ({p.history.length})
+            </Text>
+            {p.history.map((item, idx) => (
+              <Text key={`${item.at}:${idx}`} style={{ color: theme.text, fontSize: 13.5, lineHeight: 20 }}>
+                {dateTime(item.at)} · {item.actor}{'\n'}
+                Thời hạn: {term(item.before.term_months)} → {term(item.after.term_months)} · Mức đóng/ngày: {item.before.daily_amount == null ? 'Chưa xác định' : money(item.before.daily_amount)} → {item.after.daily_amount == null ? 'Chưa xác định' : money(item.after.daily_amount)}
+              </Text>
+            ))}
+          </Card>
+        )}
       </>}
     </ScrollView></KeyboardAvoidingView>
     {review && p && value && <ConfirmEdit title="Lưu thời hạn / mức đóng sở hữu?" message={`${p.code}\nThời hạn: ${term(p.term_months)} → ${term(value.term_months)}\nTổng mức đóng/ngày: ${money(p.daily_amount)} → ${value.daily_amount === null ? 'Chưa xác định' : money(Number(value.daily_amount))}\n\nGiữ nguyên tiền/phiếu và lịch đóng đã lập; lưu người sửa và dữ liệu trước–sau.`} confirmLabel="Xác nhận lưu thời hạn sở hữu" busy={write.busy} onCancel={() => setReview(false)} onConfirm={() => { setReview(false); void write.save(value); }} />}

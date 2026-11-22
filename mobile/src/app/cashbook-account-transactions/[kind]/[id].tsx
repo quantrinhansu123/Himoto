@@ -7,6 +7,7 @@ import { useSession } from "@/providers/session";
 import { money, useTheme } from "@/theme";
 import { Button, Card, InlineError, StateView } from "@/components/ui";
 import { DateField } from "@/components/date-field";
+import { FileExportButton } from "@/components/file-export-button";
 function Transactions({ kind, id }: { kind: CashbookAccountKind; id: string }) {
   const { api, session } = useSession(), theme = useTheme(), [from, setFrom] = useState(""), [to, setTo] = useState(""), [type, setType] = useState("income");
   const valid = !from || !to || from <= to, allowed = session!.user.permissions.includes("finance.read");
@@ -22,6 +23,29 @@ function Transactions({ kind, id }: { kind: CashbookAccountKind; id: string }) {
       <Text style={{ color: theme.muted, lineHeight: 22 }}>Tối đa 2.000 phiếu gần nhất theo khoảng ngày, cùng giới hạn nguồn web. Tổng dưới đây tính trên các phiếu đã tải.</Text>
       <Card style={{ gap: 8 }}><Text style={{ color: theme.text }}>Tổng thu ({income.length} phiếu): {query.data && valid ? money(income.reduce((sum, row) => sum + row.amount, 0)) : "—"}</Text><Text style={{ color: theme.text }}>Tổng chi ({expense.length} phiếu): {query.data && valid ? money(expense.reduce((sum, row) => sum + row.amount, 0)) : "—"}</Text></Card>
       <View style={{ flexDirection: "row", gap: 10 }}><Button equalWidth secondary={type !== "income"} label="Thu của tài khoản" onPress={() => setType("income")} /><Button equalWidth secondary={type !== "expense"} label="Chi của tài khoản" onPress={() => setType("expense")} /></View>
+      <FileExportButton
+        label={`Tải Excel phiếu ${type === "income" ? "thu" : "chi"} (${visible.length})`}
+        disabled={!valid || query.isFetching || query.isError || !visible.length}
+        load={(signal) =>
+          api!.exportWorkbook(
+            {
+              filename: `himoto-so-quy-${kind}-${id}-${type}`,
+              headers: ["Mã phiếu", "Loại", "Số tiền (VND)", "Hợp đồng", "Ngày", "Giờ", "Người ghi", "Nội dung"],
+              rows: visible.map((r) => [
+                r.id,
+                type === "income" ? "Thu" : "Chi",
+                r.amount,
+                r.contractCode || "",
+                r.date || "",
+                r.time || "",
+                r.actorName || "",
+                r.content || "",
+              ]),
+            },
+            signal,
+          )
+        }
+      />
     </View>}
     renderItem={({ item }) => <Card style={{ gap: 9 }}><Text style={{ color: type === "income" ? theme.success : theme.danger, fontWeight: "800", fontSize: 20 }}>{money(item.amount)}</Text><Text style={{ color: theme.text, fontWeight: "600" }}>#{item.id} · {item.contractCode || "Không gắn hợp đồng"}</Text><Text style={{ color: theme.muted }}>{item.date ? item.date.split("-").reverse().join("/") : "Chưa có ngày"} {item.time} · {item.actorName || "—"}</Text>{!!item.content && <Text selectable style={{ color: theme.text, lineHeight: 23 }}>{item.content}</Text>}</Card>}
     ListEmptyComponent={!valid ? <StateView title="Kiểm tra khoảng ngày" /> : query.isPending ? <StateView title="Đang tải thu chi tài khoản" loading /> : query.isError ? <StateView title="Chưa tải được thu chi" message={query.error.message} retry={() => { void query.refetch(); }} /> : <StateView title="Chưa có phiếu phù hợp" />}

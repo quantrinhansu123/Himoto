@@ -16,6 +16,7 @@ export default function ContractHistoryScreen() {
 }
 function ContractHistoryView({ id, initialTab = 'changes' }: { id: string; initialTab?: 'changes' | 'cashflow' }) {
   const { api, session } = useSession(), theme = useTheme(), [tab, setTab] = useState<'changes' | 'cashflow'>(initialTab), [search, setSearch] = useState(''), [filter, setFilter] = useState(''), [page, setPage] = useState(1);
+  const [expandedVersion, setExpandedVersion] = useState<string | null>(null);
   const query = useQuery({ queryKey: ['contract-history', api?.origin, session?.user.id, session?.user.storeId, session?.user.allStores, id, tab, filter, page], gcTime: 0, staleTime: 0, retry: false,
     enabled: !!api, queryFn: ({ signal }) => api!.contractHistory(id, new URLSearchParams({ tab, search: filter, page: String(page) }), signal) });
   const data = query.data, text = { color: theme.text, fontSize: 16, lineHeight: 24 }, muted = { color: theme.muted, fontSize: 14, lineHeight: 22 };
@@ -31,6 +32,12 @@ function ContractHistoryView({ id, initialTab = 'changes' }: { id: string; initi
         <ChoiceField label="Nội dung lịch sử" value={tab} choices={[{ value: 'changes', label: `Diễn biến${data ? ` (${data.changeCount})` : ''}` }, { value: 'cashflow', label: `Phiếu thu / chi${data ? ` (${data.cashflowCount})` : ''}` }]} onChange={v => { setTab(v as typeof tab); setPage(1); }} />
         <FormField label="Tìm trong lịch sử hợp đồng" value={search} maxLength={120} onChangeText={setSearch} onSubmitEditing={applySearch} returnKeyType="search" />
         <View style={{ flexDirection: 'row', gap: 10 }}><Button equalWidth secondary label="Tìm lịch sử" onPress={applySearch} />{!!filter && <Button equalWidth secondary label="Xóa lọc lịch sử" onPress={() => { setSearch(''); setFilter(''); setPage(1); }} />}</View>
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          {session?.user.permissions.includes('finance.write') && (
+            <Button size="sm" equalWidth secondary label="Thu / Chi hợp đồng" onPress={() => router.push({ pathname: '/finance/[id]', params: { id } })} />
+          )}
+          <Button size="sm" equalWidth secondary label="Xem chi tiết HĐ" onPress={() => router.push({ pathname: '/record/[kind]/[id]', params: { kind: 'contracts', id } })} />
+        </View>
         {query.isError && <StateView title="Chưa tải được lịch sử" message={(query.error as Error).message} retry={() => void query.refetch()} />}
         {query.isPending && <StateView title="Đang tải lịch sử hợp đồng" loading />}
         {data && <Text accessibilityLiveRegion="polite" style={muted}>{data.total} kết quả · Trang {data.page}/{data.pages}{data.search ? ` · “${data.search}”` : ''}</Text>}
@@ -38,7 +45,16 @@ function ContractHistoryView({ id, initialTab = 'changes' }: { id: string; initi
       renderItem={({ item }) => <Card style={{ gap: 8 }}>{item.change ? <>
         <Text accessibilityRole="header" style={{ ...text, fontSize: 18, fontWeight: '700' }}>{item.change.title}</Text><Text style={muted}>{dateTime(item.change.at)} · {item.change.actor}</Text>
         {!!item.change.detail && <Text selectable style={text}>{item.change.detail}</Text>}{item.change.amount !== null && <Text style={text}>Giá trị: {money(item.change.amount)}</Text>}
-        {item.change.version && <View style={{ gap: 5, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 8 }}><Text style={muted}>{item.change.version.label}</Text><Text style={text}>Hẹn trả: {dateTime(item.change.version.return_at || '')} · Tổng: {money(item.change.version.total)} · Đã thu: {money(item.change.version.paid)}</Text></View>}
+        {item.change.version && <View style={{ gap: 6, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 8 }}>
+          <Button size="sm" secondary label={expandedVersion === item.change.id ? 'Thu gọn bản đối chiếu' : `Xem nhanh · ${item.change.version.label}`} onPress={() => setExpandedVersion(prev => prev === item.change!.id ? null : item.change!.id)} />
+          {expandedVersion === item.change.id && (
+            <View style={{ gap: 4, padding: 10, borderRadius: 9, backgroundColor: theme.background, borderWidth: 1, borderColor: theme.border }}>
+              <Text style={{ color: theme.text, fontWeight: '700' }}>{item.change.version.label}</Text>
+              <Text style={text}>Hẹn trả: {dateTime(item.change.version.return_at || '')}</Text>
+              <Text style={text}>Tổng giá trị: {money(item.change.version.total)} · Đã thu: {money(item.change.version.paid)}</Text>
+            </View>
+          )}
+        </View>}
         {(item.change.version || ['created', 'swap'].includes(item.change.kind)) && <Button secondary label={`Xem giấy / in ${item.change.version?.label || item.change.title}`} onPress={() => router.push({ pathname: '/print/[kind]/[id]', params: { kind: 'contracts', id, version: item.change!.id } })} />}
       </> : item.cashflow ? <>
         <Text accessibilityRole="header" style={{ ...text, fontSize: 18, fontWeight: '700' }}>Phiếu #{item.cashflow.id} · {item.cashflow.type === 'income' ? 'Thu' : 'Chi'} {money(item.cashflow.amount)}</Text>

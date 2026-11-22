@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { usePreventRemove } from 'expo-router';
-import { FlatList, RefreshControl, Text, View } from 'react-native';
+import { useLocalSearchParams, usePreventRemove } from 'expo-router';
+import { FlatList, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { REGISTRATION_SHIFTS, registrationDates, registrationMonthRange, registrationCredit, type RegistrationInput, type RegisteredStaff, type ShiftRegistration } from '../../../shared/mobile-shift-registration';
 import { dutyToday } from '../../../shared/mobile-duty-roster';
@@ -15,9 +15,11 @@ import { ConfirmEdit } from '@/components/editor-sheet';
 import { DateField } from '@/components/date-field';
 import { FilteredListExport } from '@/components/filtered-list-export';
 
-function Board() {
+function Board({ initialDate, initialStaff }: { initialDate?: string; initialStaff?: string }) {
   const { api, session } = useSession(), theme = useTheme(), cache = useQueryClient(), running = useRef(false);
-  const [month, setMonth] = useState(() => dutyToday().slice(0, 7)), [store, setStore] = useState('all'), [search, setSearch] = useState(''), [day, setDay] = useState(dutyToday);
+  const validInitialDate = initialDate && /^\d{4}-\d{2}-\d{2}$/.test(initialDate) ? initialDate : undefined;
+  const [month, setMonth] = useState(() => (validInitialDate || dutyToday()).slice(0, 7)), [store, setStore] = useState('all'), [search, setSearch] = useState(initialStaff || ''), [day, setDay] = useState(() => validInitialDate || dutyToday());
+  const [viewMode, setViewMode] = useState<'day' | 'matrix'>('day');
   const [range,setRange]=useState(()=>registrationMonthRange(month)),[from,setFrom]=useState(range.from),[to,setTo]=useState(range.to),[filterError,setFilterError]=useState('');
   const [pending, setPending] = useState<{ input: RegistrationInput; staff: RegisteredStaff } | null>(null), [busy, setBusy] = useState(false), [uncertain, setUncertain] = useState(false), [error, setError] = useState('');
   const query = useQuery({ queryKey: ['shift-registrations', session!.user.id, range.from,range.to], queryFn: ({ signal }) => api!.registrationRange(range.from,range.to, signal), retry: false });
@@ -65,14 +67,45 @@ function Board() {
       <ChoiceField label="Ngày đăng ký" value={selectedDay} choices={dates.map(value => ({ value, label: value.split('-').reverse().join('/') }))} disabled={busy} onChange={setDay} />
       <ChoiceField label="Cơ sở" value={store} searchable choices={[{ value: 'all', label: 'Tất cả cơ sở' }, ...(data?.stores || []).map(s => ({ value: String(s.id), label: s.name })), { value: 'none', label: 'Chưa có cơ sở' }]} onChange={setStore} />
       <FormField label="Tìm nhân viên" placeholder="Họ tên, chức vụ…" value={search} onChangeText={setSearch} maxLength={120} />
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+        <Text style={{ color: theme.muted, fontSize: 13 }}>{staff.length} nhân sự · {dates.length} ngày ({range.from.split('-').reverse().join('/')} → {range.to.split('-').reverse().join('/')})</Text>
+        {!!(search || store !== 'all') && <Button size="sm" secondary label="Xóa lọc nhân viên" onPress={() => { setSearch(''); setStore('all'); }} />}
+      </View>
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        <Button equalWidth secondary={viewMode !== 'day'} label="Đăng ký theo ngày" onPress={() => setViewMode('day')} />
+        <Button equalWidth secondary={viewMode !== 'matrix'} label="Bảng nhiều ngày" onPress={() => setViewMode('matrix')} />
+      </View>
       <FilteredListExport kind="shift-registrations" filters={new URLSearchParams({from:range.from,to:range.to,store,search}).toString()} disabled={locked||!staff.length} />
       <Button secondary label="Làm mới bảng" loading={query.isFetching} disabled={busy} onPress={() => void reload()} />
       {!!error && <InlineError message={error} />}
     </View>}
     renderItem={({ item: person }) => {
       const row = byStaffDay.get(`${person.id}:${selectedDay}`);
-      return <Card style={{ gap: 12 }}><Text style={{ color: theme.text, fontSize: 19, fontWeight: '700' }}>{person.name}</Text><Text style={{ color: theme.muted }}>{person.position} · {person.store_name}</Text>
+      return <Card style={{ gap: 12 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+          <Text style={{ color: theme.text, fontSize: 19, fontWeight: '700', flex: 1 }}>{person.name}</Text>
+          {person.status !== 'active' && (
+            <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: theme.dangerBackground }}>
+              <Text style={{ color: theme.danger, fontSize: 12, fontWeight: '700' }}>Ngừng hoạt động</Text>
+            </View>
+          )}
+        </View>
+        <Text style={{ color: theme.muted }}>{person.position} · {person.store_name}</Text>
         <Text style={{ color: theme.text }}>Tổng công đăng ký trong khoảng ngày: {shiftCreditLabel(creditsByStaff.get(person.id) || 0)} công</Text>
+        {viewMode === 'matrix' ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingVertical: 4 }}>
+            {dates.map(d => {
+              const cell = byStaffDay.get(`${person.id}:${d}`);
+              const activeDay = d === selectedDay;
+              return (
+                <View key={d} style={{ paddingHorizontal: 8, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: activeDay ? theme.primary : theme.border, backgroundColor: activeDay ? theme.tint : theme.background, alignItems: 'center', minWidth: 52 }}>
+                  <Text style={{ color: theme.muted, fontSize: 11 }}>{d.slice(8, 10)}/{d.slice(5, 7)}</Text>
+                  <Text style={{ color: cell?.shift_code ? theme.primary : theme.muted, fontSize: 13, fontWeight: '800' }}>{cell?.shift_code || '—'}</Text>
+                </View>
+              );
+            })}
+          </ScrollView>
+        ) : null}
         <ChoiceField label={`Ca của ${person.name} ngày ${selectedDay.split('-').reverse().join('/')}`} value={row?.shift_code || ''} searchable disabled={!writable || locked || !person.store_id || person.status !== 'active'} choices={shiftChoices} onChange={code => { if (code !== (row?.shift_code || '') && person.store_id) setPending({ staff: person, input: { staff_id: person.id, store_id: person.store_id, work_date: selectedDay, shift_code: code || null, revision: row?.revision || null } }); }} />
         {!person.store_id && <Text style={{ color: theme.muted }}>Cần gán cơ sở trong hồ sơ nhân viên trước khi đăng ký.</Text>}
       </Card>;
@@ -97,4 +130,10 @@ function Board() {
     </Card>}
   />{pending && <ConfirmEdit title="Lưu đăng ký ca?" message={`${pending.staff.name} · ${pending.input.work_date.split('-').reverse().join('/')}\n${pending.input.shift_code || 'Chưa đăng ký'}`} confirmLabel="Lưu đăng ký ca" onCancel={() => setPending(null)} onConfirm={() => void save()} />}</SafeAreaView>;
 }
-export default function Route() { const { api, session } = useSession(); return !api || !session || !session.user.permissions.includes('hr.read') ? <StateView title="Không có quyền xem đăng ký ca" /> : <Board key={`${api.origin}:${session.token}:${session.user.permissions.join(',')}`} />; }
+export default function Route() {
+  const { api, session } = useSession();
+  const { date, staff } = useLocalSearchParams<{ date?: string; staff?: string }>();
+  return !api || !session || !session.user.permissions.includes('hr.read')
+    ? <StateView title="Không có quyền xem đăng ký ca" />
+    : <Board key={`${api.origin}:${session.token}:${session.user.permissions.join(',')}:${date || ''}:${staff || ''}`} initialDate={typeof date === 'string' ? date : undefined} initialStaff={typeof staff === 'string' ? staff : undefined} />;
+}

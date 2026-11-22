@@ -4,10 +4,27 @@ export interface MobileVehicleInput {
   store_id: number; status: string; color: string; chassis: string; engine: string;
   odometer: number | null; daily_price?: number | null; cost_price?: number | null; note: string; revision?: string;
 }
+export interface MobileVehicleGpsInfo {
+  status: string;
+  provider: string;
+  externalDeviceId: string;
+  lastSpeed: number | null;
+  lastLatitude: number | null;
+  lastLongitude: number | null;
+  syncReceivedAt: string | null;
+  heartbeatAt: string | null;
+  positionRecordedAt: string | null;
+}
 export interface MobileVehicleProfile {
   id: number; revision: string; values: MobileVehicleInput;
   storeName: string; ownerStoreId: number | null; ownerStoreName: string; typeLabel: string;
   hasOpenContract: boolean; inTransit: boolean; canEdit: boolean;
+  holderName?: string | null;
+  beneficiaryStoreName?: string | null;
+  overdueDays?: number | null;
+  hasDraftContract?: boolean;
+  canDelete?: boolean;
+  gps?: MobileVehicleGpsInfo | null;
 }
 export interface MobileVehicleOptions {
   stores: { id: number; name: string }[];

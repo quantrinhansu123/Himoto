@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Keyboard, KeyboardAvoidingView, Platform, ScrollView, Text, View, type ScrollViewInstance } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Stack, usePreventRemove } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
+import { Stack, router, usePreventRemove } from 'expo-router';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { MobileContractDraft, MobileDraftCustomer } from '@himoto/mobile-contract';
 import type { MobileContractEditInput } from '../../../shared/mobile-contract-edit';
 import { issuedContractStatuses } from '../../../shared/mobile-contract-edit';
+import { addRentalDays, rentalDayCount } from '../../../shared/rental-time';
 import { useSession } from '@/providers/session';
 import { dateTime, money, useTheme } from '@/theme';
 import { useContractEditWrite } from '@/hooks/use-contract-edit-write';
 import { addDraftVehicle, changeDraftTime, chooseDraftCustomer, chooseDraftType, draftSteps } from '@/lib/draft-form';
 import { contextualStatusLabel } from '@/lib/catalogue-config';
-import { Button, Card, InlineError, StateView } from './ui';
+import { Button, Card, InlineError, SegmentedBar, StateView } from './ui';
 import { ChoiceField, FormField, KeyboardScrollContext } from './form-fields';
 import { DateField } from './date-field';
 import { RentalDateTime } from './rental-date-time';
@@ -20,8 +21,10 @@ import { DraftCustomerPicker, DraftVehiclePicker } from './draft-pickers';
 import { CustomerCreateSheet } from './customer-editor';
 import { DraftFees, DraftParty, DraftPeople, DraftRequirements, DraftSection, DraftVehicleLines } from './draft-document-fields';
 
-export function ContractEditEditor({ id }: { id: string }) {
-  const write = useContractEditWrite(id), theme = useTheme();
+export function ContractEditEditor({ id, initialMode = 'full' }: { id: string; initialMode?: 'full' | 'profile' }) {
+  const write = useContractEditWrite(id), theme = useTheme(), cache = useQueryClient();
+  const [editMode, setEditMode] = useState<'full' | 'profile'>(initialMode);
+  const [profileBusy, setProfileBusy] = useState(false);
   const [input, setInput] = useState<MobileContractEditInput | null>(null);
   const [step, setStep] = useState(0), [confirm, setConfirm] = useState(false), [reload, setReload] = useState(false);
   const [customerPicker, setCustomerPicker] = useState(false), [vehiclePicker, setVehiclePicker] = useState(false), [customerCreate, setCustomerCreate] = useState(false);
@@ -47,7 +50,48 @@ export function ContractEditEditor({ id }: { id: string }) {
   const dirty = !!input && JSON.stringify(input) !== JSON.stringify(profile?.input);
   const disablePrevention = usePreventRemove(write.busy || dirty && !write.proof, ({ repeat }) => setExit(() => repeat));
   const staff = useQuery({ queryKey: ['draft-staff', session?.user.id], queryFn: ({ signal }) => api!.draftStaff(signal), enabled: !!api && !!value && step === 0, staleTime: 60000, gcTime: 60000 });
-  const disabled = write.busy || !!write.key || !!pendingCustomer || customerCreate;
+  const disabled = write.busy || profileBusy || !!write.key || !!pendingCustomer || customerCreate;
+  async function saveProfileOnly(current: MobileContractEditInput) {
+    if (!api || !profile || profileBusy) return;
+    setProfileBusy(true);
+    setLocalError('');
+    try {
+      const dr = current.draft;
+      await api.saveContractProfile(id, {
+        revision: profile.revision,
+        contract_number: dr.contract_number,
+        notes: current.notes,
+        status: current.status,
+        profile: {
+          customer: dr.customer,
+          relatives: dr.relatives,
+          staff_id: dr.staff_id,
+          staff_name: dr.staff_name,
+          signed_on: dr.signed_on,
+          created_on: dr.created_on,
+          authorization_date: dr.authorization_date,
+          collateral_description: dr.collateral_description,
+          customer_source: dr.customer_source,
+          sales_staff_id: dr.sales_staff_id || '',
+          sales_staff_name: dr.sales_staff_name || '',
+          tls_staff_id: dr.tls_staff_id || '',
+          ...(dr.ownership_term_months ? { ownership_term_months: dr.ownership_term_months } : {}),
+          ...(dr.document_requirements ? { document_requirements: dr.document_requirements } : {}),
+        },
+      });
+      await Promise.all([
+        cache.invalidateQueries({ queryKey: ['record'] }),
+        cache.invalidateQueries({ queryKey: ['contract-detail'] }),
+        cache.invalidateQueries({ queryKey: ['catalogue'] }),
+      ]);
+      disablePrevention();
+      router.replace({ pathname: '/record/[kind]/[id]', params: { kind: 'contracts', id } });
+    } catch (cause) {
+      setLocalError((cause as Error).message);
+    } finally {
+      setProfileBusy(false);
+    }
+  }
   function change(next: MobileContractEditInput) { if (!disabled) { setInput(next); setLocalError(''); } }
   const set = <K extends keyof MobileContractDraft>(key: K, field: MobileContractDraft[K]) => { if (value) change({ ...value, draft: { ...value.draft, [key]: field } }); };
   function jump(next: number) { Keyboard.dismiss(); setStep(next); scroll.current?.scrollTo({ y: 0, animated: false }); AccessibilityInfo.announceForAccessibility(`Bước ${next + 1}: ${draftSteps[next]}`); }
@@ -74,19 +118,32 @@ export function ContractEditEditor({ id }: { id: string }) {
           {write.proof ? <><Text style={text}>Hợp đồng #{write.proof.receipt.id} · phiên bản ghi nhận {write.proof.receipt.revision}.</Text><Text style={muted}>Hồ sơ có thể đã được sửa tiếp trên web. Mở hồ sơ để xem trạng thái hiện tại.</Text><Button label="Đã kiểm tra, mở hợp đồng" loading={write.busy} onPress={() => void write.acknowledge(disablePrevention)} /></> : <><Text style={text}>Nếu đã ghi, mở kết quả gốc. Nếu chưa ghi, khóa mã cũ trước khi cho lưu lại.</Text><Button label="Đối chiếu lần sửa trước" loading={write.busy} onPress={() => void write.resolve()} /></>}
         </Card>}
         {value && d && props && options && <>
-          <Card style={{ gap: 12, borderColor: theme.warning }}>
-            <Text style={text}>Lưu sẽ ghi đè nội dung mới nhất của hợp đồng, kể cả thay đổi được người khác lưu sau khi mở màn này. Kiểm tra cả 5 phần trước khi xác nhận.</Text>
-            <Text style={muted}>Có thể lưu hồ sơ còn thiếu thông tin. Tiền thực nhận theo phiếu được giữ. Sửa hợp đồng sẽ xóa duyệt thuê sở hữu hiện tại.</Text>
+          <SegmentedBar
+            value={editMode}
+            onChange={setEditMode}
+            disabled={disabled}
+            options={[
+              { value: 'full', label: 'Sửa đầy đủ HĐ' },
+              { value: 'profile', label: 'Bổ sung hồ sơ nhẹ' },
+            ]}
+          />
+          <Card style={{ gap: 10, borderColor: editMode === 'profile' ? theme.info : theme.warning }}>
+            <Text style={text}>
+              {editMode === 'profile'
+                ? 'Chế độ Bổ sung hồ sơ nhẹ chỉ cập nhật thông tin khách hàng, người thân, nhân sự, nguồn khách, số HĐ giấy, ghi chú — KHÔNG đổi tiền/kho và KHÔNG xóa duyệt thuê sở hữu.'
+                : 'Lưu sẽ ghi đè nội dung mới nhất của hợp đồng, kể cả thay đổi được người khác lưu sau khi mở màn này. Kiểm tra cả 5 phần trước khi xác nhận.'}
+            </Text>
+            {editMode === 'full' && <Text style={muted}>Có thể lưu hồ sơ còn thiếu thông tin. Tiền thực nhận theo phiếu được giữ. Sửa đầy đủ hợp đồng sẽ xóa duyệt thuê sở hữu hiện tại.</Text>}
           </Card>
-          <ChoiceField label="Phần đang sửa" value={String(step)} disabled={write.busy} choices={draftSteps.map((name, i) => ({ value: String(i), label: `${i + 1}. ${name}` }))} onChange={v => jump(Number(v))} />
+          <ChoiceField label="Phần đang sửa" value={String(step)} disabled={write.busy || profileBusy} choices={draftSteps.map((name, i) => ({ value: String(i), label: `${i + 1}. ${name}` }))} onChange={v => jump(Number(v))} />
           <Text accessibilityRole="header" style={{ ...text, fontSize: 22, fontWeight: '700' }}>{step + 1}. {draftSteps[step]}</Text>
           {step === 0 && <>
             <DraftSection title="Hợp đồng và cơ sở">
-              <ChoiceField label="Loại hợp đồng" value={d.contract_type_id || ''} choices={typeChoices} disabled={disabled} onChange={id => { const type = types.find(t => t.id === id); if (type) change(chooseDraftType(value, type)); }} />
-              <ChoiceField label="Trạng thái hợp đồng" value={value.status} disabled={disabled} choices={issuedContractStatuses.map(status => ({ value: status, label: contextualStatusLabel('contracts', status) || status }))} onChange={status => change({ ...value, status })} />
-              <Text style={muted}>Trạng thái là nhãn điều chỉnh hồ sơ. Tiền và kho vẫn xử lý theo quy trình nghiệp vụ của hợp đồng.</Text>
-              <ChoiceField label="Cơ sở ghi nhận hợp đồng" value={d.store_id} choices={stores.map(s => ({ value: String(s.id), label: s.name }))} disabled={disabled || !session?.user.allStores} onChange={v => set('store_id', v)} searchable />
-              <ChoiceField label="Cơ sở xe / nhân sự" value={d.vehicle_store_id || d.store_id} choices={options.vehicleStores.map(s => ({ value: String(s.id), label: s.name }))} disabled={disabled} onChange={v => set('vehicle_store_id', v)} searchable />
+              <ChoiceField label="Loại hợp đồng" value={d.contract_type_id || ''} choices={typeChoices} disabled={disabled || editMode === 'profile'} onChange={id => { const type = types.find(t => t.id === id); if (type) change(chooseDraftType(value, type)); }} />
+              <ChoiceField label="Trạng thái hợp đồng" value={value.status} disabled={disabled || profile?.input.status === 'bad_debt'} choices={issuedContractStatuses.map(status => ({ value: status, label: contextualStatusLabel('contracts', status) || status }))} onChange={status => change({ ...value, status })} />
+              <Text style={muted}>{profile?.input.status === 'bad_debt' ? 'Hợp đồng nợ xấu giữ nguyên trạng thái khi sửa hồ sơ. Đóng qua thao tác Đóng hợp đồng nợ xấu.' : 'Trạng thái là nhãn điều chỉnh hồ sơ. Tiền và kho vẫn xử lý theo quy trình nghiệp vụ của hợp đồng.'}</Text>
+              <ChoiceField label="Cơ sở ghi nhận hợp đồng" value={d.store_id} choices={stores.map(s => ({ value: String(s.id), label: s.name }))} disabled={disabled || editMode === 'profile' || !session?.user.allStores} onChange={v => set('store_id', v)} searchable />
+              <ChoiceField label="Cơ sở xe / nhân sự" value={d.vehicle_store_id || d.store_id} choices={options.vehicleStores.map(s => ({ value: String(s.id), label: s.name }))} disabled={disabled || editMode === 'profile'} onChange={v => set('vehicle_store_id', v)} searchable />
               <FormField label="Số hợp đồng giấy" value={d.contract_number} editable={!disabled} maxLength={32} onChangeText={v => set('contract_number', v)} />
             </DraftSection>
             {staff.isError && <InlineError message="Chưa tải được nhân sự. Có thể giữ thông tin hiện tại hoặc nhập tên." />}
@@ -105,12 +162,13 @@ export function ContractEditEditor({ id }: { id: string }) {
           </>}
           {step === 2 && <>
             <DraftSection title="Thời gian thuê">
-              <RentalDateTime label="nhận xe" value={d.start_date} disabled={disabled} onChange={v => change(changeDraftTime(value, 'start_date', v))} />
-              <RentalDateTime label="hẹn trả xe" value={d.end_date} disabled={disabled} onChange={v => change(changeDraftTime(value, 'end_date', v))} />
+              <RentalDateTime label="nhận xe" value={d.start_date} disabled={disabled || editMode === 'profile'} onChange={v => change(changeDraftTime(value, 'start_date', v))} />
+              <FormField label="Số ngày thuê" value={rentalDayCount(d.start_date, d.end_date)} keyboardType="number-pad" maxLength={4} editable={!disabled && editMode !== 'profile'} onChangeText={v => { const nextEnd = addRentalDays(d.start_date, v.trim()); if (nextEnd) change(changeDraftTime(value, 'end_date', nextEnd)); }} />
+              <RentalDateTime label="hẹn trả xe" value={d.end_date} disabled={disabled || editMode === 'profile'} onChange={v => change(changeDraftTime(value, 'end_date', v))} />
               <Text style={muted}>Giữ nguyên dòng xe đã trả và lịch riêng khi không đổi lịch chung. Thêm hoặc bỏ xe sẽ cập nhật dòng xe và kho theo trạng thái hợp đồng.</Text>
             </DraftSection>
-            <Button secondary label="Thêm / thay xe" disabled={disabled || d.vehicles.filter(v => v.id).length >= 50} onPress={() => setVehiclePicker(true)} />
-            <DraftVehicleLines {...props} />
+            <Button secondary label="Thêm / thay xe" disabled={disabled || editMode === 'profile' || d.vehicles.filter(v => v.id).length >= 50} onPress={() => setVehiclePicker(true)} />
+            <DraftVehicleLines {...props} disabled={disabled || editMode === 'profile'} />
           </>}
           {step === 3 && <><DraftFees {...props} /><Card style={{ gap: 10 }}><Text style={text}>Tiền thuê đã thu theo phiếu: {money(profile?.rentalPaid ?? null)}</Text><Text style={text}>Tiền cọc đã thu theo phiếu: {money(profile?.depositPaid ?? null)}</Text><Text style={muted}>Sửa đơn giá, tổng hoặc cọc hợp đồng không ghi đè số tiền thực nhận. Thu/chi điều chỉnh tại luồng phiếu.</Text></Card></>}
           {step === 4 && <>
@@ -132,11 +190,11 @@ export function ContractEditEditor({ id }: { id: string }) {
       </ScrollView>
       {value && !write.key && <View style={{ padding: 16, gap: 10, backgroundColor: theme.surface, borderTopWidth: 1, borderTopColor: theme.border }}>
         <View style={{ flexDirection: 'row', gap: 10 }}>{step > 0 && <Button equalWidth secondary label="Bước trước" disabled={write.busy} onPress={() => jump(step - 1)} />}{step < 4 && <Button equalWidth secondary label="Tiếp theo" disabled={write.busy} onPress={() => jump(step + 1)} />}</View>
-        <Button label="Kiểm tra và lưu hợp đồng" loading={write.busy} disabled={disabled || write.query.isError || write.query.isFetching} onPress={() => { Keyboard.dismiss(); setConfirm(true); }} />
+        <Button label={editMode === 'profile' ? 'Lưu bổ sung hồ sơ (giữ tiền & kho)' : 'Kiểm tra và lưu hợp đồng'} loading={write.busy || profileBusy} disabled={disabled || write.query.isError || write.query.isFetching} onPress={() => { Keyboard.dismiss(); setConfirm(true); }} />
       </View>}
       </KeyboardScrollContext.Provider>
     </KeyboardAvoidingView>
-    {confirm && value && <ConfirmEdit title="Ghi đè hợp đồng đã phát hành?" message={`${value.draft.contract_number || `Hợp đồng #${id}`}\n${value.draft.customer.name || 'Chưa nhập tên khách'}\n${value.draft.vehicles.filter(v => v.id).map(v => `#${v.id} ${v.license}`).join('\n') || 'Không giữ xe nào'}\nTổng: ${money(Number(value.draft.total_amount || 0))}\nCọc: ${money(Number(value.draft.deposit_amount || 0))}\n\nNội dung cả 5 phần sẽ ghi đè bản mới nhất, có thể gồm thay đổi người khác vừa lưu. Tiền thực nhận theo phiếu được giữ; xe/kho và lịch sử cập nhật theo quy trình web. Duyệt thuê sở hữu sẽ bị xóa.`} confirmLabel="Xác nhận lưu đè hợp đồng" busy={write.busy} onCancel={() => setConfirm(false)} onConfirm={() => { setConfirm(false); void write.save(value); }} />}
+    {confirm && value && <ConfirmEdit title={editMode === 'profile' ? 'Lưu bổ sung hồ sơ hợp đồng?' : 'Ghi đè hợp đồng đã phát hành?'} message={editMode === 'profile' ? `${value.draft.contract_number || `Hợp đồng #${id}`}\n${value.draft.customer.name || 'Chưa nhập tên khách'}\n\nChỉ cập nhật thông tin hồ sơ khách hàng, người thân, nhân sự và ghi chú. Giữ nguyên tiền, kho xe và trạng thái duyệt thuê sở hữu.` : `${value.draft.contract_number || `Hợp đồng #${id}`}\n${value.draft.customer.name || 'Chưa nhập tên khách'}\n${value.draft.vehicles.filter(v => v.id).map(v => `#${v.id} ${v.license}`).join('\n') || 'Không giữ xe nào'}\nTổng: ${money(Number(value.draft.total_amount || 0))}\nCọc: ${money(Number(value.draft.deposit_amount || 0))}\n\nNội dung cả 5 phần sẽ ghi đè bản mới nhất, có thể gồm thay đổi người khác vừa lưu. Tiền thực nhận theo phiếu được giữ; xe/kho và lịch sử cập nhật theo quy trình web. Duyệt thuê sở hữu sẽ bị xóa.`} confirmLabel={editMode === 'profile' ? 'Xác nhận lưu bổ sung hồ sơ' : 'Xác nhận lưu đè hợp đồng'} busy={write.busy || profileBusy} onCancel={() => setConfirm(false)} onConfirm={() => { setConfirm(false); if (editMode === 'profile') void saveProfileOnly(value); else void write.save(value); }} />}
     {pendingCustomer && value && <ConfirmEdit title="Dùng hồ sơ khách đã chọn?" message={`Thay thông tin khách và người thân bằng hồ sơ ${pendingCustomer.details.name}. Giấy tờ khách không tự sao chép khi sửa hợp đồng.`} confirmLabel="Dùng hồ sơ khách" onCancel={() => setPendingCustomer(null)} onConfirm={() => { setInput(chooseDraftCustomer(value, pendingCustomer)); setPendingCustomer(null); }} />}
     {customerPicker && <DraftCustomerPicker onClose={() => setCustomerPicker(false)} onPick={row => { setCustomerPicker(false); setPendingCustomer(row); }} />}
     {customerCreate && d && <CustomerCreateSheet storeId={Number(d.store_id) || null} onClose={() => setCustomerCreate(false)} onPick={row => { setCustomerCreate(false); setPendingCustomer(row); }} />}

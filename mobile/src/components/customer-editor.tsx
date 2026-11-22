@@ -889,16 +889,14 @@ function CustomerForm({
                 update("status", value as MobileCustomerInput["status"])
               }
             />
-            {(form.status === "warning" || form.status === "blacklist") && (
-              <FormField
-                label="Nội dung lưu ý"
-                value={form.warning_note}
-                onChangeText={(value) => update("warning_note", value)}
-                editable={!disabled}
-                maxLength={2000}
-                multiline
-              />
-            )}
+            <FormField
+              label="Nội dung lưu ý"
+              value={form.warning_note}
+              onChangeText={(value) => update("warning_note", value)}
+              editable={!disabled}
+              maxLength={2000}
+              multiline
+            />
           </Section>
           <Section
             title="Người thân"

@@ -13,6 +13,7 @@ import { useCsvExport } from '@/hooks/use-csv-export';
 import { dateTime, useTheme } from '@/theme';
 import { Button, Card, InlineError, StateView } from '@/components/ui';
 import { ChoiceField } from '@/components/form-fields';
+import { FileExportButton } from '@/components/file-export-button';
 import { ConfirmEdit } from '@/components/editor-sheet';
 
 interface Batch { id: string; inputs: CustomerStoreInput[]; result: CustomerStoreResult }
@@ -114,7 +115,32 @@ function Importer() {
         <Button label={file ? 'Chọn file khớp cơ sở khác' : 'Chọn file Căn cước / Cơ sở'} disabled={disabled || download.busy} onPress={() => void inspect()} />
         {file && <><Text style={text}>{file.name}</Text><Button secondary label="Kiểm tra lại file và phần còn lại" disabled={disabled || download.busy} onPress={() => void inspect(file)} /></>}
         {busy && stage !== 'Đang cập nhật từng phần' && <Button secondary label="Dừng kiểm tra, giữ file gốc" onPress={() => controller.current?.abort()} />}
-        {!!batches.length && <><Card style={{ gap: 8 }}><Text accessibilityRole="header" style={{ ...text, fontSize: 20, fontWeight: '700' }}>Kiểm tra trước khi cập nhật</Text><Text style={text}>{rows.length} dòng · Cần cập nhật {ready} · Đã đúng {unchanged} · Lỗi {invalid}</Text><Text style={muted}>{batches.length} phần. Chỉ cập nhật dòng khớp đúng một khách hàng. Bỏ qua dòng lỗi, giữ nguyên dòng đã đúng cơ sở.</Text>{needsReview && <InlineError message="Cần kiểm tra lại đầy đủ file trước khi cập nhật tiếp." />}</Card><ChoiceField label="Lọc kết quả khớp cơ sở" value={filter} choices={[{ value: 'all', label: 'Tất cả dòng' }, { value: 'ready', label: 'Cần cập nhật' }, { value: 'unchanged', label: 'Đã đúng cơ sở' }, { value: 'invalid', label: 'Lỗi' }]} disabled={busy} onChange={v => { setFilter(v); setPage(1); }} /><Text style={muted}>{visible.length} kết quả · Trang {current}/{pages}</Text></>}
+        {!!batches.length && <><Card style={{ gap: 8 }}><Text accessibilityRole="header" style={{ ...text, fontSize: 20, fontWeight: '700' }}>Kiểm tra trước khi cập nhật</Text><Text style={text}>{rows.length} dòng · Cần cập nhật {ready} · Đã đúng {unchanged} · Lỗi {invalid}</Text><Text style={muted}>{batches.length} phần. Chỉ cập nhật dòng khớp đúng một khách hàng. Bỏ qua dòng lỗi, giữ nguyên dòng đã đúng cơ sở.</Text>{needsReview && <InlineError message="Cần kiểm tra lại đầy đủ file trước khi cập nhật tiếp." />}</Card><ChoiceField label="Lọc kết quả khớp cơ sở" value={filter} choices={[{ value: 'all', label: 'Tất cả dòng' }, { value: 'ready', label: 'Cần cập nhật' }, { value: 'unchanged', label: 'Đã đúng cơ sở' }, { value: 'invalid', label: 'Lỗi' }]} disabled={busy} onChange={v => { setFilter(v); setPage(1); }} />
+        {!!visible.length && (
+          <FileExportButton
+            label={`Tải Excel kết quả khớp cơ sở (${visible.length} dòng)`}
+            disabled={busy}
+            load={(signal) =>
+              api!.exportWorkbook(
+                {
+                  filename: 'himoto-kiem-tra-khop-co-so',
+                  headers: ['Dòng', 'Trạng thái', 'Khách hàng', 'CCCD', 'Cơ sở hiện tại', 'Cơ sở sẽ lưu', 'Lỗi'],
+                  rows: visible.map((r) => [
+                    r.rowNumber,
+                    r.state === 'ready' ? 'Sẽ cập nhật' : r.state === 'unchanged' ? 'Đã đúng' : 'Lỗi',
+                    r.customer_name || '',
+                    r.values.id_card || '',
+                    r.previous_store_name || '',
+                    r.store_name || r.values.store || '',
+                    r.errors.join('; '),
+                  ]),
+                },
+                signal,
+              )
+            }
+          />
+        )}
+        <Text style={muted}>{visible.length} kết quả · Trang {current}/{pages}</Text></>}
       </>}
     </View>}
     renderItem={({ item }) => <Card style={{ gap: 8 }}><Text accessibilityRole="header" style={{ ...text, fontSize: 18, fontWeight: '700' }}>Dòng {item.rowNumber} · {item.state === 'ready' ? 'Sẽ cập nhật' : item.state === 'unchanged' ? 'Đã đúng cơ sở' : 'Lỗi'}</Text><Text selectable style={text}>{item.customer_name || 'Chưa khớp khách'}{item.customer_id ? ` · #${item.customer_id}` : ''}</Text><Text selectable style={muted}>Căn cước: {item.values.id_card || 'Chưa có'}</Text><Text style={text}>Hiện tại: {item.previous_store_name || 'Chưa có cơ sở'}</Text><Text style={text}>Cơ sở sẽ lưu: {item.store_name || 'Chưa khớp'}</Text><Text selectable style={muted}>Trong Excel: {item.values.store || 'Chưa có'}</Text>{item.errors.map((e, i) => <Text key={i} style={text}>{e}</Text>)}</Card>}

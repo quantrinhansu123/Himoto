@@ -50,6 +50,13 @@ export interface MobileRecord {
   /** Present in newer vehicle list responses; null means no readable thumbnail. */
   thumbnailRevision?: string | null;
 }
+export interface MobileContractSummary {
+  contractCount: number;
+  blacklistCount: number;
+  totalAmount: number | null;
+  receivableAmount: number | null;
+  badDebtAmount: number | null;
+}
 export interface MobilePage {
   rows: MobileRecord[];
   total: number;
@@ -60,6 +67,10 @@ export interface MobilePage {
   statusCounts: [string, number][];
   updatedAt: string;
   scope?: MobileContractScope;
+  summary?: MobileContractSummary | null;
+  dueCount?: number;
+  overdueCounts?: [string, number][];
+  missingOpenContractCount?: number;
 }
 export interface MobileWorkspace {
   user: MobileUser;
@@ -96,6 +107,26 @@ export interface MobileCustomerProfile
   store_id: number | null;
   revision: string;
 }
+export interface MobileCustomerDetail extends MobileCustomerProfile {
+  code: string;
+  store_name: string;
+  contract_count: number;
+}
+export interface MobileCustomerPayment {
+  id: number;
+  at: string;
+  type: "income" | "expense";
+  reason: string;
+  note: string;
+  amount: number | null;
+  method: string;
+  account: string;
+  actor: string;
+  status: string;
+  status_code: string;
+  order_id: number | null;
+  contract_code: string;
+}
 export interface MobileWriteReceipt {
   id: number;
   revision: string;
@@ -115,6 +146,97 @@ export interface MobileContractIssueInput {
   receipts: MobileInitialCollection[];
   reservation?: true;
   acknowledge_reservation_overlap?: true;
+}
+export interface MobileContractDetail {
+  id: number;
+  code: string;
+  status: string;
+  revision: string;
+  storeId: number | null;
+  storeName: string;
+  vehicleStoreName: string;
+  rentalType: string;
+  contractTypeName: string;
+  ownershipTermMonths: string;
+  signedOn: string;
+  createdOn: string;
+  customerSource: string;
+  customerSourceUrl: string;
+  staffName: string;
+  salesStaffName: string;
+  collateralDescription: string;
+  notes: string;
+  authorizationDate: string;
+  startDate: string;
+  endDate: string;
+  totalAmount: number | null;
+  paidAmount: number | null;
+  depositAmount: number | null;
+  depositPaid: number | null;
+  depositRefunded: number | null;
+  depositHeld: number | null;
+  packageName: string;
+  unitPrice: number | null;
+  paymentMethod: string;
+  depositPaymentMethod: string;
+  extraCharges: { name: string; amount: string; method: string }[];
+  hasBillingPlan: boolean;
+  billingNextDueAt: string;
+  billingDueAmount: number | null;
+  billingOverdueAt: string;
+  holdUntil: string;
+  heldAt: string;
+  completedFromHold: boolean;
+  badDebtClosedAt: string;
+  approvalAt: string;
+  approvalByName: string;
+  paymentMismatch: boolean;
+  receiptsPaid: number | null;
+  receipts: {
+    received: number;
+    spent: number;
+    rentalReceived: number;
+    renewalReceived: number;
+    otherReceived: number;
+    depositReceived: number;
+    depositRefunded: number;
+    depositHeld: number;
+    rentalRefunded: number;
+    net: number;
+  } | null;
+  batteryCount: number;
+  customer: {
+    id: number | null;
+    name: string;
+    phone: string;
+    email: string;
+    address: string;
+    idCard: string;
+    idCardIssuedOn: string;
+    idCardIssuedBy: string;
+    driverLicenseNumber: string;
+    driverLicenseIssuedOn: string;
+    customerNote: string;
+    relatives: MobileDraftRelative[];
+  };
+  vehicles: {
+    id: string;
+    name: string;
+    license: string;
+    stockStoreName: string;
+    color: string;
+    typeText: string;
+    brand: string;
+    year: string;
+    driverName: string;
+    driverLicenseNumber: string;
+    driverLicenseIssuedOn: string;
+    borrowHats: string;
+    borrowRaincoats: string;
+    rentAt: string;
+    returnAt: string;
+    completedAt: string;
+  }[];
 }
 export interface MobileContractPreparation {
   id: number;
@@ -140,6 +262,9 @@ export interface MobileContractPreparation {
     rental: Record<string, string>;
     reservation: Record<string, string>;
   };
+  expectedRentalMethod?: string;
+  expectedDepositMethod?: string;
+  extraChargesTotal?: number;
 }
 
 export interface MobileDraftRelative {
@@ -282,6 +407,8 @@ export interface MobileDraftInventory {
     status: string;
     storeId: number;
     storeName: string;
+    dailyPrice?: number | null;
+    monthlyPrice?: number | null;
   }[];
   page: number;
   hasMore: boolean;

@@ -109,9 +109,9 @@ export function mobileRecord(
 }
 export function mobileTableParams(params: URLSearchParams, kind: CatalogueKind = "contracts") {
   const allowed = new Set([
-    "page", "size", "search", "status", "store",
-    ...(kind === "contracts" ? ["scope", "from", "to", "store_basis", "customer_id", "statistics", "rental_type", "ownership_term_months"] : []),
-    ...(kind === "vehicles" ? ["vehicle_type", "warehouse_store_id", "beneficiary_store_id"] : []),
+    "page", "size", "search", "status", "store", "sort", "direction",
+    ...(kind === "contracts" ? ["scope", "from", "to", "store_basis", "customer_id", "statistics", "rental_type", "ownership_term_months", "contract_type_id", "overdue_bucket", "overdue_days", "overdue_compare", "recent"] : []),
+    ...(kind === "vehicles" ? ["vehicle_type", "warehouse_store_id", "beneficiary_store_id", "missing_contract"] : []),
   ]);
   for (const [key] of params)
     if (!allowed.has(key) || params.getAll(key).length !== 1) {
@@ -132,6 +132,14 @@ export function mobileTableParams(params: URLSearchParams, kind: CatalogueKind =
       result.set("filter_rental_type", rt);
     }
   }
+  if (result.has("contract_type_id")) {
+    const ctid = result.get("contract_type_id")!;
+    result.delete("contract_type_id");
+    if (ctid) {
+      if (!/^[a-zA-Z0-9_-]{1,64}$/.test(ctid)) throw new MobileError("Mã loại hợp đồng lọc chưa hợp lệ.");
+      result.set("filter_contract_type_id", ctid);
+    }
+  }
   if (result.has("ownership_term_months")) {
     const term = result.get("ownership_term_months")!;
     result.delete("ownership_term_months");
@@ -140,12 +148,35 @@ export function mobileTableParams(params: URLSearchParams, kind: CatalogueKind =
       result.set("filter_ownership_term_months", term);
     }
   }
+  if (result.has("overdue_bucket")) {
+    const bucket = result.get("overdue_bucket")!;
+    if (bucket && !/^(d1_3|d4_7|d8_15|d16_30|gt30)$/.test(bucket)) throw new MobileError("Nhóm quá hạn không hợp lệ.");
+    if (!bucket) result.delete("overdue_bucket");
+  }
+  if (result.has("overdue_days")) {
+    const days = result.get("overdue_days")!;
+    if (days && !/^\d{1,5}$/.test(days)) throw new MobileError("Số ngày quá hạn không hợp lệ.");
+    if (!days) result.delete("overdue_days");
+  }
+  if (result.has("overdue_compare")) {
+    const cmp = result.get("overdue_compare")!;
+    if (cmp && !/^(eq|gt|lt)$/.test(cmp)) throw new MobileError("Phép so sánh quá hạn không hợp lệ.");
+    if (!cmp) result.delete("overdue_compare");
+  }
   if (result.has("vehicle_type")) {
     const vt = result.get("vehicle_type")!;
     result.delete("vehicle_type");
     if (vt) {
       if (!/^(xega|xeso|xecon|xesh|xe_dien)$/.test(vt)) throw new MobileError("Loại xe lọc chưa hợp lệ.");
       result.set("filter_type", vt);
+    }
+  }
+  if (result.has("missing_contract")) {
+    const mc = result.get("missing_contract")!;
+    result.delete("missing_contract");
+    if (mc) {
+      if (mc !== "1") throw new MobileError("Bộ lọc xe thiếu hợp đồng chưa hợp lệ.");
+      result.set("filter_missing_contract", "1");
     }
   }
   for (const storeKey of ["warehouse_store_id", "beneficiary_store_id"] as const) {
@@ -177,10 +208,13 @@ export function mobileTableParams(params: URLSearchParams, kind: CatalogueKind =
     !/^[a-z_]{0,40}$/.test(result.get("status") || "")
   )
     throw new MobileError("Bộ lọc không hợp lệ.");
+  const customSort = result.get("sort");
+  const customDir = result.get("direction");
+  if (customSort && !/^[a-z_]{1,40}$/.test(customSort)) throw new MobileError("Cột sắp xếp không hợp lệ.");
+  if (customDir && !/^(asc|desc)$/.test(customDir)) throw new MobileError("Chiều sắp xếp không hợp lệ.");
   result.set("size", result.get("size") || "20");
-  result.set("sort", "code");
-  result.set("direction", "desc");
-  if (result.get("scope") === "overdue") result.set("sort", "overdue_minutes");
+  result.set("sort", customSort || (result.get("scope") === "overdue" ? "overdue_minutes" : "code"));
+  result.set("direction", customDir || "desc");
   return result;
 }
 export async function readMobilePage(
@@ -216,7 +250,13 @@ export async function readMobilePage(
         pages: data.pages,
         statusCounts: data.statusCounts,
         updatedAt: new Date().toISOString(),
-        ...(kind === "contracts" ? { scope: contractWorkspace(query.get("scope") || "")!.key } : {}),
+        ...(kind === "contracts" ? {
+          scope: contractWorkspace(query.get("scope") || "")!.key,
+          ...(data.summary ? { summary: data.summary } : {}),
+          ...(typeof data.dueCount === "number" ? { dueCount: data.dueCount } : {}),
+          ...(Array.isArray(data.overdueCounts) ? { overdueCounts: data.overdueCounts } : {}),
+        } : {}),
+        ...(kind === "vehicles" && typeof data.missingOpenContractCount === "number" ? { missingOpenContractCount: data.missingOpenContractCount } : {}),
       };
     } catch (error) {
       await client.query("ROLLBACK");

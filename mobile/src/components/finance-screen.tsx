@@ -25,6 +25,8 @@ function FinanceContent({ id }: { id: string }) {
   if (!query.data) return <StateView title="Chưa tải được thu/chi" message={query.error?.message} retry={() => { void query.refetch(); }} />;
   const data = query.data.pages[0];
   const rows = [...new Map(query.data.pages.flatMap((part) => part.history.rows).map((row) => [row.id, row])).values()];
+  const approvedInTotal = rows.reduce((sum, r) => sum + (r.status !== "cancelled" && r.direction !== "out" ? r.amount : 0), 0);
+  const approvedOutTotal = rows.reduce((sum, r) => sum + (r.status !== "cancelled" && r.direction === "out" ? r.amount : 0), 0);
   const summary = (label: string, value: number | null) => <View key={label} style={{ gap: 4 }}>
     <Text style={{ color: theme.muted, fontSize: 14 }}>{label}</Text>
     <Text style={{ color: theme.text, fontSize: 20, fontWeight: "700" }}>{money(value)}</Text>
@@ -62,7 +64,30 @@ function FinanceContent({ id }: { id: string }) {
           {data.completedFromHold ? "Hợp đồng đã hoàn thành sau bảo lưu. Chỉ xử lý các khoản hoàn còn hợp lệ." : "Hợp đồng đang bảo lưu. Không ghi thêm phí mới; chỉ xử lý các khoản còn hợp lệ."}
         </Text>}
         {data.canWrite && data.purposes.length > 0 && <Button label="Ghi nhận thu/chi" disabled={(query.isError && !query.isFetchNextPageError) || query.isFetching} onPress={() => router.push({ pathname: "/payment/[id]", params: { id } })} />}
+        {session?.user.permissions.includes("contracts.settle") && (
+          <Button secondary label="Thanh toán & Đóng hợp đồng" onPress={() => router.push({ pathname: "/contract-operation/[action]/[id]", params: { action: "payment_settlement", id } })} />
+        )}
         {!data.billing && <Button secondary label="Các kỳ gia hạn và tiền còn thu" onPress={() => router.push({ pathname: "/renewal-periods/[id]", params: { id } })} />}
+        {session?.user.permissions.includes("finance.write") && (
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+            <Button secondary label="Sửa cọc / khoản đã thu" onPress={() => router.push({ pathname: "/contract-correction/[kind]/[id]", params: { kind: "receipts", id } })} />
+            <Button secondary label="Sửa ngày / tiền gia hạn" onPress={() => router.push({ pathname: "/contract-correction/[kind]/[id]", params: { kind: "renewal", id } })} />
+            <Button secondary label="Mở Sổ quỹ" onPress={() => router.push("/cashbook")} />
+          </View>
+        )}
+        <Card style={{ gap: 10 }}>
+          <Text style={{ color: theme.muted, fontSize: 13 }}>Tổng hợp từ {rows.length} phiếu đang tải (phiếu đã duyệt)</Text>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+            <View style={{ gap: 2 }}>
+              <Text style={{ color: theme.muted, fontSize: 13 }}>Tổng thu đã duyệt</Text>
+              <Text style={{ color: theme.success, fontSize: 18, fontWeight: "800" }}>{money(approvedInTotal)}</Text>
+            </View>
+            <View style={{ gap: 2 }}>
+              <Text style={{ color: theme.muted, fontSize: 13 }}>Tổng chi đã duyệt</Text>
+              <Text style={{ color: theme.danger, fontSize: 18, fontWeight: "800" }}>{money(approvedOutTotal)}</Text>
+            </View>
+          </View>
+        </Card>
         <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 21, fontWeight: "700" }}>Lịch sử thu/chi · {data.history.total} phiếu</Text>
       </View>}
       ListEmptyComponent={<Card><Text style={{ color: theme.muted, fontSize: 15 }}>Chưa có phiếu thu/chi trong lịch sử hợp đồng.</Text></Card>}

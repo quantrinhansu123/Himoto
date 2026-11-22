@@ -176,7 +176,7 @@ export async function readMobileDraftInventory(
   const needle = `%${search.replace(/[\\%_]/g, "\\$&")}%`;
   return withMobileDraft(user, "fleet_read", async (client) => {
     const result = await client.query(
-      `SELECT stock.id,stock.name,stock.license,stock.type,stock.status,stock.store_id,stock.store_name,v.brand,v.color,v.year
+      `SELECT stock.id,stock.name,stock.license,stock.type,stock.status,stock.store_id,stock.store_name,v.brand,v.color,v.year,v.daily_price
       FROM himoto.vehicle_inventory() stock JOIN himoto.vehicles v ON v.id=stock.id
       WHERE stock.store_id>0 AND v.deleted_at IS NULL AND ($1::bigint IS NULL OR stock.store_id=$1)
         AND ($2='' OR ${folded("stock.name")} LIKE ${folded("$3")} OR stock.license ILIKE $3
@@ -297,6 +297,7 @@ export function mapDraftInventoryRow(row:Record<string,unknown>):MobileDraftInve
         status: text(row.status),
         storeId: Number(row.store_id),
         storeName: text(row.store_name),
+        dailyPrice: row.daily_price == null || row.daily_price === '' || !Number.isFinite(Number(row.daily_price)) ? null : Number(row.daily_price),
         vehicle: {
           ...emptyVehicle(),
           id: text(row.id),
@@ -319,7 +320,7 @@ export async function lookupMobileDraftPlate(user:SessionUser,params:URLSearchPa
   if([...params.keys()].some(k=>k!=='license'||params.getAll(k).length!==1)||license.length>25||!/^\d{2}[A-Z]{1,2}\d?\d{4,6}$/.test(plateKey(license)))
     throw new MobileError('Biển số cần đối chiếu chưa hợp lệ.',400,'INVALID_PLATE');
   return withMobileDraft(user,'fleet_read',async client=>{
-    const rows=(await client.query(`SELECT stock.id,stock.name,stock.license,stock.type,stock.status,stock.store_id,stock.store_name,v.brand,v.color,v.year
+    const rows=(await client.query(`SELECT stock.id,stock.name,stock.license,stock.type,stock.status,stock.store_id,stock.store_name,v.brand,v.color,v.year,v.daily_price
       FROM himoto.vehicle_inventory() stock JOIN himoto.vehicles v ON v.id=stock.id
       WHERE stock.store_id>0 AND v.deleted_at IS NULL AND regexp_replace(upper(COALESCE(stock.license,'')),'[^A-Z0-9]','','g')=$1 ORDER BY stock.id LIMIT 2`,[plateKey(license)])).rows;
     const result={license,match:rows.length===1?'unique':rows.length?'ambiguous':'none',vehicle:rows.length===1?mapDraftInventoryRow(rows[0]):null,observedAt:new Date().toISOString()};

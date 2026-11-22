@@ -92,9 +92,17 @@ export default function GpsScreen() {
     <FlatList<MobileGpsRow|MobileGpsEvent> data={mode==='devices'?data?.rows||[]:history.isPlaceholderData?[]:history.data?.events||[]} keyExtractor={r=>`${mode}:${r.id}`} keyboardShouldPersistTaps="handled" initialNumToRender={8} maxToRenderPerBatch={8} windowSize={5} contentContainerStyle={{padding:16,gap:12,paddingBottom:32}}
       ListHeaderComponent={<View style={{gap:14,paddingBottom:4}}>
         <Text accessibilityRole="header" style={{...titleStyle,fontSize:25}}>Định vị GPS</Text>
+        <Text style={muted}>Tự động cập nhật mỗi 60 giây khi mở màn hình · {data?.summary.unmapped??'—'} thiết bị chưa ghép xe</Text>
         <View style={{ flexDirection: 'row', gap: 10 }}>
           <Button equalWidth label="Tải lại GPS" secondary loading={currentRead.isFetching && !currentRead.data} onPress={() => void refreshCurrent({ cancelRefetch: false })} />
           <Button equalWidth label={syncing ? 'Đang đồng bộ…' : 'Đồng bộ ngay'} loading={syncing} onPress={() => void sync()} />
+        </View>
+        <FormField label="Tìm nhanh GPS" value={search} onChangeText={setSearch} maxLength={120} placeholder="Biển số, tên GPS, IMEI hoặc cơ sở" returnKeyType="search" onSubmitEditing={()=>filter({search})}/>
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <Button equalWidth label="Tìm theo từ khóa" secondary onPress={()=>filter({search})}/>
+          {!!(filters.search || filters.state !== 'all' || filters.store !== 'all' || filters.vehicle_status !== 'all' || filters.provider !== 'all') && (
+            <Button equalWidth label="Xóa lọc" secondary onPress={()=>{setSearch('');setFilters({...defaultGpsQuery});}}/>
+          )}
         </View>
 <FilteredListExport kind="gps" filters={new URLSearchParams({...filters,page:String(filters.page)}).toString()} disabled={query.isFetching||query.isError||!data?.total||search!==filters.search}/>
         {!!(error||currentRead.error)&&<InlineError message={error||currentRead.error?.message||'Chưa tải được GPS.'}/>}

@@ -72,7 +72,7 @@ export const catalogueConfig: Record<
     title: "Khách hàng",
     noun: "khách hàng",
     placeholder: "Tìm tên hoặc số điện thoại",
-    quickStatuses: ["", "active", "warning", "blacklist"],
+    quickStatuses: ["", "active", "warning", "blacklist", "draft"],
     allStatuses: ["active", "warning", "blacklist", "draft"],
   },
 };

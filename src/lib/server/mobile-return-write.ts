@@ -7,6 +7,7 @@ import {isMobileReturnReceipt,type MobileReturnReceipt,type MobileReturnRecordIn
 import {ContractPaymentError,readPaymentContext} from './contract-payments';
 import {ContractReturnError} from './contract-returns';
 import {completeReturnBatch,parseReturnSettlements} from './return-settlements';
+import {queueContractNotification} from './contract-notifications';
 import {parseMobileReturnSettlement,readReturnSettlementPreview} from './mobile-return-settlement';
 import {requireMobileReturn} from './mobile-returns';
 import {mobileFinanceId} from './mobile-finance';
@@ -103,6 +104,8 @@ export async function recordMobileReturn(user:SessionUser,value:string,request:N
         ...(settlement.refund?{refund:child(settlement.refund)}:{}),...(settlement.refund_deferred?{refund_deferred:true}:{}),
         ...(settlement.refund_recipient?{refund_recipient:settlement.refund_recipient}:{})};
       await completeReturnBatch(db,user.id,input.items,parseReturnSettlements([wire]));
+      const sortedItems=[...input.items.map(item=>item.item_id)].sort((a,b)=>a-b);
+      await queueContractNotification(db,id,'return',`return:${id}:${sortedItems.join(',')}`,user.id,sortedItems.map(item=>`return-${item}`));
       const after=await readPaymentContext(db,id,{page:1,size:0,asOf:Date.parse(reviewed.observedAt)}),expected=reviewed.after;
       if(after.total_amount!==expected.totalAmount||after.paid_amount!==expected.rentalPaid||after.remaining!==expected.rentalRemaining||
         after.deposit_held!==expected.depositHeld||after.rental_refundable!==expected.rentalRefundable||after.items.length!==expected.remainingItems||after.status!==expected.status)

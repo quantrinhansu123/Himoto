@@ -38,7 +38,7 @@ export function ShiftEvidence({report,initialCategory,onChanged}:{report:ShiftRe
     }} nextSlot={rows=>`${category}-${rows.length+1}`} onSaved={onChanged}/>
     {writable&&<Button secondary label="Thêm video minh chứng ca" disabled={busy||(report.media||[]).filter(m=>m.stage===stage&&m.mime_type.startsWith('video/')).length>=3} onPress={()=>router.push({pathname:'/shift-video/[id]',params:{id:String(report.id),stage,category}})}/>}
     {!!error&&<InlineError message={error}/>}
-    {report.status==='submitted'&&<ShiftTelegramStatus id={String(report.id)} stage={stage}/>}
+    {report.status==='submitted'&&(stage==='pgd'||report.audit?.status==='confirmed')&&<ShiftTelegramStatus id={String(report.id)} stage={stage}/>}
     {deleting&&<ConfirmEdit title="Xóa minh chứng ca?" message={`${report.store_name} · ${stage==='pgd'?'PGD':'KTNB'} · ${category}`} confirmLabel="Xác nhận xóa minh chứng ca" onCancel={()=>setDeleting(null)} onConfirm={()=>{void remove();}}/>}
   </View>;
 }

@@ -51,6 +51,25 @@ async function profile(client: PoolClient, user: SessionUser, id: number): Promi
   if (!row) throw new MobileError("Xe không tồn tại hoặc ngoài phạm vi hiện tại.", 404, "NOT_FOUND");
   const text = (value: unknown) => value == null ? "" : String(value);
   const status = ({ rent: "using", maintenance: "repairing", holding: "pending" } as Record<string, string>)[text(row.status)] || text(row.status);
+  const extraRow = await client.query(`SELECT
+      COALESCE(${CONTRACT_CUSTOMER_NAME_SQL}, '') AS holder_name,
+      bs.store_name AS beneficiary_store_name,
+      CASE WHEN o.order_status IN ('renting','overdue') AND d.return_at < now()
+        THEN GREATEST(1, CEIL(EXTRACT(EPOCH FROM (now() - d.return_at)) / 86400.0))::int
+        ELSE NULL END AS overdue_days
+    FROM himoto.order_vehicle_details d
+    JOIN himoto.orders o ON o.id = d.order_id
+    LEFT JOIN himoto.customers c ON c.id = o.customer_id
+    LEFT JOIN himoto.stores bs ON bs.id = o.store_id
+    WHERE d.vehicle_id = $1 AND d.deleted_at IS NULL AND d.completed_at IS NULL AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
+      AND o.order_status IN ('renting','overdue','wait_payment','pending','deposit_contract')
+    ORDER BY d.rent_at DESC, o.id DESC LIMIT 1`, [id]).then(r => r.rows[0] || null).catch(() => null);
+  const draftRentals = await readDraftVehicleRentals(client, [id]).catch(() => []);
+  const gpsRow = await client.query(`SELECT management_status, provider, external_device_id, last_speed, last_latitude, last_longitude, sync_received_at, heartbeat_at, position_recorded_at
+    FROM himoto.vehicle_gps_devices
+    WHERE vehicle_id = $1 AND deleted_at IS NULL
+    ORDER BY sync_received_at DESC NULLS LAST, id DESC LIMIT 1`, [id]).then(r => r.rows[0] || null).catch(() => null);
+  const iso = (v: unknown) => v == null ? null : v instanceof Date ? v.toISOString() : String(v);
   const result: MobileVehicleProfile = {
     id: Number(row.id), revision: String(row.revision), values: {
       name: text(row.name), license: text(row.license), brand: text(row.brand), type: row.type === "electric" ? "xe_dien" : text(row.type),
@@ -59,6 +78,22 @@ async function profile(client: PoolClient, user: SessionUser, id: number): Promi
     }, storeName: text(row.store_name), ownerStoreId: row.owner_store_id == null ? null : Number(row.owner_store_id), ownerStoreName: text(row.owner_store_name),
     hasOpenContract: row.has_open_contract === true, inTransit: status === "in_transit", canEdit: hasPermission(user, "vehicles.write"),
     typeLabel: VEHICLE_TYPES.find(type => type.value === (row.type === "electric" ? "xe_dien" : row.type))?.label || text(row.type),
+    holderName: extraRow?.holder_name ? String(extraRow.holder_name) : null,
+    beneficiaryStoreName: extraRow?.beneficiary_store_name ? String(extraRow.beneficiary_store_name) : text(row.owner_store_name) || null,
+    overdueDays: extraRow?.overdue_days != null ? Number(extraRow.overdue_days) : null,
+    hasDraftContract: draftRentals.length > 0,
+    canDelete: hasPermission(user, "settings.write"),
+    gps: gpsRow ? {
+      status: text(gpsRow.management_status || "unknown"),
+      provider: text(gpsRow.provider),
+      externalDeviceId: text(gpsRow.external_device_id),
+      lastSpeed: gpsRow.last_speed == null ? null : Number(gpsRow.last_speed),
+      lastLatitude: gpsRow.last_latitude == null ? null : Number(gpsRow.last_latitude),
+      lastLongitude: gpsRow.last_longitude == null ? null : Number(gpsRow.last_longitude),
+      syncReceivedAt: iso(gpsRow.sync_received_at),
+      heartbeatAt: iso(gpsRow.heartbeat_at),
+      positionRecordedAt: iso(gpsRow.position_recorded_at),
+    } : null,
   };
   if (!isVehicleProfile(result)) throw new MobileError("Thông tin xe cũ chưa đủ trường để chỉnh sửa. Kiểm tra hồ sơ trên web.", 409, "VEHICLE_REVIEW_REQUIRED");
   return result;
@@ -120,6 +155,19 @@ export async function saveMobileVehicle(user: SessionUser, rawId: string | null,
     if (!row) throw new MobileError("Chưa xác nhận được xe đã lưu. Giữ mã để đối chiếu.", 503);
     return { id: Number(row.id), revision: String(row.revision) };
   }));
+}
+export async function deleteMobileVehicle(user: SessionUser, rawId: string) {
+  if (!hasPermission(user, "settings.write")) throw new MobileError("Tài khoản không có quyền xóa xe.", 403, "FORBIDDEN");
+  const id = mobileVehicleId(rawId);
+  return transaction(user, true, async client => {
+    const current = (await client.query("SELECT id, license, status FROM himoto.vehicles WHERE id=$1 AND deleted_at IS NULL FOR UPDATE", [id])).rows[0];
+    if (!current) throw new MobileError("Xe không tồn tại hoặc đã bị xóa.", 404, "NOT_FOUND");
+    if (String(current.status) === "in_transit") throw new MobileError("Xe đang Chờ luân chuyển, không thể xóa.", 409, "CONFLICT");
+    const hasOrders = (await client.query("SELECT 1 FROM himoto.order_vehicle_details WHERE vehicle_id=$1 AND deleted_at IS NULL LIMIT 1", [id])).rowCount;
+    if (hasOrders) throw new MobileError("Xe đã có lịch sử hợp đồng, không thể xóa.", 409, "CONFLICT");
+    await client.query("UPDATE himoto.vehicles SET deleted_at=now(), updated_at=now() WHERE id=$1", [id]);
+    return { id, deleted: true as const };
+  });
 }
 export async function readMobileVehicleResult(user: SessionUser, key: string): Promise<MobileVehicleResult> {
   requireVehicle(user); mobileRequestKey(key);

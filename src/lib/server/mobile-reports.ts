@@ -99,8 +99,8 @@ export async function readMobileSalesReport(user: SessionUser, rawKind: string, 
       const summary = await readSalesSummary(client, new URLSearchParams({ from, to, store: String(store || "all") }));
       checked(validRentalRevenue(received) && validEstimatedSales(estimate));
       doc.notes = ["Doanh số và công nợ theo hợp đồng bắt đầu thuê trong khoảng ngày và cơ sở đang chọn. Doanh thu theo ngày thu/hoàn thực tế, gồm cả hợp đồng bắt đầu trước kỳ.", "Doanh thu = thuê + gia hạn + trả muộn − hoàn trả sớm thực thu/hoàn trong kỳ. Không gồm cọc, phí sửa; chưa trừ chi phí.", "Công nợ gồm đang thuê, quá hạn, chờ tất toán, bảo lưu và nợ xấu; không gồm cọc. Nợ quá hạn hiển thị riêng với nợ xấu."];
-      doc.metrics = [...metrics("Doanh số ước tính", estimate, [["sales", "Doanh số"], ["contracts", "Hợp đồng trong kỳ", "count"], ["active_contracts", "Đang thuê / chưa trả", "count"], ["finished_contracts", "Đã trả", "count"], ["vehicle_days", "Ngày·xe trong kỳ", "count"]]),
-        ...metrics("Doanh thu thực thu", received.total, [["revenue", "Doanh thu"], ["rental", "Phí thuê đã thu"], ["renewal", "Gia hạn đã thu"], ["late", "Trả muộn đã thu"], ["early", "Đã hoàn do trả sớm"]]),
+      doc.metrics = [...metrics("Doanh số ước tính", estimate, [["sales", "Doanh số"], ["contracts", "Hợp đồng trong kỳ", "count"], ["active_contracts", "Đang thuê / chưa trả", "count"], ["finished_contracts", "Đã trả", "count"], ["vehicles", "Số xe trong hợp đồng", "count"]]),
+        ...metrics("Doanh thu thực thu", { ...received.total, company_fees: received.company_fees }, [["revenue", "Doanh thu"], ["rental", "Phí thuê đã thu"], ["renewal", "Gia hạn đã thu"], ["late", "Trả muộn đã thu"], ["early", "Đã hoàn do trả sớm"], ["company_fees", "Phí khác · Công ty"]]),
         ...metrics("Công nợ", summary.kpis, [["debt", "Tiền thuê còn thiếu"], ["debtContracts", "Hợp đồng còn thiếu tiền", "count"], ["overdueDebt", "Nợ quá hạn chưa thu đủ"], ["overdueContracts", "Hợp đồng quá hạn chưa thu đủ", "count"], ["badDebt", "Nợ xấu riêng"]])];
       if (received.unclassified_count) doc.notes.push(`Có ${received.unclassified_count} phiếu chưa phân loại (${received.unclassified_amount} đồng), chưa cộng doanh thu; cần đối chiếu Sổ quỹ trước chốt KPI.`);
     } else if (kind === "ledger") {
@@ -156,8 +156,8 @@ export async function readMobileSalesReport(user: SessionUser, rawKind: string, 
     } else if (kind === "assigned") {
       const data = await staffSales(client, from, to, store), department = query.get("department");
       const fields: Fields = [["name", "Nhân viên", "text"], ["department", "Bộ phận", "text"], ["basis", "Cách tính", "text"], ["contracts", "Hợp đồng", "count"], ["customers", "Khách", "count"], ["new_customers", "Khách mới", "count"], ["revenue", "Doanh số"]];
-      doc.notes = ["NVKD: tiền thuê thực thu, gồm gia hạn. TLS: tiền thuê hợp đồng mở mới đầu tiên; không tính thuê sở hữu. TLS tổng hợp thành một nhóm."];
-      doc.sections.push(section("assigned", "NVKD / TLS được phân công", fields, data.rows.filter(row => !department || row.department === department).map((row, index) => ({ key: `${row.department}:${row.staff_id}:${index}`, values: values({ ...row, basis: row.department === "NVKD" ? "Tiền thuê thực thu, gồm gia hạn" : "Tiền thuê HĐ mở mới đầu tiên" }, fields) })))); doc.canExport = true;
+      doc.notes = ["NVKD: tiền thuê kỳ đầu của HĐ đầu tiên (không gồm gia hạn). TLS: tiền thuê hợp đồng mở mới đầu tiên; không tính thuê sở hữu. TLS tổng hợp thành một nhóm."];
+      doc.sections.push(section("assigned", "NVKD / TLS được phân công", fields, data.rows.filter(row => !department || row.department === department).map((row, index) => ({ key: `${row.department}:${row.staff_id}:${index}`, values: values({ ...row, basis: row.department === "NVKD" ? "Tiền thuê kỳ đầu của HĐ đầu tiên" : "Tiền thuê HĐ mở mới đầu tiên" }, fields) })))); doc.canExport = true;
     } else {
       const data = await newCustomersBySource(client, from, to, store);
       const filtered = filterNewCustomersBySource(data, { search: query.get("search") || "", source: query.get("source") || "", sourcePresence: (query.get("sourcePresence") || "") as "" | "with" | "without" });

@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { router, usePreventRemove } from "expo-router";
 import { uuid } from "expo";
 import { Pressable, ScrollView, Text, View,type ScrollViewInstance } from "react-native";
-import { SHIFT_SUMMARY_FIELDS, shiftReportTypeLabel, emptyShiftSummary, parseShiftInput, shiftVehicleTotal, OWNERSHIP_REPORT_GROUPS, blankOwnershipReport, validateOwnershipSubmission, type ShiftInput, type ShiftReport, type ShiftReportType, type MobileShiftOptions, type ShiftAutofillResult, type ShiftAutofillSection, type ShiftTransfer } from "../../../shared/mobile-shift-reports";
+import { SHIFT_SUMMARY_FIELDS, shiftReportTypeLabel, emptyShiftSummary, parseShiftInput, shiftVehicleTotal, OWNERSHIP_REPORT_GROUPS, blankOwnershipReport, validateOwnershipSubmission, reconciliation, type ShiftInput, type ShiftReport, type ShiftReportType, type MobileShiftOptions, type ShiftAutofillResult, type ShiftAutofillSection, type ShiftTransfer } from "../../../shared/mobile-shift-reports";
 import { useSession } from "@/providers/session";
 import { pendingWrites } from "@/lib/pending-writes";
 import { requireShiftPhotosSaved } from '@/lib/shift-photo-work';
@@ -308,6 +308,19 @@ export function ShiftEditor({ record, options, initialStore, initialReportType =
             <Text style={{ color: theme.text, lineHeight: 22 }}>Xe đang thuê: {inventoryFilled.inventory.active_vehicles} · HĐ đang thuê: {inventoryFilled.inventory.active_contracts}</Text>
             <Text style={{ color: theme.text, lineHeight: 22 }}>HĐ mở trong ngày: {inventoryFilled.inventory.started_contracts} · Xe trong HĐ mở: {inventoryFilled.inventory.started_vehicles}</Text>
             <Text style={{ color: theme.text, lineHeight: 22 }}>Xe lưu kho gợi ý: {inventoryFilled.inventory.stock_vehicles} · Dòng thiếu xe: {inventoryFilled.inventory.missing_vehicle_lines} · Xe trùng HĐ: {inventoryFilled.inventory.duplicate_vehicles}</Text>
+            {!!inventoryFilled.inventory.issues?.length && (
+              <View style={{ gap: 6, paddingTop: 4 }}>
+                <Text style={{ color: theme.warning, fontWeight: "700" }}>Cảnh báo lệch xe / hợp đồng ({inventoryFilled.inventory.issues.length}):</Text>
+                {inventoryFilled.inventory.issues.map((iss, idx) => (
+                  <View key={`${iss.order_id}:${iss.vehicle_id || idx}`} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                    <Text style={{ color: theme.text, fontSize: 13, flex: 1 }}>
+                      • {iss.code} · {iss.license || "Chưa gán biển số"} ({iss.kind === "ready_rental" ? "Xe đang Lưu kho nhưng có HĐ mở" : iss.kind === "missing_vehicle" ? "HĐ thiếu dòng xe" : "Xe trùng nhiều HĐ mở"})
+                    </Text>
+                    <Button size="sm" secondary label={`Mở ${iss.code}`} onPress={() => router.push({ pathname: "/record/[kind]/[id]", params: { kind: "contracts", id: String(iss.order_id) } })} />
+                  </View>
+                ))}
+              </View>
+            )}
             {[...inventoryFilled.sources, ...inventoryFilled.notices].map((text, index) => <Text key={index} style={{ color: theme.muted, lineHeight: 22 }}>{text}</Text>)}
           </Card>}
         </View>}
@@ -345,11 +358,43 @@ export function ShiftEditor({ record, options, initialStore, initialReportType =
       </Card></View>
     </>}
     {tab === "summary" && <Card style={{ gap: 16 }}>{SHIFT_SUMMARY_FIELDS.map(([key, label, currency]) => <View key={key} style={{ gap: 5 }}><ShiftNumberField label={label} nullable={endShift} value={input.summary?.[key] ?? 0} disabled={busy || pending} onChange={value => update("summary", { ...input.summary || emptyShiftSummary(), [key]: value??NaN })} />{currency && <Text style={{ color: theme.muted }}>{money(Number.isFinite(input.summary?.[key])?input.summary![key]:null)}</Text>}</View>)}</Card>}
-    {tab === "accounts" && <Card style={{ gap: 16 }}>{n("cash", "Tiền mặt thực tế (đồng)")}{n("personal", "TK cá nhân được phân công (đồng)")}{n("company", "TK Công ty (đồng)")}</Card>}
-    {tab === "safety" && <Card style={{ gap: 16 }}><FormField label="Thiết bị điện đã tắt gồm" value={input.electrical_devices || ""} onChangeText={v => update("electrical_devices", v)} editable={!busy && !pending} maxLength={1000} multiline /><ChoiceField label="Xác nhận an toàn cuối ca" value={input.electricity_off ? "yes" : "no"} choices={[{ value: "no", label: "Chưa xác nhận đã tắt thiết bị điện" }, { value: "yes", label: "Đã tắt thiết bị điện" }]} disabled={busy || pending} onChange={v => update("electricity_off", v === "yes")} />
+    {tab === "accounts" && <Card style={{ gap: 16 }}>
+      <View style={{ gap: 4 }}>{n("cash", "Tiền mặt thực tế (đồng)")}<Text style={{ color: theme.muted, fontSize: 13 }}>{money(Number.isFinite(input.cash) ? input.cash : null)}</Text></View>
+      <View style={{ gap: 4 }}>{n("personal", "TK cá nhân được phân công (đồng)")}<Text style={{ color: theme.muted, fontSize: 13 }}>{money(Number.isFinite(input.personal) ? input.personal : null)}</Text></View>
+      <View style={{ gap: 4 }}>{n("company", "TK Công ty (đồng)")}<Text style={{ color: theme.muted, fontSize: 13 }}>{money(Number.isFinite(input.company) ? input.company : null)}</Text></View>
+    </Card>}
+    {tab === "safety" && <Card style={{ gap: 16 }}>
+      <FormField label="Thiết bị điện đã tắt gồm" value={input.electrical_devices || ""} onChangeText={v => update("electrical_devices", v)} editable={!busy && !pending} maxLength={1000} multiline />
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+        {["Điều hòa, quạt, đèn biển hiệu, máy tính, sạc pin", "Toàn bộ đèn, quạt, máy tính, khóa cửa chính"].map(preset => (
+          <Button key={preset} size="sm" secondary label={`+ ${preset.slice(0, 26)}…`} disabled={busy || pending} onPress={() => update("electrical_devices", preset)} />
+        ))}
+      </View>
+      <ChoiceField label="Xác nhận an toàn cuối ca" value={input.electricity_off ? "yes" : "no"} choices={[{ value: "no", label: "Chưa xác nhận đã tắt thiết bị điện" }, { value: "yes", label: "Đã tắt thiết bị điện" }]} disabled={busy || pending} onChange={v => update("electricity_off", v === "yes")} />
       <Button secondary label={record?"Ảnh an toàn cuối ca":"Lưu nháp để thêm ảnh an toàn"} disabled={busy||pending} onPress={()=>openEvidence("door")}/>
-      <FormField label="Bất thường / chênh lệch (nếu có)" value={input.notes} onChangeText={v => update("notes", v)} editable={!busy && !pending} maxLength={5000} multiline /></Card>}
-    {tab === "ownership" && <><Text accessibilityRole="header" style={{ color: theme.text, fontSize: 20, fontWeight: "700" }}>Báo cáo cuối ngày thuê sở hữu</Text>{!input.ownership_report && <Text style={{ color: theme.muted, lineHeight: 22 }}>Chọn mẫu Thuê sở hữu trong tab Thông tin để lập báo cáo theo mẫu và gửi Telegram khi chốt.</Text>}{input.ownership_report && OWNERSHIP_REPORT_GROUPS.map(group => <Card key={group.title} style={{ gap: 15 }}><Text style={{ color: theme.text, fontSize: 20, fontWeight: "700" }}>{group.title}</Text>{group.fields.map(([key, label]) => <View key={key} style={{ gap: 5 }}><ShiftNumberField label={label} nullable signed={['rental_day', 'revenue_month', 'battery_rental_day', 'battery_revenue_month'].includes(key)} value={input.ownership_report!.values[key]} disabled={busy || pending} onChange={v => update("ownership_report", { ...input.ownership_report!, values: { ...input.ownership_report!.values, [key]: v }, manual: [...new Set([...input.ownership_report!.manual, key])] })} /><Text style={{ color: theme.muted }}>App: {input.ownership_report!.app[key] === null ? "Chưa có nguồn" : input.ownership_report!.app[key]?.toLocaleString("vi-VN")}</Text></View>)}</Card>)}<Text style={{ color: theme.muted, lineHeight: 24 }}>Khi chốt kèm báo cáo thuê sở hữu, hệ thống lấy lại số liệu app và tạo báo cáo gửi Telegram theo cấu hình server. Giữ nguyên số kiểm kê thực tế đã nhập.</Text></>}
+      <FormField label="Bất thường / chênh lệch (nếu có)" value={input.notes} onChangeText={v => update("notes", v)} editable={!busy && !pending} maxLength={5000} multiline />
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+        {["Không có bất thường, số liệu khớp thực tế.", "Đã kiểm kê đủ xe, pin và khóa cửa an toàn."].map(preset => (
+          <Button key={preset} size="sm" secondary label={preset} disabled={busy || pending} onPress={() => update("notes", preset)} />
+        ))}
+      </View>
+    </Card>}
+    {tab === "ownership" && <>
+      <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 20, fontWeight: "700" }}>Báo cáo cuối ngày thuê sở hữu</Text>
+      {!input.ownership_report && <Text style={{ color: theme.muted, lineHeight: 22 }}>Chọn mẫu Thuê sở hữu trong tab Thông tin để lập báo cáo theo mẫu và gửi Telegram khi chốt.</Text>}
+      {input.ownership_report && <>
+        <Card style={{ gap: 8 }}>
+          <Text style={{ color: theme.text, fontWeight: "700", fontSize: 16 }}>Đối chiếu tài khoản & sổ thuê sở hữu</Text>
+          <Text style={{ color: theme.text }}>TK THU trên App: {money(input.ownership_report.thu_balance)} · Đối chiếu: {reconciliation(input.ownership_report.values.thu_actual, input.ownership_report.thu_balance)}</Text>
+          <Text style={{ color: theme.text }}>TK CTY trên App: {money(input.ownership_report.company_balance)} · Đối chiếu: {reconciliation(input.ownership_report.values.company_actual, input.ownership_report.company_balance)}</Text>
+          <Text style={{ color: theme.text }}>Tổng thu ngày trên App: {money(input.ownership_report.app.income_day)} · Đối chiếu sổ: {reconciliation(input.ownership_report.values.book_income, input.ownership_report.app.income_day)}</Text>
+          {!!input.ownership_report.read_at && <Text style={{ color: theme.muted, fontSize: 13 }}>Đọc số liệu App lúc: {new Date(input.ownership_report.read_at).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}</Text>}
+          {input.ownership_report.sources.map((src, idx) => <Text key={idx} style={{ color: theme.muted, fontSize: 12.5 }}>{src}</Text>)}
+        </Card>
+        {OWNERSHIP_REPORT_GROUPS.map(group => <Card key={group.title} style={{ gap: 15 }}><Text style={{ color: theme.text, fontSize: 20, fontWeight: "700" }}>{group.title}</Text>{group.fields.map(([key, label]) => <View key={key} style={{ gap: 5 }}><ShiftNumberField label={label} nullable signed={['rental_day', 'revenue_month', 'battery_rental_day', 'battery_revenue_month'].includes(key)} value={input.ownership_report!.values[key]} disabled={busy || pending} onChange={v => update("ownership_report", { ...input.ownership_report!, values: { ...input.ownership_report!.values, [key]: v }, manual: [...new Set([...input.ownership_report!.manual, key])] })} /><Text style={{ color: theme.muted }}>App: {input.ownership_report!.app[key] === null ? "Chưa có nguồn" : input.ownership_report!.app[key]?.toLocaleString("vi-VN")}{input.ownership_report!.manual.includes(key) ? " · Đã nhập tay" : ""}</Text></View>)}</Card>)}
+      </>}
+      <Text style={{ color: theme.muted, lineHeight: 24 }}>Khi chốt kèm báo cáo thuê sở hữu, hệ thống lấy lại số liệu app và tạo báo cáo gửi Telegram theo cấu hình server. Giữ nguyên số kiểm kê thực tế đã nhập.</Text>
+    </>}
     {tab !== "inventory" && <Button secondary label="Tự điền từ DB" loading={busy} disabled={pending || !input.store_id || !input.date} onPress={() => { void fill(tab as ShiftAutofillSection); }} />}
     {tab !== "inventory" && sectionFilled && sectionFilled.store_id === input.store_id && sectionFilled.date === input.date && <Card style={{ gap: 8 }}>{[...sectionFilled.sources, ...sectionFilled.notices].map((text, index) => <Text key={index} style={{ color: theme.muted, lineHeight: 24 }}>{text}</Text>)}</Card>}
     {!!error && <InlineError message={error} />}

@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
-import { FlatList, Pressable, RefreshControl, Text, View } from "react-native";
-import { CheckSquare, Square } from "lucide-react-native";
+import { FlatList, Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
+import { CheckSquare, SlidersHorizontal, Square } from "lucide-react-native";
 import { CASHBOOK_SORTS, cashbookRentalTotals, type MobileCashbookVoucher, type CashbookBreakdown } from "../../../shared/mobile-cashbook";
 import { useSession } from "@/providers/session";
+import { useGlobalBranch } from "@/providers/branch";
 import { useWorkspace } from "@/hooks/use-workspace";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { money, useTheme } from "@/theme";
-import { Button, Card, InlineError, StateView } from "./ui";
+import { Button, Card, Chip, InlineError, KeyValueRow, SegmentedBar, StateView } from "./ui";
 import { ChoiceField, FormField } from "./form-fields";
 import { DateField } from "./date-field";
 import { FileExportButton } from "./file-export-button";
@@ -31,12 +32,20 @@ export function CashbookVoucherCard({ row }: { row: MobileCashbookVoucher }) {
 export function CashbookScreen({ initialStore }: { initialStore?: string }) {
   const { api, session } = useSession(), workspace = useWorkspace(), theme = useTheme();
   const canReadAll = Boolean(session!.user.allStores || session!.user.allStoresRead);
+  const defaultStore = canReadAll ? "all" : String(session!.user.storeId || "all");
+  const { selectedStore: globalStore, selectStore: setGlobalStore } = useGlobalBranch(defaultStore);
+  const [storeOverride, setStoreOverride] = useState<string | null>(initialStore ?? null);
+  const store = !canReadAll ? defaultStore : (storeOverride !== null ? storeOverride : globalStore || defaultStore);
+  const setStore = (next: string) => {
+    if (!canReadAll) return;
+    if (initialStore) setStoreOverride(next);
+    else { setStoreOverride(null); setGlobalStore(next); }
+  };
   const [selected, setSelected] = useState<Map<string, MobileCashbookVoucher>>(new Map());
-  const [store, setStore] = useState(initialStore || (session!.user.allStores ? "all" : String(session!.user.storeId || "all")));
   const [input, setInput] = useState(""), search = useDebouncedValue(input), [actor, setActor] = useState(""), [from, setFrom] = useState(""), [to, setTo] = useState("");
   const [open, setOpen] = useState(false), [expanded, setExpanded] = useState(false), [kind, setKind] = useState<"income" | "expense">("income");
   const [allAccounts, setAllAccounts] = useState(false);
-  const [incomeState, setIncome] = useState({ page: 1, limit: "5", sort: "date", direction: "desc", filter: "" }), [expenseState, setExpense] = useState(incomeState);
+  const [incomeState, setIncome] = useState({ page: 1, limit: "10", sort: "date", direction: "desc", filter: "" }), [expenseState, setExpense] = useState(incomeState);
   const filter = JSON.stringify([store, search, actor, from, to]);
   const income = incomeState.filter === filter ? incomeState : { ...incomeState, page: 1 }, expense = expenseState.filter === filter ? expenseState : { ...expenseState, page: 1 };
   const list = useRef<FlatList<MobileCashbookVoucher>>(null), valid = !from || !to || from <= to, allowed = session!.user.permissions.includes("finance.read");
@@ -55,61 +64,104 @@ export function CashbookScreen({ initialStore }: { initialStore?: string }) {
   const updatePaging = (values: Partial<typeof income>) => (kind === "income" ? setIncome : setExpense)(current => ({ ...current, page: 1, ...values, filter }));
   const pages = current ? Math.max(1, Math.ceil(current.total / current.pageSize)) : 1;
   const balances = accounts.data?.rows ?? [];
-  return <FlatList ref={list} data={current?.rows || []} keyExtractor={row => row.id} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 20, paddingBottom: 40, gap: 14, width: "100%", maxWidth: 760, alignSelf: "center" }}
+  const totalOpening = balances.reduce((sum, row) => sum + row.opening, 0);
+  const totalAccountIncome = balances.reduce((sum, row) => sum + row.income, 0);
+  const totalAccountExpense = balances.reduce((sum, row) => sum + row.expense, 0);
+  const activeFilterCount = Number(Boolean(input.trim())) + Number(Boolean(actor)) + Number(Boolean(from)) + Number(Boolean(to)) + Number(store !== defaultStore);
+  return <FlatList ref={list} data={current?.rows || []} keyExtractor={row => row.id} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, paddingBottom: 36, gap: 12, width: "100%", maxWidth: 760, alignSelf: "center" }}
     refreshControl={<RefreshControl refreshing={query.isRefetching||accounts.isRefetching} onRefresh={() => { if(valid) void query.refetch(); void accounts.refetch(); }} tintColor={theme.primary} />}
-    ListHeaderComponent={<View style={{ gap: 16 }}>
-      <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 27, fontWeight: "800" }}>Sổ quỹ / Sổ két</Text>
-      {session!.user.permissions.includes('finance.write') && <Button secondary label="Yêu cầu hoàn cọc chờ duyệt"
-        onPress={() => router.push('/deposit-refund-queue')} />}
-      {session!.user.permissions.includes('contracts.read') && <Button secondary label="Tiền về qua SePay"
-        onPress={() => router.push('/payment-events')} />}
+    ListHeaderComponent={<View style={{ gap: 12 }}>
+      <View style={{ gap: 3 }}>
+        <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 22, fontWeight: "800" }}>Sổ quỹ / Sổ két</Text>
+        <Text style={{ color: theme.muted, fontSize: 13 }}>{stores.find(row => String(row.id) === store)?.name || "Tất cả cơ sở"} · Theo ngày thực thu / thực chi</Text>
+      </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+        <Chip label={open ? "Ẩn bộ lọc" : activeFilterCount ? `Bộ lọc (${activeFilterCount})` : "Bộ lọc"} selected={open || activeFilterCount > 0} icon={<SlidersHorizontal size={14} color={open || activeFilterCount > 0 ? theme.primary : theme.text} />} onPress={() => setOpen(value => !value)} />
+        {session!.user.permissions.includes('finance.write') && <Chip label="Hoàn cọc chờ duyệt" onPress={() => router.push('/deposit-refund-queue')} />}
+        {session!.user.permissions.includes('contracts.read') && <Chip label="Tiền về SePay" onPress={() => router.push('/payment-events')} />}
+        <Chip label="Quản lý tài khoản" onPress={() => router.push({ pathname: '/cashbook-accounts', params: { store, status: accountStatus } })} />
+        {session!.user.permissions.includes('finance.write') && <Chip label="+ Thêm tài khoản" onPress={() => router.push({ pathname: '/cashbook-account-editor/[kind]/[id]', params: { kind: 'cash', id: 'new', store } })} />}
+      </ScrollView>
       <FileExportButton key={new URLSearchParams({ store_id: store, search, actor, from, to }).toString()} disabled={!valid || query.isFetching || query.isError || !data || input.trim() !== search} load={signal => api!.cashbookExcel(new URLSearchParams({ store_id: store, search, actor, from, to }).toString(), signal)} />
-      <Button secondary label={open ? "Ẩn bộ lọc sổ quỹ" : "Bộ lọc sổ quỹ"} onPress={() => setOpen(value => !value)} />
-      {open && <Card style={{ gap: 16 }}>
+      {open && <Card style={{ gap: 12 }}>
         <FormField label="Tìm phiếu thu chi" value={input} onChangeText={setInput} maxLength={300} />
         <ChoiceField label="Cơ sở sổ quỹ" value={store} choices={[...(canReadAll ? [{ value: "all", label: "Tất cả cơ sở" }] : []), ...stores.map(row => ({ value: String(row.id), label: row.name }))]} searchable onChange={value => { setStore(value); setActor(""); }} />
         <ChoiceField label="Người thực hiện phiếu" value={actor} choices={[{ value: "", label: "Tất cả người thực hiện" }, ...(data?.actors || []).map(([value, label]) => ({ value, label }))]} searchable onChange={setActor} />
-        <DateField label="Thu chi từ ngày" value={from} onChange={setFrom} /><DateField label="Thu chi đến ngày" value={to} onChange={setTo} />
-        <Button secondary label="Hôm nay" onPress={()=>{const today=dutyToday();setFrom(today);setTo(today);}} />
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <View style={{ flex: 1 }}><DateField label="Từ ngày" value={from} onChange={setFrom} /></View>
+          <View style={{ flex: 1 }}><DateField label="Đến ngày" value={to} onChange={setTo} /></View>
+        </View>
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <Button size="sm" equalWidth secondary label="Hôm nay" onPress={()=>{const today=dutyToday();setFrom(today);setTo(today);}} />
+          <Button size="sm" equalWidth secondary label="Xóa bộ lọc" onPress={() => { setInput(""); setActor(""); setFrom(""); setTo(""); setStore(defaultStore); }} />
+        </View>
         <ChoiceField label="Sắp xếp phiếu" value={paging.sort} choices={CASHBOOK_SORTS} onChange={sort => updatePaging({ sort })} />
         <ChoiceField label="Chiều sắp xếp phiếu" value={paging.direction} choices={[{ value: "desc", label: "Giảm dần" }, { value: "asc", label: "Tăng dần" }]} onChange={direction => updatePaging({ direction })} />
         <ChoiceField label="Số phiếu mỗi trang" value={paging.limit} choices={[5, 10, 25, 50].map(value => ({ value: String(value), label: String(value) }))} onChange={limit => updatePaging({ limit })} />
         {!valid && <InlineError message="Đến ngày phải bằng hoặc sau Từ ngày." />}
-        <Button secondary label="Xóa bộ lọc sổ quỹ" onPress={() => { setInput(""); setActor(""); setFrom(""); setTo(""); }} />
       </Card>}
-      <Text style={{ color: theme.muted, lineHeight: 22 }}>{stores.find(row => String(row.id) === store)?.name || "Tất cả cơ sở"} · Theo ngày thực thu / thực chi</Text>
-      <Card style={{ gap: 14 }}>
-        <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'800'}}>Tổng hợp thu chi</Text>
-        {[["Doanh thu thuê xe", totals?.revenue], ["Tổng thu thực tế", totals?.income], ["Tổng chi thực tế", totals?.expense]].map(([label, amount]) => <View key={String(label)} style={{ gap: 4 }}><Text style={{ color: theme.muted }}>{label}</Text><Text style={{ color: theme.text, fontWeight: "800", fontSize: 23 }}>{typeof amount === "number" ? money(amount) : "—"}</Text></View>)}
-        <Button secondary label={expanded ? "Thu gọn đối chiếu thu chi" : "Chi tiết và đối chiếu thu chi"} onPress={() => setExpanded(value => !value)} />
-        {expanded && <View style={{ gap: 10 }}><Text style={{ color: theme.muted, lineHeight: 22 }}>Ba số tổng tính theo khoản thuê xe đã thu / hoàn thực tế. Tiền cọc chưa trả và khoản chưa thu chưa tính vào chi. Các khoản khác đối chiếu riêng bên dưới.</Text>
-          {details.map(([key, label]) => <Text key={key} style={{ color: theme.text }}>{label}: {data ? money(data.breakdown[key]) : "—"}</Text>)}
-          <Text style={{ color: theme.text }}>Tổng tất cả phiếu thu: {data ? money(data.income.amount) : "—"}</Text><Text style={{ color: theme.text }}>Tổng tất cả phiếu chi: {data ? money(data.expense.amount) : "—"}</Text>
+      <Card style={{ gap: 10 }}>
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+          <Text accessibilityRole="header" style={{color:theme.text,fontSize:16,fontWeight:'800'}}>Tổng hợp thu chi</Text>
+          <Pressable accessibilityRole="button" onPress={() => setExpanded(value => !value)}>
+            <Text style={{ color: theme.primary, fontSize: 13, fontWeight: "700" }}>{expanded ? "Thu gọn" : "Đối chiếu chi tiết"}</Text>
+          </Pressable>
+        </View>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+          {[
+            { label: "Doanh thu thuê xe", amount: totals?.revenue, color: theme.text },
+            { label: "Tổng thu thực tế", amount: totals?.income, color: theme.success },
+            { label: "Tổng chi thực tế", amount: totals?.expense, color: theme.danger },
+          ].map(metric => (
+            <View key={metric.label} style={{ flexGrow: 1, flexBasis: "30%", minWidth: 100, padding: 10, borderRadius: 10, backgroundColor: theme.background, borderWidth: 1, borderColor: theme.border, gap: 3 }}>
+              <Text style={{ color: theme.muted, fontSize: 11.5 }}>{metric.label}</Text>
+              <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={{ color: metric.color, fontWeight: "800", fontSize: 15 }}>{typeof metric.amount === "number" ? money(metric.amount) : "—"}</Text>
+            </View>
+          ))}
+        </View>
+        {expanded && <View style={{ gap: 4, paddingTop: 4, borderTopWidth: 1, borderTopColor: theme.border }}><Text style={{ color: theme.muted, fontSize: 12.5, lineHeight: 18, marginBottom: 4 }}>Ba số tổng tính theo khoản thuê xe đã thu / hoàn thực tế. Tiền cọc chưa trả và khoản chưa thu chưa tính vào chi.</Text>
+          {details.map(([key, label]) => <KeyValueRow key={key} label={label} value={data ? money(data.breakdown[key]) : "—"} />)}
+          <KeyValueRow label="Tổng tất cả phiếu thu" strong valueColor={theme.success} value={data ? money(data.income.amount) : "—"} />
+          <KeyValueRow label="Tổng tất cả phiếu chi" strong valueColor={theme.danger} value={data ? money(data.expense.amount) : "—"} />
         </View>}
       </Card>
-      <Card style={{gap:14}}>
-        <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'800'}}>Danh sách tài khoản{accounts.data ? ` (${balances.length})` : ''}</Text>
-        <Text style={{color:theme.muted,lineHeight:22}}>Số dư tài khoản tính trên toàn bộ phiếu, không theo bộ lọc ngày.</Text>
-        <ChoiceField label="Trạng thái tài khoản sổ quỹ" value={accountStatus} choices={[{value:'active',label:'Đang sử dụng'},{value:'inactive',label:'Ngừng sử dụng'},{value:'all',label:'Tất cả tài khoản'}]} onChange={setAccountStatus} />
-        {accounts.isPending && <Text style={{color:theme.muted}}>Đang tính số dư tài khoản…</Text>}
+      <Card style={{gap:10}}>
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+          <Text accessibilityRole="header" style={{color:theme.text,fontSize:16,fontWeight:'800'}}>Danh sách tài khoản{accounts.data ? ` (${balances.length})` : ''}</Text>
+          {accounts.data && <Text style={{color:theme.text,fontWeight:'800',fontSize:15}}>{money(balances.reduce((sum,row)=>sum+row.balance,0))}</Text>}
+        </View>
+        {accounts.data && balances.length > 0 && (
+          <View style={{ gap: 2 }}>
+            <KeyValueRow label="Số dư đầu kỳ" value={money(totalOpening)} />
+            <KeyValueRow label="Tổng thu toàn bộ" valueColor={theme.success} value={money(totalAccountIncome)} />
+            <KeyValueRow label="Tổng chi toàn bộ" valueColor={theme.danger} value={money(totalAccountExpense)} />
+          </View>
+        )}
+        <ChoiceField label="Trạng thái tài khoản" value={accountStatus} choices={[{value:'active',label:'Đang sử dụng'},{value:'inactive',label:'Ngừng sử dụng'},{value:'all',label:'Tất cả tài khoản'}]} onChange={setAccountStatus} />
+        {accounts.isPending && <Text style={{color:theme.muted,fontSize:13}}>Đang tính số dư tài khoản…</Text>}
         {accounts.isError && <InlineError message={accounts.error.message} />}
-        {accounts.data && <Text style={{color:theme.text,fontWeight:'800'}}>Tổng số dư {money(balances.reduce((sum,row)=>sum+row.balance,0))}</Text>}
         <FileExportButton key={accountParams} label="Tải Excel tài khoản theo bộ lọc" disabled={accounts.isFetching||accounts.isError||!balances.length}
           load={signal=>api!.cashbookAccountsExcel(accountParams,signal)} />
         {(allAccounts ? balances : balances.slice(0,3)).map(row=><Pressable key={`${row.kind}:${row.id}`} accessibilityRole="button"
           accessibilityLabel={`Mở tài khoản ${row.label}`} onPress={()=>router.push({pathname:'/cashbook-account/[kind]/[id]',params:{kind:row.kind,id:String(row.id)}})}>
           <CashbookAccountCard row={row} />
         </Pressable>)}
-        {balances.length > 3 && <Button secondary label={allAccounts ? "Thu gọn danh sách tài khoản" : `Xem đủ ${balances.length} tài khoản`}
+        {balances.length > 3 && <Button size="sm" secondary label={allAccounts ? "Thu gọn danh sách tài khoản" : `Xem đủ ${balances.length} tài khoản`}
           onPress={()=>setAllAccounts(value=>!value)} />}
-        <Button secondary label="Tài khoản ngân hàng và két" onPress={()=>router.push({pathname:'/cashbook-accounts',params:{store,status:accountStatus}})} />
-        {session!.user.permissions.includes('finance.write') && <Button label="Thêm tài khoản"
-          onPress={()=>router.push({pathname:'/cashbook-account-editor/[kind]/[id]',params:{kind:'cash',id:'new',store}})} />}
       </Card>
-      <View style={{ flexDirection: "row", gap: 10 }}><Button equalWidth secondary={kind !== "income"} label={`Phiếu thu${data ? ` (${data.income.total})` : ""}`} onPress={() => setKind("income")} /><Button equalWidth secondary={kind !== "expense"} label={`Phiếu chi${data ? ` (${data.expense.total})` : ""}`} onPress={() => setKind("expense")} /></View>
-      {session!.user.permissions.includes("settings.write") && <View style={{ gap: 12 }}>
-        <Button secondary label="Chọn toàn bộ phiếu trang này" disabled={!current?.rows.length} onPress={() => setSelected(previous => { const next = new Map(previous); for (const row of current?.rows || []) next.set(row.id, row); return next; })} />
-        {!!selected.size && <Button secondary label={`Bỏ chọn tất cả (${selected.size})`} onPress={() => setSelected(new Map())} />}
+      <SegmentedBar
+        value={kind}
+        onChange={setKind}
+        options={[
+          { value: "income", label: "Phiếu thu", count: data?.income.total },
+          { value: "expense", label: "Phiếu chi", count: data?.expense.total },
+        ]}
+      />
+      {session!.user.permissions.includes("settings.write") && <View style={{ gap: 8 }}>
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <Button size="sm" equalWidth secondary label="Chọn cả trang" disabled={!current?.rows.length} onPress={() => setSelected(previous => { const next = new Map(previous); for (const row of current?.rows || []) next.set(row.id, row); return next; })} />
+          {!!selected.size && <Button size="sm" equalWidth secondary label={`Bỏ chọn (${selected.size})`} onPress={() => setSelected(new Map())} />}
+        </View>
         <CashbookDeleteActions key="voucher-delete-actions" selected={[...selected.values()].map(row => ({ id: row.id, amount: row.amount ?? 0 }))} filters={new URLSearchParams({ store_id: store, search, actor, from, to }).toString()} type={kind} disabled={!valid || query.isPending || query.isError} onDeleted={() => setSelected(new Map())} />
       </View>}
       {query.isError && <InlineError message={query.error.message} />}

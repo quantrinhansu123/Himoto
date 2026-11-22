@@ -122,6 +122,11 @@ function Recovery({id}:{id:string}) {
         <Button label="Xác nhận đã kiểm tra phiếu trả xe" loading={busy} onPress={()=>{void acknowledge();}}/>
         {!!receipt.review.fees.items[0]&&<Button label="Mở hồ sơ trả xe" secondary disabled={busy}
           onPress={()=>{void acknowledge(String(receipt.review.fees.items[0].id));}}/>}
+        <View style={{flexDirection:'row',flexWrap:'wrap',gap:8}}>
+          <Button secondary label="Gửi Telegram trả xe" disabled={busy} onPress={()=>router.push({pathname:'/contract-telegram/[id]',params:{id,eventKind:'return'}})}/>
+          {!!receipt.review.fees.items[0]&&receipt.review.after.depositHeld>0&&<Button secondary label="Yêu cầu hoàn cọc" disabled={busy} onPress={()=>router.push({pathname:'/deposit-refund/[id]/[itemId]',params:{id,itemId:String(receipt.review.fees.items[0].id)}})}/>}
+          <Button secondary label="Mở Sổ quỹ" disabled={busy} onPress={()=>router.push('/cashbook')}/>
+        </View>
         <Button label="Tải lại phiếu trả xe" secondary loading={busy} onPress={()=>{void load();}}/>
       </>}
     </ScrollView>

@@ -27,14 +27,16 @@ export default function Route() {
   }
   async function locate() {
     if (running.current) return; running.current = true; setBusy(true); setError('');
-    try { const result = await locateAttendance(); setLatitude(String(result.latitude)); setLongitude(String(result.longitude)); setNotice('Đã lấy vị trí hiện tại. Kiểm tra đúng cơ sở trước khi lưu.'); }
+    try { const result = await locateAttendance(); setLatitude(String(result.latitude)); setLongitude(String(result.longitude)); setNotice(`Đã lấy vị trí hiện tại (sai số khoảng ${Math.round(result.accuracy)} m). Kiểm tra đúng cơ sở trước khi lưu.`); }
     catch (cause) { setError((cause as Error).message); } finally { running.current = false; setBusy(false); }
   }
+  const selectedRow = query.data?.find(item => String(item.id) === store);
   return <SafeAreaView edges={['bottom', 'left', 'right']} style={{ flex: 1 }}><KeyboardFormScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40, gap: 16, maxWidth: 760, width: '100%', alignSelf: 'center' }}>
     <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 26, fontWeight: '800' }}>Cài đặt GPS chấm công</Text>
     <Text style={{ color: theme.muted, lineHeight: 22 }}>Chọn cơ sở và kiểm tra tọa độ dùng để xác nhận vị trí chấm công.</Text>
     {query.isPending ? <StateView title="Đang tải vị trí cơ sở…" loading /> : query.isError ? <StateView title="Chưa tải được vị trí cơ sở" message={query.error.message} retry={() => void query.refetch()} /> : <Card style={{ gap: 14 }}>
-      <ChoiceField label="Cơ sở" value={store} searchable choices={query.data.map(row => ({ value: String(row.id), label: row.store_name }))} disabled={busy || uncertain} onChange={choose} />
+      <ChoiceField label="Cơ sở" value={store} searchable choices={query.data.map(row => ({ value: String(row.id), label: `${row.store_name} · ${row.latitude != null && row.longitude != null ? 'Đã có GPS' : 'Chưa cấu hình GPS'}` }))} disabled={busy || uncertain} onChange={choose} />
+      {selectedRow && <Text style={{ color: selectedRow.latitude != null && selectedRow.longitude != null ? theme.success : theme.warning, fontWeight: '700' }}>{selectedRow.latitude != null && selectedRow.longitude != null ? `Tọa độ đã lưu: ${selectedRow.latitude}, ${selectedRow.longitude}` : 'Cơ sở này chưa cấu hình tọa độ GPS chấm công.'}</Text>}
       <FormField label="Vĩ độ" value={latitude} onChangeText={value=>{setLatitude(value);setNotice('');}} error={latitude.trim()&&(!Number.isFinite(lat)||Math.abs(lat)>90)?'Nhập vĩ độ từ -90 đến 90, dùng dấu chấm thập phân.':undefined} editable={!busy && !uncertain} keyboardType="numbers-and-punctuation" maxLength={30} />
       <FormField label="Kinh độ" value={longitude} onChangeText={value=>{setLongitude(value);setNotice('');}} error={longitude.trim()&&(!Number.isFinite(lng)||Math.abs(lng)>180)?'Nhập kinh độ từ -180 đến 180, dùng dấu chấm thập phân.':undefined} editable={!busy && !uncertain} keyboardType="numbers-and-punctuation" maxLength={30} />
       <Button secondary label="Lấy vị trí GPS hiện tại" disabled={busy || uncertain || !store} onPress={() => void locate()} />

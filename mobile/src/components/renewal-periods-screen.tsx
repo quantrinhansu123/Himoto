@@ -5,6 +5,7 @@ import { useInfiniteQuery } from "@tanstack/react-query";
 import { useSession } from "@/providers/session";
 import { dateTime, money, useTheme } from "@/theme";
 import { Button, Card, InlineError, StateView } from "./ui";
+import { FileExportButton } from "./file-export-button";
 
 export function RenewalPeriodsScreen({ id }: { id: string }) {
   const { session } = useSession();
@@ -31,6 +32,31 @@ function Periods({ id }: { id: string }) {
         {!data.available && <InlineError message={data.blockedReason || "Hợp đồng hiện chưa thể thu theo kỳ."} />}
         {stale && <InlineError message="Chưa cập nhật được các kỳ gia hạn. Tải lại danh sách trước khi thu tiền." />}
         {!data.canWrite && <Text style={{ color: theme.muted, fontSize: 15 }}>Tài khoản có quyền xem; cần quyền ghi thu/chi để nhận tiền.</Text>}
+        {rows.length > 0 && (
+          <FileExportButton
+            label={`Tải Excel các kỳ gia hạn (${rows.length})`}
+            disabled={query.isFetching}
+            load={(signal) =>
+              api!.exportWorkbook(
+                {
+                  filename: `himoto-ky-gia-han-${id}`,
+                  headers: ["Kỳ gia hạn", "Biển số", "Tên xe", "Từ thời điểm", "Đến thời điểm", "Phí kỳ (VND)", "Đã thu (VND)", "Còn thu (VND)"],
+                  rows: rows.map((r) => [
+                    `#${r.version}`,
+                    r.license,
+                    r.vehicleName,
+                    r.beforeReturnAt ?? r.createdAt ?? "",
+                    r.returnAt,
+                    r.amount,
+                    r.collected,
+                    r.remaining,
+                  ]),
+                },
+                signal,
+              )
+            }
+          />
+        )}
       </View>}
       ListEmptyComponent={<Card><Text style={{ color: theme.muted, fontSize: 16, lineHeight: 25 }}>Chưa có kỳ gia hạn đã lưu. Mở Gia hạn ở hồ sơ hợp đồng để lập kỳ mới.</Text></Card>}
       renderItem={({ item }) => <Card style={{ gap: 12 }}>

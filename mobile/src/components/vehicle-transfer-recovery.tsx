@@ -104,6 +104,10 @@ function Recovery({id,action}:{id:string;action:MobileVehicleTransferAction}) {
           </View>)}
         </Card>
         <Button label="Xác nhận đã kiểm tra phiếu kho" loading={busy} onPress={()=>{void acknowledge();}}/>
+        <View style={{flexDirection:'row',flexWrap:'wrap',gap:8}}>
+          <Button label="Ảnh & giấy tờ xe" secondary disabled={busy} onPress={()=>router.push({pathname:'/record-media/[entity]/[id]',params:{entity:'vehicles',id}})}/>
+          {!!receipt.events[0]&&(receipt.action==='transfer'||receipt.action==='receive')&&<Button label="Gửi Telegram điều chuyển" secondary disabled={busy} onPress={()=>router.push({pathname:'/transfer-telegram/[id]/[eventId]',params:{id,eventId:String(receipt.events[0].id)}})}/>}
+        </View>
         <Button label="Tải lại phiếu kho" secondary loading={busy} onPress={()=>{void load();}}/>
       </>}
     </ScrollView>

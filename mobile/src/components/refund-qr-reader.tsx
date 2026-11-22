@@ -1,11 +1,11 @@
 import {useEffect,useLayoutEffect,useRef,useState} from 'react';
 import {Text,View} from 'react-native';
-import type {ReturnMoneyDraft} from '@/lib/return-form';
 import {useSession} from '@/providers/session';
 import {useTheme} from '@/theme';
 import {RecordPhotoBatch} from './record-photo-batch';
 import {InlineError} from './ui';
-export function RefundQrReader({id,itemId,value,onRead,onPendingChange}:{id:string;itemId:number;value:ReturnMoneyDraft;onRead:(fields:Partial<Record<'recipient_bank'|'recipient_account'|'recipient_name',string>>,before:ReturnMoneyDraft)=>void;onPendingChange:(pending:boolean)=>void}){
+type RefundRecipientFields={bank:string;recipientAccount:string;recipientName:string};
+export function RefundQrReader<T extends RefundRecipientFields>({id,itemId,value,onRead,onPendingChange}:{id:string;itemId:number;value:T;onRead:(fields:Partial<Record<'recipient_bank'|'recipient_account'|'recipient_name',string>>,before:T)=>void;onPendingChange:(pending:boolean)=>void}){
   const{api}=useSession(),theme=useTheme(),[notice,setNotice]=useState(''),[error,setError]=useState('');
   const epoch=useRef(0),current=useRef(value),latestRead=useRef(onRead);useLayoutEffect(()=>{current.current=value;latestRead.current=onRead;},[value,onRead]);const alive=useRef(true);useEffect(()=>{alive.current=true;return()=>{alive.current=false;};},[]);
   const pendingCallback=useRef(onPendingChange);useLayoutEffect(()=>{pendingCallback.current=onPendingChange;},[onPendingChange]);useEffect(()=>()=>pendingCallback.current(false),[]);

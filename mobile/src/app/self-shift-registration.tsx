@@ -13,7 +13,12 @@ import { ChoiceField } from '@/components/form-fields';
 import { ConfirmEdit } from '@/components/editor-sheet';
 import { KeyboardFormScrollView } from '@/components/keyboard-form-scroll-view';
 
-const labelDate = (date: string) => date.split('-').reverse().join('/');
+const WEEKDAYS = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
+const labelDate = (date: string) => {
+  const d = new Date(`${date}T00:00:00+07:00`);
+  const wd = Number.isFinite(d.getTime()) ? WEEKDAYS[d.getUTCDay()] : '';
+  return `${wd ? wd + ' · ' : ''}${date.split('-').reverse().join('/')}`;
+};
 function WeekForm({ initial, moveWeek }: { initial: SelfRegistrationWeek; moveWeek: (week: string) => void }) {
   const { api, session } = useSession(), cache = useQueryClient(), theme = useTheme(), running = useRef(false);
   const [data, setData] = useState(initial), [draft, setDraft] = useState(() => Object.fromEntries(initial.dates.map(date => [date, initial.registrations.find(row => row.work_date === date)?.shift_code || ''])));

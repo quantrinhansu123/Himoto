@@ -22,7 +22,7 @@ function Exporter({ kind, filters }: { kind: MobileCatalogueExportKind; filters:
   usePreventRemove(output.busy, () => {});
   const query = useQuery({ queryKey: ['export-columns', api?.origin, session?.user.id, session?.user.storeId, session?.user.allStores, kind, filters], queryFn: ({ signal }) => api!.catalogueExportColumns(kind, filters, signal), retry: false });
   const p = query.data, selected = selection || new Set(p?.columns.filter(c => c.selected).map(c => c.key)), params = new URLSearchParams(filters), store = params.get('store') || 'all';
-  const storeName = store === 'all' ? kind === 'vehicles' || session!.user.allStores ? 'Tất cả cơ sở trong phạm vi được xem' : 'Cơ sở được phân công' : workspace.data?.stores.find(s => String(s.id) === store)?.name || `Cơ sở #${store}`;
+  const storeName = store === 'all' ? kind === 'vehicles' || session!.user.allStores || session!.user.allStoresRead ? 'Tất cả cơ sở trong phạm vi được xem' : 'Cơ sở được phân công' : workspace.data?.stores.find(s => String(s.id) === store)?.name || `Cơ sở #${store}`;
   const text = { color: theme.text, fontSize: 16, lineHeight: 24 }, muted = { color: theme.muted, fontSize: 14, lineHeight: 22 };
   return <SafeAreaView edges={['bottom']} style={{ flex: 1, backgroundColor: theme.background }}><Stack.Screen options={{ title: 'Xuất danh mục Excel' }} /><FlatList data={p?.columns || []} keyExtractor={c => c.key} contentContainerStyle={{ padding: 16, gap: 10, maxWidth: 760, width: '100%', alignSelf: 'center' }}
     ListHeaderComponent={<View style={{ gap: 14, marginBottom: 6 }}>

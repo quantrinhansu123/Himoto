@@ -10,6 +10,7 @@ import { pickWorkbook, type PickedWorkbook } from '@/lib/pick-workbook';
 import { dateTime, statuses, useTheme } from '@/theme';
 import { Button, Card, InlineError, StateView } from '@/components/ui';
 import { ChoiceField } from '@/components/form-fields';
+import { FileExportButton } from '@/components/file-export-button';
 import { ConfirmEdit } from '@/components/editor-sheet';
 
 export default function CustomerImportScreen() {
@@ -62,6 +63,31 @@ function CustomerImporter() {
           {preview && <>
             <Card style={{ gap: 10 }}><Text accessibilityRole="header" style={{ ...text, fontSize: 21, fontWeight: '700' }}>2. Kiểm tra và chọn dòng</Text><Text style={text}>{preview.filename}</Text><Text accessibilityLiveRegion="polite" style={text}>{preview.result.total} dòng · Hợp lệ {preview.result.valid} · Lỗi {preview.result.invalid} · Trùng {preview.result.duplicate}</Text><Text style={text}>Đã chọn {chosen.length} dòng hợp lệ; {preview.result.incomplete} hồ sơ thiếu được cho phép.</Text>{mustReview && <InlineError message="Cần kiểm tra lại dữ liệu trước khi nhập với chế độ hiện tại." />}<Button secondary label="Kiểm tra lại dữ liệu Excel" disabled={disabled} onPress={() => void inspect()} /></Card>
             <ChoiceField label="Lọc dòng kiểm tra" value={filter} choices={[{ value: 'all', label: 'Tất cả dòng' }, { value: 'valid', label: 'Hợp lệ' }, { value: 'invalid', label: 'Lỗi' }, { value: 'duplicate', label: 'Trùng' }]} disabled={disabled} onChange={v => { setFilter(v); setPage(1); }} />
+            {!!filtered.length && (
+              <FileExportButton
+                label={`Tải Excel kết quả kiểm tra (${filtered.length} dòng)`}
+                disabled={disabled}
+                load={(signal) =>
+                  api!.exportWorkbook(
+                    {
+                      filename: 'himoto-kiem-tra-excel-khach-hang',
+                      headers: ['Dòng', 'Kết quả', 'Họ tên', 'Điện thoại', 'CCCD/CMND', 'Cơ sở', 'Địa chỉ', 'Lỗi / Cảnh báo'],
+                      rows: filtered.map((r) => [
+                        r.rowNumber,
+                        r.state === 'valid' ? 'Hợp lệ' : r.state === 'duplicate' ? 'Trùng' : 'Lỗi',
+                        r.values.name || '',
+                        r.values.phone || '',
+                        r.values.id_card || '',
+                        r.values.store || '',
+                        r.values.address || '',
+                        [...r.errors, ...r.warnings].join('; '),
+                      ]),
+                    },
+                    signal,
+                  )
+                }
+              />
+            )}
             <Button secondary label={chosen.length === preview.result.valid && chosen.length > 0 ? 'Bỏ chọn tất cả dòng hợp lệ' : 'Chọn tất cả dòng hợp lệ'} disabled={disabled || mustReview || preview.result.valid === 0} onPress={() => setSelected(chosen.length === preview.result.valid ? new Set() : new Set(rows.filter(r => r.state === 'valid').map(r => r.rowNumber)))} />
             <Text style={muted}>{filtered.length} kết quả · Trang {current}/{pages}</Text>
           </>}

@@ -19,8 +19,9 @@ const api = { origin: 'https://fixture.invalid', catalogue: async (kind, query) 
 const base = { react: hooks, 'react/jsx-runtime': jsx, 'react-native': native, 'lucide-react-native': new Proxy({}, { get: () => () => null }),
   'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
   'expo-router': { Stack: { Screen: 'StackScreen' }, router: { push: value => pushed.push(value) }, useRouter: () => ({ push: value => pushed.push(value) }), usePathname: () => pathname, useLocalSearchParams: () => params },
-  '@/theme': { useTheme: () => theme, statuses: { renting: 'Đang thuê', draft: 'Nháp' }, roles: {}, money: String, dateTime: String },
+  '@/theme': { useTheme: () => theme, cardShadow: {}, statuses: { renting: 'Đang thuê', draft: 'Nháp' }, roles: {}, money: String, dateTime: String },
   '@/components/ui': components, './ui': components,
+  '@/providers/branch': { useGlobalBranch: (fallback = 'all') => { const [selectedStore, selectStore] = hooks.useState(fallback); return { selectedStore, selectStore }; } },
   '@/lib/catalogue-config': config, '../../../shared/mobile-contract-workspaces': workspaces,
   '@/lib/catalogue-pages': loadDomain(path.join(root,'mobile/src/lib/catalogue-pages')),
   '../../../shared/mobile-backfill': loadDomain(path.join(root, 'shared/mobile-backfill')),
@@ -104,20 +105,21 @@ async function main() {
     return tree;
   };
   let drawer = renderDrawer();
-  assert.equal(sectionButtons(drawer).length, 5);
+  assert.equal(sectionButtons(drawer).length, 7);
   assert.equal(sectionButtons(drawer).filter(n => n.props.accessibilityState.expanded).length, 1);
   assert.equal(drawer.find(n => n.key === 'contracts').props.accessibilityState.selected, true);
   assert(!drawer.some(n => n.key === 'staff'));
-  drawer = openSection('VẬN HÀNH & QUẦY');
+  drawer = openSection('TỔNG QUAN & CHẤM CÔNG');
   assert(drawer.some(n => n.key === 'attendance')); assert(!drawer.some(n => n.key === 'contracts'));
   sectionButtons(drawer).find(n => n.props.accessibilityState.expanded).props.onPress(); drawer = renderDrawer();
   assert.equal(sectionButtons(drawer).filter(n => n.props.accessibilityState.expanded).length, 0);
   assert(!drawer.some(n => n.key === 'attendance'));
   pathname = '/gps'; drawer = renderDrawer();
   assert.equal(drawer.find(n => n.key === 'gps').props.accessibilityState.selected, true);
-  assert.equal(sectionButtons(drawer).find(n => n.props.accessibilityState.expanded).props.accessibilityLabel, 'ĐỘI XE & ĐỊNH VỊ');
-  pathname = '/contracts'; drawer = openSection('NHÂN SỰ & CƠ SỞ');
-  for (const [key, route] of [['staff','/directory/staff'],['stores','/directory/stores']]) { drawer.find(n => n.key === key).props.onPress(); assert.equal(pushed.pop(), route); }
+  assert.equal(sectionButtons(drawer).find(n => n.props.accessibilityState.expanded).props.accessibilityLabel, 'VẬN HÀNH');
+  pathname = '/contracts';
+  drawer = openSection('HCNS'); drawer.find(n => n.key === 'staff').props.onPress(); assert.equal(pushed.pop(), '/directory/staff');
+  drawer = openSection('VẬN HÀNH'); drawer.find(n => n.key === 'stores').props.onPress(); assert.equal(pushed.pop(), '/directory/stores');
   const files = fs.readdirSync(path.join(root,'mobile/src/app'), { recursive: true }).filter(file => /\.tsx$/.test(file));
   const routes = files.map(file => file.replaceAll('\\','/').replace(/\.tsx$/,'').replace(/(^|\/)index$/,'').replace(/(^|\/)\([^/]+\)(?=\/|$)/g,'').replace(/^\//,''));
   function exists(route) { const clean = typeof route === 'string' ? route : route.pathname; return routes.some(pattern => new RegExp('^/' + pattern.replace(/\[[^\]]+\]/g,'[^/]+') + '/?$').test(clean.replace(/\/\([^/]+\)/g,'') || '/')); }
@@ -125,17 +127,17 @@ async function main() {
     for (const item of openSection(title).filter(n => n.type === 'Pressable' && n.key)) { item.props.onPress(); assert(exists(pushed.pop()), 'Missing route for ' + item.key); }
   }
   user.role='ownership_manager';
-  assert(!openSection('TÀI CHÍNH & HỆ THỐNG').some(n=>n.key==='integrations'));
+  assert(!openSection('HỆ THỐNG').some(n=>n.key==='integrations'));
   user.role='admin';
-  assert(openSection('TÀI CHÍNH & HỆ THỐNG').some(n=>n.key==='integrations'));
+  assert(openSection('HỆ THỐNG').some(n=>n.key==='integrations'));
   user.role='staff';user.permissions=user.permissions.filter(p=>p!=='contracts.read');
-  assert(!openSection('VẬN HÀNH & QUẦY').some(n=>n.key==='shift-reports'));
-  assert(openSection('VẬN HÀNH & QUẦY').some(n=>n.key==='attendance'));
+  assert(!sectionButtons(renderDrawer()).some(n=>n.props.accessibilityLabel==='BÁO CÁO'));
+  assert(openSection('TỔNG QUAN & CHẤM CÔNG').some(n=>n.key==='attendance'));
   checks.push('Integration menu follows the admin-only API even with settings.write; end-of-shift reporting requires contracts.read while personal attendance remains available');
-  user.permissions = ['contracts.read']; const limitedDrawer = openSection('NHÂN SỰ & CƠ SỞ');
-  assert(!limitedDrawer.some(n => n.key === 'staff'));
+  user.permissions = ['contracts.read']; const limitedDrawer = openSection('VẬN HÀNH');
+  assert(!sectionButtons(limitedDrawer).some(n => n.props.accessibilityLabel === 'HCNS'));
   assert(limitedDrawer.some(n => n.key === 'stores'));
-  assert(!sectionButtons(limitedDrawer).some(n => n.props.accessibilityLabel === 'ĐỘI XE & ĐỊNH VỊ'));
+  assert(!limitedDrawer.some(n => n.key === 'vehicles'));
   checks.push('Drawer groups expand one at a time, toggle closed and open the active route by default; every permitted destination exists and denied sections remain hidden');
 
   reset(); const { default: Overview } = load('mobile/src/app/(tabs)/index.tsx', { '@/components/workspace-links': { WorkspaceLinks: 'WorkspaceLinks' }, '@/components/management-drawer': { ManagementDrawer: 'Drawer' } });

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, Text, View, type ScrollViewInstance } from "react-native";
+import { router } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
 import type { MobileCollectionMethod } from "@himoto/mobile-contract";
@@ -79,8 +80,17 @@ function PaymentForm({ id,backfill }: { id: string;backfill:boolean }) {
         <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 24, fontWeight: "800" }}>Thu/chi đã được ghi nhận</Text>
         <Text selectable style={{ color: theme.text, fontSize: 18 }}>Phiếu #{action.receipt.transactionId}</Text>
         <Text style={{ color: theme.muted, fontSize: 15, lineHeight: 24 }}>Kết quả đã lưu trên máy chủ. Kiểm tra lịch sử thu/chi trước khi ghi một khoản khác.</Text>
+        {method === "company_transfer" && (
+          <View style={{ padding: 12, borderRadius: 10, backgroundColor: theme.warningBackground, borderWidth: 1, borderColor: theme.warning, gap: 8 }}>
+            <Text style={{ color: theme.warning, fontSize: 14, fontWeight: "700", lineHeight: 20 }}>
+              Khoản thu qua TK công ty đã lưu. Kiểm tra danh sách Hợp đồng cần xuất VAT để xuất hóa đơn kịp thời.
+            </Text>
+            <Button secondary label="Mở danh sách HĐ cần xuất VAT" onPress={() => router.push({ pathname: "/contracts-workspace/[scope]", params: { scope: "vat" } })} />
+          </View>
+        )}
         {!!action.error && <InlineError message={action.error} />}
         <Button label="Xem lịch sử thu/chi" loading={action.checking} onPress={() => { void action.openReceipt(); }} />
+        <Button secondary label="Mở Sổ quỹ" onPress={() => router.push("/cashbook")} />
       </Card>
     </ScrollView>
   </SafeAreaView>;
@@ -97,10 +107,16 @@ function PaymentForm({ id,backfill }: { id: string;backfill:boolean }) {
           {backfill&&<Text style={{color:theme.warning,lineHeight:24}}>Nhập bổ sung khoản thu/chi bị quên. Chọn đúng ngày giao dịch, kiểm tra lịch sử và tài khoản để tránh ghi trùng.</Text>}
           <Text style={{ color: theme.muted, fontSize: 15, lineHeight: 24 }}>Chỉ ghi khoản đã thực thu hoặc thực hoàn. Đối chiếu tiền và tài khoản trước khi xác nhận.</Text>
         </View>
-        <Card style={{ gap: 8 }}>
+        <Card style={{ gap: 10 }}>
           <Text style={{ color: theme.text, fontSize: 17 }}>Tiền thuê còn thiếu: {money(data.rentalRemaining)}</Text>
           <Text style={{ color: theme.text, fontSize: 17 }}>Cọc đang giữ: {money(data.depositHeld)}</Text>
           <Text style={{ color: theme.text, fontSize: 17 }}>Cọc còn thiếu: {money(data.depositRemaining)}</Text>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, paddingTop: 4 }}>
+            <Button secondary label="Tạo mã QR chuyển khoản" onPress={() => router.push({ pathname: "/contract-qr/[id]", params: { id } })} />
+            {session?.user.permissions.includes("contracts.settle") && (
+              <Button secondary label="Thanh toán & Đóng HĐ (Quyết toán)" onPress={() => router.push({ pathname: "/contract-operation/[action]/[id]", params: { action: "payment_settlement", id } })} />
+            )}
+          </View>
         </Card>
         {!!(localError || action.error) && <InlineError message={localError || action.error} />}
         {!!action.notice && <Text accessibilityLiveRegion="polite" style={{ color: theme.text, fontSize: 15, lineHeight: 24 }}>{action.notice}</Text>}
@@ -119,6 +135,13 @@ function PaymentForm({ id,backfill }: { id: string;backfill:boolean }) {
           </>}
           <ChoiceField label="Hình thức thu/chi" value={method} choices={methods} disabled={locked}
             onChange={(value) => { setMethod(value as MobileCollectionMethod); setAccount(""); setLocalError(""); }} />
+          {method === "company_transfer" && (
+            <View style={{ padding: 10, borderRadius: 8, backgroundColor: theme.warningBackground, borderWidth: 1, borderColor: theme.warning }}>
+              <Text style={{ color: theme.warning, fontSize: 13.5, fontWeight: "700", lineHeight: 20 }}>
+                Thu qua TK công ty: lưu phiếu và kiểm tra hợp đồng tại mục Hợp đồng cần xuất VAT.
+              </Text>
+            </View>
+          )}
           <ChoiceField label={selected.endsWith("refund") ? "Tài khoản thực chi" : "Tài khoản thực nhận"} value={effectiveAccount} disabled={locked}
             choices={available.map((row) => ({ value: `${row.method}:${row.id}`, label: row.label }))}
             onChange={(value) => { setAccount(value); setLocalError(""); }} searchable />

@@ -63,7 +63,7 @@ import {useContractPhotos} from '@/hooks/use-contract-photos';
 import {ContractPhotoFields} from './contract-photo-fields';
 import {ContractPhotoSave} from './contract-photo-save';
 import {CustomerPhotoCopyStage} from './customer-photo-copy';
-import { addRentalDuration } from "../../../shared/rental-time";
+import { addRentalDays, addRentalDuration, rentalDayCount } from "../../../shared/rental-time";
 import {plateSelectionIndex} from '../../../shared/mobile-plate-ocr';
 import {
   DraftFees,
@@ -270,7 +270,7 @@ function DraftForm({
     onOpen:result=>{
       const action=nextAction.current;
       if(!action)return false;
-      router.replace({pathname:action==='approve'?'/contract-approval/[id]':'/contract/[id]',params:{id:String(result.id)}});
+      router.replace({pathname:'/contract/[id]',params:{id:String(result.id)}});
       return true;
     },
   });
@@ -357,7 +357,7 @@ function DraftForm({
     setLocalError('');
     Keyboard.dismiss();
     try {
-      const preview=await api.draftPrintPreview(inputRef.current,controller.signal);
+      const preview=await api.draftPrintPreview(inputRef.current,controller.signal,id);
       if(!controller.signal.aborted)setPrintHtml(preview.html);
     } catch(cause) {
       if(controller.signal.aborted)return;
@@ -861,6 +861,18 @@ function DraftForm({
                   disabled={disabled}
                   error={errors.start_date}
                 />
+                <FormField
+                  label="Số ngày thuê"
+                  value={rentalDayCount(d.start_date, d.end_date)}
+                  keyboardType="number-pad"
+                  maxLength={4}
+                  editable={!disabled}
+                  onChangeText={(value) => {
+                    const nextEnd = addRentalDays(d.start_date, value.trim());
+                    if (nextEnd) change(changeDraftTime(input, "end_date", nextEnd));
+                  }}
+                  hint="Nhập số ngày để tự tính ngày hẹn trả."
+                />
                 <RentalDateTime
                   label="hẹn trả xe"
                   value={d.end_date}
@@ -1085,7 +1097,10 @@ function DraftForm({
       </KeyboardAvoidingView>
       {!!printHtml&&<EditorSheet title="Xem mẫu in" onClose={()=>setPrintHtml('')}><View style={{flex:1}}>
         <PrintPaper html={printHtml} />
-      </View></EditorSheet>}
+      </View>{Platform.OS!=='web'&&<View style={{padding:14,flexDirection:'row',gap:10,borderTopWidth:1,borderTopColor:theme.border,backgroundColor:theme.surface}}>
+        <Button size="sm" equalWidth label="Mở hộp thoại in" onPress={()=>{void (async()=>{try{const Print=await import('expo-print');await Print.printAsync({html:printHtml,width:841.89,height:595.28,orientation:Print.Orientation.landscape});}catch(e){setLocalError((e as Error).message);}})();}} />
+        <Button size="sm" equalWidth secondary label="Chia sẻ PDF" onPress={()=>{void (async()=>{try{const Print=await import('expo-print'),Sharing=await import('expo-sharing');const generated=await Print.printToFileAsync({html:printHtml,width:841.89,height:595.28,margins:{top:0,left:0,right:0,bottom:0}});if(await Sharing.isAvailableAsync())await Sharing.shareAsync(generated.uri,{mimeType:'application/pdf',UTI:'com.adobe.pdf',dialogTitle:'Himoto · Mẫu in hợp đồng'});}catch(e){setLocalError((e as Error).message);}})();}} />
+      </View>}</EditorSheet>}
       {customerCreate && (
         <CustomerCreateSheet
           storeId={Number(d.store_id) || session?.user.storeId || null}
@@ -1118,9 +1133,13 @@ function DraftForm({
           initialStore={d.vehicle_store_id || d.store_id}
           selectedIds={d.vehicles.map((row) => row.id)}
           onClose={() => setVehiclePicker(false)}
-          onPick={(row) => {
+          onPick={(row, meta) => {
             try {
-              change(addDraftVehicle(input, row));
+              let next = addDraftVehicle(input, row);
+              if (!next.draft.unit_price && meta?.dailyPrice && meta.dailyPrice > 0) {
+                next = { ...next, draft: { ...next.draft, unit_price: String(meta.dailyPrice) } };
+              }
+              change(next);
               setVehiclePicker(false);
             } catch (failure) {
               setLocalError((failure as Error).message);

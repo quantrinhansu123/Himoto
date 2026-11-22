@@ -37,9 +37,9 @@ function RenewalForm({ id,backfill }: { id: string;backfill:boolean }) {
   const [paidAt, setPaidAt] = useState(initialPaidAt);
   const [unit,setUnit]=useState<"day"|"hour">("day"),[count,setCount]=useState("1"),[customRate,setRate]=useState<string|null>(null);
   const [readyBill, setReadyBill] = useState(""), [reviewedBill, setReviewedBill] = useState(""), [localError, setLocalError] = useState("");
-  const [occurredAt,setOccurredAt]=useState(initialOccurredAt);
+  const [customOccurredAt,setOccurredAt]=useState<string|null>(null);
   const [confirm, setConfirm] = useState<MobileRenewalInput | null>(null), [resolving, setResolving] = useState(false);
-  const dirty = !!itemId || customReturnAt !== null || customAmount !== null || !!outsideAmount || outsideName !== "Phí thu thêm" || !!extraAmount || extraName!=="Phí VAT" || !!note || collected || collectionChosen || customMethod !== null || !!account || occurredAt !== initialOccurredAt || unit!=="day" || count!=="1" || customRate!==null;
+  const dirty = !!itemId || customReturnAt !== null || customAmount !== null || !!outsideAmount || outsideName !== "Phí thu thêm" || !!extraAmount || extraName!=="Phí VAT" || !!note || collected || collectionChosen || customMethod !== null || !!account || customOccurredAt !== null || unit!=="day" || count!=="1" || customRate!==null;
   const action = useRenewalWrite(id, dirty), scroll = useRef<ScrollViewInstance>(null);
   const query = useQuery({ queryKey: ["renewal-preparation", session?.user.id, session?.user.storeId, session?.user.allStores, id, "editor", backfill, page, search],
     queryFn: ({ signal }) => api!.renewalPreparation(id, page, search, signal,backfill), enabled: !!api, staleTime: 30_000, gcTime: 300_000, refetchOnWindowFocus: false, refetchOnReconnect: false });
@@ -59,6 +59,7 @@ function RenewalForm({ id,backfill }: { id: string;backfill:boolean }) {
     return () => cancelAnimationFrame(frame);
   }, [localError, action.error, action.key, reducedMotion]);
   const item = data?.items.rows.find(row => String(row.id) === itemId) ?? (!itemId && data?.items.total === 1 ? data.items.rows[0] : null);
+  const occurredAt = customOccurredAt ?? (!backfill && item?.returnAt ? renewalLocalTime(Date.parse(item.returnAt)) : initialOccurredAt);
   const maxCount=unit==="day"?365:720,validCount=/^[0-9]+$/.test(count)&&Number(count)>=1&&Number(count)<=maxCount;
   const returnAt=customReturnAt??(item?.returnAt&&validCount?addRentalDuration(item.returnAt,Number(count),unit):"");
   const rate=customRate??(unit==="hour"?DEFAULT_RENEWAL_HOURLY_RATE:item?.dailyPrice?String(item.dailyPrice):"");
@@ -93,6 +94,10 @@ function RenewalForm({ id,backfill }: { id: string;backfill:boolean }) {
           {!result.current && <InlineError message="Hồ sơ hoặc phiếu thu đã được chỉnh sau lần gia hạn này. Đây là kết quả gốc đã lưu; kiểm tra hồ sơ hiện tại trước khi thao tác tiếp." />}
           {!!action.error && <InlineError message={action.error} />}
           <Button label="Xác nhận đã kiểm tra gia hạn" loading={action.checking} onPress={() => { void action.acknowledge(); }} />
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+            <Button secondary label="Mở Telegram gia hạn" onPress={() => router.push({ pathname: "/contract-telegram/[id]", params: { id } })} />
+            <Button secondary label="Mở Sổ quỹ" onPress={() => router.push("/cashbook")} />
+          </View>
         </Card>
       </ScrollView>
     </SafeAreaView>;
@@ -151,8 +156,20 @@ function RenewalForm({ id,backfill }: { id: string;backfill:boolean }) {
           <FormField label={unit==="day"?"Số ngày gia hạn":"Số giờ gia hạn"} value={countValue} editable={!locked&&!!item} keyboardType="number-pad" maxLength={3} onChangeText={value=>{setCount(value);setReturnAt(null);}} hint={`Từ 1 đến ${maxCount} ${unit==="day"?"ngày":"giờ"}.`} />
           <FormField label={unit==="day"?"Đơn giá gia hạn mỗi ngày (VND)":"Đơn giá gia hạn mỗi giờ (VND)"} value={rate} onChangeText={setRate} keyboardType="number-pad" maxLength={9} editable={!locked&&!!item} />
           <RentalDateTime label="hẹn trả mới" value={returnAt} onChange={setReturnAt} disabled={locked || !item} />
+          {!!returnAt && Number.isFinite(Date.parse(`${returnAt}:00+07:00`)) && Date.parse(`${returnAt}:00+07:00`) < Date.parse(`${initialPaidAt}:00+07:00`) && (
+            <View style={{ padding: 10, borderRadius: 8, backgroundColor: theme.warningBackground, borderWidth: 1, borderColor: theme.warning }}>
+              <Text style={{ color: theme.warning, fontSize: 13.5, fontWeight: "700", lineHeight: 20 }}>
+                Hẹn trả mới ({returnAt.replace("T", " ")}) vẫn đang quá hạn so với thời điểm hiện tại. Kiểm tra số ngày/giờ gia hạn trước khi lưu.
+              </Text>
+            </View>
+          )}
           <FormField label="Phí gia hạn thỏa thuận (VND)" value={amount} onChangeText={setAmount} editable={!locked && !!item} keyboardType="number-pad" maxLength={20}
             hint={suggested === null ? "Chưa đủ dữ liệu để gợi ý; nhập đúng thỏa thuận với khách." : `Gợi ý theo ${unit==='day'?'ngày':'giờ'}: ${money(suggested)}. Phí được cộng vào tiền hợp đồng.`} />
+          {data.totalAmount !== null && (
+            <Text style={{ color: theme.text, fontSize: 14, fontWeight: "700" }}>
+              Tổng hợp đồng trước → sau gia hạn: {money(data.totalAmount)} → {money(data.totalAmount + (Number(amount || 0) || 0) + (Number(extraAmount || 0) || 0))}
+            </Text>
+          )}
           {suggested !== null && /^(0|[1-9]\d{0,12})$/.test(amount) && Number(amount) !== suggested && <Text style={{ color: theme.warning, fontSize: 15, lineHeight: 24 }}>Phí đang nhập khác gợi ý {money(suggested)}. Rà soát thời hạn và thỏa thuận trước khi lưu.</Text>}
           <FormField label="Phí khác cộng vào tiền thuê (VND)" value={extraAmount} onChangeText={setExtraAmount} editable={!locked} keyboardType="number-pad" maxLength={13} hint="Tùy chọn, ví dụ phí VAT. Khoản này cộng vào tổng hợp đồng." />
           {!!extraAmount&&extraAmount!=="0"&&<FormField label="Tên khoản phí khác" value={extraName} onChangeText={setExtraName} editable={!locked} maxLength={100} />}

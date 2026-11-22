@@ -26,7 +26,7 @@ export function reviewRenewal(data: MobileRenewalPreparation, item: RenewalVehic
   if (!item) throw Error("Chọn xe đang thuê để gia hạn.");
   if (!validDraftTime(form.returnAt)) throw Error("Chọn ngày giờ hẹn trả mới hợp lệ.");
   if (item.returnAt && Date.parse(`${form.returnAt}:00+07:00`) <= Date.parse(item.returnAt)) throw Error("Hẹn trả mới phải sau hẹn trả hiện tại của xe.");
-  if(form.occurredAt!==undefined&&!validBackfillTime(form.occurredAt,now))throw Error("Nhập ngày giờ bắt đầu gia hạn hợp lệ.");
+  if(form.occurredAt!==undefined&&!validDraftTime(form.occurredAt))throw Error("Nhập ngày giờ bắt đầu gia hạn hợp lệ.");
   if(data.backfill){
     const occurred=form.occurredAt||'',at=Date.parse(`${occurred}:00+07:00`);
     if(!validBackfillTime(occurred,now)||item.startedAt&&at<Date.parse(item.startedAt)||item.completedAt&&at>Date.parse(item.completedAt))throw Error('Ngày bắt đầu gia hạn phải từ lúc bắt đầu thuê, không sau lúc trả xe thực tế và không ở tương lai.');

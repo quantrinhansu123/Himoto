@@ -30,9 +30,13 @@ export interface CatalogueSelection {
   storeBasis?: string;
   rentalType?: string;
   ownershipTerm?: string;
+  overdueBucket?: string;
+  sort?: string;
+  direction?: string;
   vehicleType?: string;
   warehouseStore?: string;
   beneficiaryStore?: string;
+  missingContract?: string;
 }
 export function CatalogueFilters({
   kind,
@@ -150,6 +154,31 @@ export function CatalogueFilters({
                     ]} onChange={ownershipTerm => setSelection(current => ({ ...current, ownershipTerm }))} />
                   )}
                   <ChoiceField label="Lọc cơ sở theo" value={selection.storeBasis || "source"} choices={[{ value: "source", label: "Cơ sở ghi nhận hợp đồng" }, { value: "warehouse", label: "Kho xe" }]} onChange={storeBasis => setSelection(current => ({ ...current, storeBasis }))} />
+                  {(scope === "overdue" || selection.status === "overdue" || !!selection.overdueBucket) && (
+                    <ChoiceField label="Nhóm tuổi nợ quá hạn" value={selection.overdueBucket || ""} choices={[
+                      { value: "", label: "Tất cả mức quá hạn" },
+                      { value: "d1_3", label: "Quá hạn 1 – 3 ngày" },
+                      { value: "d4_7", label: "Quá hạn 4 – 7 ngày" },
+                      { value: "d8_15", label: "Quá hạn 8 – 15 ngày" },
+                      { value: "d16_30", label: "Quá hạn 16 – 30 ngày" },
+                      { value: "gt30", label: "Quá hạn trên 30 ngày" },
+                    ]} onChange={overdueBucket => setSelection(current => ({ ...current, overdueBucket }))} />
+                  )}
+                  <ChoiceField label="Sắp xếp hợp đồng theo" value={selection.sort || ""} choices={[
+                    { value: "", label: "Mặc định (Mã HĐ / Quá hạn)" },
+                    { value: "code", label: "Mã hợp đồng" },
+                    { value: "start_date", label: "Ngày bắt đầu thuê" },
+                    { value: "end_date", label: "Ngày hẹn trả" },
+                    { value: "total_amount", label: "Tổng giá trị hợp đồng" },
+                    { value: "rental_debt_amount", label: "Tiền thuê còn thiếu" },
+                    { value: "overdue_minutes", label: "Thời gian quá hạn" },
+                    { value: "billing_next_due_at", label: "Kỳ đóng tiền tiếp theo" },
+                  ]} onChange={sort => setSelection(current => ({ ...current, sort }))} />
+                  <ChoiceField label="Thứ tự sắp xếp" value={selection.direction || ""} choices={[
+                    { value: "", label: "Giảm dần (Mới / Lớn trước)" },
+                    { value: "desc", label: "Giảm dần" },
+                    { value: "asc", label: "Tăng dần" },
+                  ]} onChange={direction => setSelection(current => ({ ...current, direction }))} />
                   {selection.from && selection.to && selection.from > selection.to ? <InlineError message="Ngày kết thúc phải từ ngày bắt đầu trở đi." /> : null}
                 </>}
                 {kind === "vehicles" && <>
@@ -161,6 +190,10 @@ export function CatalogueFilters({
                     { value: "xecon", label: "Xe côn tay" },
                     { value: "xesh", label: "Xe SH" },
                   ]} onChange={vehicleType => setSelection(current => ({ ...current, vehicleType }))} />
+                  <ChoiceField label="Đối chiếu hợp đồng xe" value={selection.missingContract || ""} choices={[
+                    { value: "", label: "Tất cả xe trong kho" },
+                    { value: "1", label: "Xe đang thuê nhưng thiếu hợp đồng mở" },
+                  ]} onChange={missingContract => setSelection(current => ({ ...current, missingContract }))} />
                   {stores.length > 0 && <>
                     <ChoiceField label="Kho xe hiện tại" value={selection.warehouseStore || ""} choices={[
                       { value: "", label: "Tất cả kho xe" },

@@ -73,14 +73,14 @@ export function RecordActionsModal({
     kind === "vehicles"
       ? record.license || record.code
       : kind === "customers"
-      ? record.name
-      : record.code;
+        ? record.name
+        : record.code;
   const subtitle =
     kind === "contracts"
       ? `${record.name || "Khách hàng"}${record.license ? ` · ${record.license}` : ""}`
       : kind === "vehicles"
-      ? `${record.name || "Xe"}${record.brand ? ` · ${record.brand}` : ""}`
-      : record.phone || record.contactDetail || "";
+        ? `${record.name || "Xe"}${record.brand ? ` · ${record.brand}` : ""}`
+        : record.phone || record.contactDetail || "";
 
   const actions: RecordActionItem[] = [];
 
@@ -254,7 +254,7 @@ export function RecordActionsModal({
         onPress: () =>
           router.push({
             pathname: "/contract-telegram/[id]",
-            params: { id,...(status==="completed"||status==="wait_payment"?{eventKind:"return"}:{}) },
+            params: { id, ...(status === "completed" || status === "wait_payment" ? { eventKind: "return" } : {}) },
           }),
       });
     } else {
@@ -275,7 +275,7 @@ export function RecordActionsModal({
         icon: BatteryCharging,
         color: "#0D9488",
         onPress: () =>
-          router.push("/battery-contracts"),
+          router.push({ pathname: "/battery-contracts", params: { source: id } }),
       });
     }
 
@@ -332,6 +332,104 @@ export function RecordActionsModal({
           router.push({
             pathname: "/draft/[id]",
             params: { id },
+          }),
+      });
+    }
+    if (has("contracts.draft") && status !== "draft") {
+      actions.push({
+        id: "contract_edit",
+        label: "Sửa hợp đồng",
+        description: "Chỉnh sửa thông tin, tiền cọc, giấy tờ hợp đồng",
+        icon: FilePenLine,
+        color: "#2563EB",
+        onPress: () =>
+          router.push({
+            pathname: "/contract-edit/[id]",
+            params: { id },
+          }),
+      });
+    }
+    if (has("contracts.draft") && status === "deposit_contract") {
+      actions.push({
+        id: "profile_edit",
+        label: "Bổ sung hồ sơ HĐ cọc",
+        description: "Cập nhật nhanh khách hàng, SĐT, CCCD, ghi chú",
+        icon: FilePenLine,
+        color: "#0284C7",
+        onPress: () =>
+          router.push({
+            pathname: "/contract-edit/[id]",
+            params: { id, mode: "profile" },
+          }),
+      });
+    }
+    if (has("contracts.settle") && ["renting", "overdue", "wait_payment", "completed"].includes(status)) {
+      actions.push({
+        id: "payment_settlement",
+        label: "Thanh toán & Đóng hợp đồng",
+        description: "Quyết toán công nợ, hoàn cọc và chốt hợp đồng",
+        icon: ShieldCheck,
+        color: "#16A34A",
+        onPress: () =>
+          router.push({
+            pathname: "/contract-operation/[action]/[id]",
+            params: { action: "payment_settlement", id },
+          }),
+      });
+    }
+    if (has("contracts.return") && status === "bad_debt") {
+      actions.push({
+        id: "bad_debt_recovery",
+        label: "Thu hồi xe nợ xấu",
+        description: "Nhận lại xe về kho từ hợp đồng nợ xấu",
+        icon: RotateCcw,
+        color: "#DC2626",
+        onPress: () =>
+          router.push({
+            pathname: "/recovery-editor/[id]",
+            params: { id },
+          }),
+      });
+    }
+    if (has("contracts.draft") && !["draft", "cancelled"].includes(status)) {
+      actions.push({
+        id: "battery_swap",
+        label: "Đổi pin theo hợp đồng",
+        description: "Ghi nhận lượt đổi pin và minh chứng",
+        icon: BatteryCharging,
+        color: "#0D9488",
+        onPress: () =>
+          router.push({
+            pathname: "/contract-operation/[action]/[id]",
+            params: { action: "battery_swap", id },
+          }),
+      });
+    }
+    if ((has("contracts.draft") || has("finance.write")) && (status === "overdue" || status === "bad_debt" || Boolean(record.monitoring?.collectionOverdue))) {
+      actions.push({
+        id: "collection_followup",
+        label: "Ghi chú công nợ",
+        description: "Cập nhật kết quả liên hệ và hẹn thanh toán",
+        icon: MessageCircle,
+        color: "#D97706",
+        onPress: () =>
+          router.push({
+            pathname: "/collection-followup/[id]",
+            params: { id },
+          }),
+      });
+    }
+    if (has("contracts.delete") && ["draft", "deposit_contract", "completed"].includes(status)) {
+      actions.push({
+        id: "delete_or_hide",
+        label: status === "draft" ? "Xóa bản nháp" : status === "deposit_contract" ? "Xóa HĐ đặt cọc" : "Ẩn hợp đồng khỏi danh sách",
+        description: "Mở chi tiết hợp đồng để xác nhận thao tác",
+        icon: X,
+        color: "#DC2626",
+        onPress: () =>
+          router.push({
+            pathname: "/record/[kind]/[id]",
+            params: { kind: "contracts", id },
           }),
       });
     }
@@ -412,14 +510,18 @@ export function RecordActionsModal({
         });
       }
     }
-    if (record.status === "in_transit" && has("vehicles.receive")) {
+    if (record.status === "in_transit" && (has("vehicles.receive") || has("vehicles.transfer"))) {
       actions.push({
         id: "receive_transfer",
         label: "Xử lý xe đang luân chuyển",
         description: "Nhận xe, từ chối hoặc hủy phiếu điều chuyển",
         icon: ShieldCheck,
         color: "#059669",
-        onPress: () => router.push("/vehicle-transfers"),
+        onPress: () =>
+          router.push({
+            pathname: "/vehicle-transfer-editor/[id]",
+            params: { id },
+          }),
       });
     }
 

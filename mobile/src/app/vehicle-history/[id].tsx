@@ -8,6 +8,7 @@ import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { dateTime, useTheme } from "@/theme";
 import { Button, Card, InlineError, StateView } from "@/components/ui";
 import { ChoiceField, FormField } from "@/components/form-fields";
+import { FileExportButton } from "@/components/file-export-button";
 import { VehicleChanges } from "@/components/vehicle-changes";
 function VehicleHistory({ id }: { id: string }) {
   const { api, session } = useSession(), theme = useTheme();
@@ -22,6 +23,31 @@ function VehicleHistory({ id }: { id: string }) {
       <FormField label="Tìm trong lịch sử xe" value={input} onChangeText={value => { setInput(value); setPage(1); }} maxLength={120} />
       <ChoiceField label="Loại sự kiện" value={action} choices={[{ value: "", label: "Tất cả sự kiện" }, ...VEHICLE_HISTORY_ACTIONS]} onChange={value => { setAction(value); setPage(1); }} />
       {query.data && <Text style={{ color: theme.muted, lineHeight: 22 }}>{query.data.total} sự kiện · {query.data.sourceLimit}</Text>}
+      {query.data && !!query.data.rows.length && (
+        <FileExportButton
+          label={`Tải Excel lịch sử xe (${query.data.rows.length})`}
+          disabled={query.isFetching}
+          load={(signal) =>
+            api!.exportWorkbook(
+              {
+                filename: `himoto-lich-su-xe-${id}`,
+                headers: ["Thời điểm", "Sự kiện", "Biển số", "Cơ sở đi", "Cơ sở đến", "Vị trí", "Người thực hiện", "Ghi chú"],
+                rows: (query.data?.rows || []).map((r) => [
+                  r.at || "",
+                  r.label,
+                  r.license || "",
+                  r.responsible_store || "",
+                  r.beneficiary_store || "",
+                  r.location || "",
+                  r.actor || "",
+                  r.note || "",
+                ]),
+              },
+              signal,
+            )
+          }
+        />
+      )}
       {query.isError && <InlineError message={query.error.message} />}
     </View>}
     renderItem={({ item }) => <Card style={{ gap: 10 }}>

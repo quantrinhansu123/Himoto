@@ -8,6 +8,7 @@ import type {
   MobileDraftVehicle,
 } from "@himoto/mobile-contract";
 import { validDraftTime } from "@himoto/mobile-draft-validation";
+import { addRentalMonths } from "../../../shared/rental-calendar";
 
 export const draftSteps = [
   "Hợp đồng & pháp lý",
@@ -40,6 +41,11 @@ export function chooseDraftType<T extends MobileContractFormInput>(
   type: MobileDraftOptions["types"][number],
 ): T {
   const monthly = /^(monthly|ownership)/.test(type.rentalType);
+  const autoEnd =
+    type.termMonths && type.termMonths > 0 && validDraftTime(input.draft.start_date)
+      ? addRentalMonths(input.draft.start_date, type.termMonths)
+      : "";
+  const nextEnd = autoEnd || input.draft.end_date;
   return {
     ...input,
     rental_type: type.rentalType,
@@ -50,6 +56,14 @@ export function chooseDraftType<T extends MobileContractFormInput>(
       contract_type_months:
         type.termMonths === null ? "" : String(type.termMonths),
       ownership: type.rentalType === "ownership",
+      end_date: nextEnd,
+      vehicles: autoEnd
+        ? input.draft.vehicles.map((row) =>
+            !row.return_at || row.return_at === input.draft.end_date
+              ? { ...row, return_at: autoEnd }
+              : row,
+          )
+        : input.draft.vehicles,
       package_name: monthly
         ? "Theo tháng"
         : ["Theo ngày", "Theo tuần"].includes(input.draft.package_name)

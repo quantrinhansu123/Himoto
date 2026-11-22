@@ -1,43 +1,68 @@
-import { useColorScheme } from "react-native";
+import { Platform, useColorScheme, type ViewStyle } from "react-native";
+
 const light = {
-  background: "#F5F6F8",
+  background: "#F6F7F9",
   surface: "#FFFFFF",
-  text: "#17202A",
-  muted: "#536071",
-  border: "#D6DAE1",
-  controlBorder: "#7A8596",
-  primary: "#BA2028",
+  text: "#171717",
+  muted: "#525252",
+  border: "#E5E7EB",
+  controlBorder: "#767E8C",
+  primary: "#D32F2F",
   primaryText: "#FFFFFF",
-  tint: "#FFF0F0",
-  success: "#166534",
-  successBackground: "#EAF6EE",
+  tint: "#FFF5F5",
+  accent: "#B45309",
+  accentBackground: "#FFFBEB",
+  success: "#15803D",
+  successBackground: "#ECFDF5",
   danger: "#B91C1C",
-  dangerBackground: "#FEF0EF",
-  warning: "#854D0E",
-  warningBackground: "#FEF3C7",
-  scrim: "rgba(10,16,24,0.55)",
+  dangerBackground: "#FEF2F2",
+  warning: "#92400E",
+  warningBackground: "#FFFBEB",
+  info: "#1D4ED8",
+  infoBackground: "#EFF6FF",
+  scrim: "rgba(15,23,42,0.52)",
 };
+
 const dark: typeof light = {
-  background: "#11151C",
-  surface: "#1C232E",
-  text: "#F2F4F7",
-  muted: "#B3BECC",
-  border: "#465366",
-  controlBorder: "#718096",
-  primary: "#FF9297",
-  primaryText: "#3D080C",
-  tint: "#442127",
-  success: "#9BE5B3",
-  successBackground: "#193D2A",
-  danger: "#FFADA5",
-  dangerBackground: "#482726",
-  warning: "#F7DA82",
-  warningBackground: "#44391B",
-  scrim: "rgba(0,0,0,0.65)",
+  background: "#111419",
+  surface: "#1B2028",
+  text: "#F5F6F8",
+  muted: "#B0BAC9",
+  border: "#333C4A",
+  controlBorder: "#707D91",
+  primary: "#FF8A8A",
+  primaryText: "#3B080A",
+  tint: "#3F1D21",
+  accent: "#FCD34D",
+  accentBackground: "#3D3014",
+  success: "#86EFAC",
+  successBackground: "#143324",
+  danger: "#FCA5A5",
+  dangerBackground: "#421E1E",
+  warning: "#FDE68A",
+  warningBackground: "#3F3216",
+  info: "#93C5FD",
+  infoBackground: "#182C4A",
+  scrim: "rgba(0,0,0,0.68)",
 };
+
+export const cardShadow: ViewStyle = (Platform?.select?.({
+  ios: {
+    shadowColor: "#171717",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 3,
+  },
+  android: {
+    elevation: 1.5,
+  },
+  default: {},
+}) ?? {}) as ViewStyle;
+
 export function useTheme() {
   return useColorScheme() === "dark" ? dark : light;
 }
+
 export const roles: Record<string, string> = {
   admin: "Quản trị viên",
   branch_staff: "Nhân viên cơ sở",
@@ -50,7 +75,9 @@ export const roles: Record<string, string> = {
   headquarters_sales: "Kinh doanh trụ sở",
   headquarters_debt: "Quản lý công nợ",
 };
-export { statuses } from './lib/status-labels';
+
+export { statuses } from "./lib/status-labels";
+
 export function money(value: number | null) {
   return value === null
     ? "Chưa có dữ liệu"
@@ -60,6 +87,7 @@ export function money(value: number | null) {
         maximumFractionDigits: 0,
       }).format(value);
 }
+
 export function dateTime(value: string) {
   if (!value) return "Chưa có dữ liệu";
   const date = new Date(

@@ -1,6 +1,7 @@
 import { KeyboardFormScrollView } from "./keyboard-form-scroll-view";
 import {useEffect,useRef,useState} from 'react';
 import {Keyboard,Pressable,RefreshControl,Text,View,type ScrollViewInstance} from 'react-native';
+import { router } from 'expo-router';
 import {keepPreviousData,useQuery} from '@tanstack/react-query';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {RefundQrReader} from './refund-qr-reader';
@@ -17,110 +18,115 @@ import {FormField,ChoiceField} from './form-fields';
 import {RentalDateTime} from './rental-date-time';
 import {ConfirmEdit} from './editor-sheet';
 
-const methods=[{value:'cash',label:'Tiền mặt'},{value:'transfer',label:'CK tài khoản cá nhân'},{value:'company_transfer',label:'CK tài khoản công ty'}];
-const kinds=[{value:'rental_debt',label:'Thu công nợ thuê xe'},{value:'late_fee',label:'Thu phí trễ'},{value:'repair_fee',label:'Thu phí sửa chữa'}];
-export function ReturnEditor({id}:{id:string}) {
-  const {session,api}=useSession();
-  if(!api||!session||!/^[1-9]\d{0,14}$/.test(id)||!session.user.permissions.includes('contracts.read')||!session.user.permissions.includes('contracts.return'))
-    return <StateView title="Không mở được trả xe" message="Tài khoản cần quyền xem hợp đồng và trả/đổi xe."/>;
-  return <ReturnForm key={[api.origin,session.token,session.user.storeId,session.user.allStores,session.user.permissions.join(','),id].join(':')} id={id}/>;
+const methods = [{ value: 'cash', label: 'Tiền mặt' }, { value: 'transfer', label: 'CK tài khoản cá nhân' }, { value: 'company_transfer', label: 'CK tài khoản công ty' }];
+const kinds = [{ value: 'rental_debt', label: 'Thu công nợ thuê xe' }, { value: 'late_fee', label: 'Thu phí trễ' }, { value: 'repair_fee', label: 'Thu phí sửa chữa' }];
+export function ReturnEditor({ id }: { id: string }) {
+  const { session, api } = useSession();
+  if (!api || !session || !/^[1-9]\d{0,14}$/.test(id) || !session.user.permissions.includes('contracts.read') || !session.user.permissions.includes('contracts.return'))
+    return <StateView title="Không mở được trả xe" message="Tài khoản cần quyền xem hợp đồng và trả/đổi xe." />;
+  return <ReturnForm key={[api.origin, session.token, session.user.storeId, session.user.allStores, session.user.permissions.join(','), id].join(':')} id={id} />;
 }
-function ReturnForm({id}:{id:string}) {
-  const {api,session}=useSession(),theme=useTheme(),reducedMotion=useReducedMotion(),scroll=useRef<ScrollViewInstance>(null);
-  const [page,setPage]=useState(1),[step,setStep]=useState(0),[lines,setLines]=useState<ReturnLineDraft[]>([]),[lineIndex,setLineIndex]=useState(0);
-  const [fees,setFees]=useState<MobileReturnPreview|null>(null),[feeInput,setFeeInput]=useState<MobileReturnPreviewInput|null>(null);
-  const [receipts,setReceipts]=useState<ReturnReceiptDraft[]>([]),[receiptIndex,setReceiptIndex]=useState(0);
-  const [rentalRefund,setRentalRefund]=useState<ReturnMoneyDraft|null>(null),[depositRefund,setDepositRefund]=useState<ReturnMoneyDraft|null>(null);
-  const [review,setReview]=useState<MobileReturnSettlementPreview|null>(null),[reviewInput,setReviewInput]=useState<MobileReturnSettlementInput|null>(null);
-  const [previewing,setPreviewing]=useState(false),[error,setError]=useState(''),[confirm,setConfirm]=useState(false),[resolving,setResolving]=useState(false);
-  const alive=useRef(true),running=useRef(false),abort=useRef<AbortController|null>(null);
-  const action=useReturnWrite(id,lines.length>0||receipts.length>0||!!rentalRefund||!!depositRefund);
-  const query=useQuery({queryKey:['return-preparation',session?.user.id,session?.user.storeId,session?.user.allStores,id,page],
-    queryFn:({signal})=>api!.returnPreparation(id,page,signal),enabled:!!api&&action.checked&&!action.key,placeholderData:keepPreviousData,
-    staleTime:30_000,gcTime:300_000,refetchOnWindowFocus:false,refetchOnReconnect:false});
-  const data=query.data,locked=previewing||action.busy||!action.checked||!!action.key;
-  const[qrPending,setQrPending]=useState<Record<string,boolean>>({});
-  useEffect(()=>{alive.current=true;return()=>{alive.current=false;abort.current?.abort();};},[]);
-  const top=()=>{Keyboard.dismiss();scroll.current?.scrollTo({y:0,animated:!reducedMotion});};
-  function clearReview(){setReview(null);setReviewInput(null);setError('');}
-  function editLine(patch:Partial<ReturnLineDraft>){
-    if(locked)return;setLines(rows=>rows.map((row,i)=>i===lineIndex?{...row,...patch}:row));setFees(null);setFeeInput(null);clearReview();
+function ReturnForm({ id }: { id: string }) {
+  const { api, session } = useSession(), theme = useTheme(), reducedMotion = useReducedMotion(), scroll = useRef<ScrollViewInstance>(null);
+  const [page, setPage] = useState(1), [step, setStep] = useState(0), [lines, setLines] = useState<ReturnLineDraft[]>([]), [lineIndex, setLineIndex] = useState(0);
+  const [fees, setFees] = useState<MobileReturnPreview | null>(null), [feeInput, setFeeInput] = useState<MobileReturnPreviewInput | null>(null);
+  const [receipts, setReceipts] = useState<ReturnReceiptDraft[]>([]), [receiptIndex, setReceiptIndex] = useState(0);
+  const [rentalRefund, setRentalRefund] = useState<ReturnMoneyDraft | null>(null), [depositRefund, setDepositRefund] = useState<ReturnMoneyDraft | null>(null);
+  const [deferredRecipient, setDeferredRecipient] = useState({ bank: '', recipientAccount: '', recipientName: '' });
+  const [review, setReview] = useState<MobileReturnSettlementPreview | null>(null), [reviewInput, setReviewInput] = useState<MobileReturnSettlementInput | null>(null);
+  const [previewing, setPreviewing] = useState(false), [error, setError] = useState(''), [confirm, setConfirm] = useState(false), [resolving, setResolving] = useState(false);
+  const alive = useRef(true), running = useRef(false), abort = useRef<AbortController | null>(null);
+  const action = useReturnWrite(id, lines.length > 0 || receipts.length > 0 || !!rentalRefund || !!depositRefund);
+  const query = useQuery({
+    queryKey: ['return-preparation', session?.user.id, session?.user.storeId, session?.user.allStores, id, page],
+    queryFn: ({ signal }) => api!.returnPreparation(id, page, signal), enabled: !!api && action.checked && !action.key, placeholderData: keepPreviousData,
+    staleTime: 30_000, gcTime: 300_000, refetchOnWindowFocus: false, refetchOnReconnect: false
+  });
+  const data = query.data, locked = previewing || action.busy || !action.checked || !!action.key;
+  const [qrPending, setQrPending] = useState<Record<string, boolean>>({});
+  useEffect(() => { alive.current = true; return () => { alive.current = false; abort.current?.abort(); }; }, []);
+  const top = () => { Keyboard.dismiss(); scroll.current?.scrollTo({ y: 0, animated: !reducedMotion }); };
+  function clearReview() { setReview(null); setReviewInput(null); setError(''); }
+  function editLine(patch: Partial<ReturnLineDraft>) {
+    if (locked) return; setLines(rows => rows.map((row, i) => i === lineIndex ? { ...row, ...patch } : row)); setFees(null); setFeeInput(null); clearReview();
   }
-  function defaultMoney():ReturnMoneyDraft {
-    return{...emptyReturnMoney(),account:String(data?.accounts.find(row=>row.method==='cash')?.id??'')};
+  function defaultMoney(): ReturnMoneyDraft {
+    return { ...emptyReturnMoney(), account: String(data?.accounts.find(row => row.method === 'cash')?.id ?? '') };
   }
-  async function calculateFees(){
-    if(!api||!data||locked||running.current)return;
-    Keyboard.dismiss();setError('');
-    try{
-      const input=returnFeeInput(data,lines);running.current=true;setPreviewing(true);abort.current=new AbortController();
-      const result=await api.returnPreview(id,input,abort.current.signal);if(!alive.current)return;
-      setFees(result);setFeeInput(input);clearReview();setStep(2);top();
-    }catch(cause){if(alive.current){setError((cause as Error).message);top();}}
-    finally{running.current=false;if(alive.current)setPreviewing(false);}
+  async function calculateFees() {
+    if (!api || !data || locked || running.current) return;
+    Keyboard.dismiss(); setError('');
+    try {
+      const input = returnFeeInput(data, lines); running.current = true; setPreviewing(true); abort.current = new AbortController();
+      const result = await api.returnPreview(id, input, abort.current.signal); if (!alive.current) return;
+      setFees(result); setFeeInput(input); clearReview(); setStep(2); top();
+    } catch (cause) { if (alive.current) { setError((cause as Error).message); top(); } }
+    finally { running.current = false; if (alive.current) setPreviewing(false); }
   }
-  async function calculateSettlement(acknowledged=false){
-    if(!api||!data||!fees||!feeInput||locked||running.current)return;
-    if(Object.values(qrPending).some(Boolean)){setError('Còn ảnh QR chưa lưu. Lưu hoặc bỏ ảnh chưa gửi ở phần người nhận trước khi rà soát quyết toán.');top();return;}
-    Keyboard.dismiss();setError('');
-    try{
-      const input=returnSettlementInput(data,fees,feeInput,receipts,rentalRefund,depositRefund,acknowledged);
-      running.current=true;setPreviewing(true);abort.current=new AbortController();
-      const result=await api.returnSettlementPreview(id,input,abort.current.signal);if(!alive.current)return;
-      setReview(result);setReviewInput(input);setStep(3);top();
-    }catch(cause){if(alive.current){setError((cause as Error).message);top();}}
-    finally{running.current=false;if(alive.current)setPreviewing(false);}
+  async function calculateSettlement(acknowledged = false) {
+    if (!api || !data || !fees || !feeInput || locked || running.current) return;
+    if (Object.values(qrPending).some(Boolean)) { setError('Còn ảnh QR chưa lưu. Lưu hoặc bỏ ảnh chưa gửi ở phần người nhận trước khi rà soát quyết toán.'); top(); return; }
+    Keyboard.dismiss(); setError('');
+    try {
+      const input = returnSettlementInput(data, fees, feeInput, receipts, rentalRefund, depositRefund, acknowledged, Date.now(), deferredRecipient);
+      running.current = true; setPreviewing(true); abort.current = new AbortController();
+      const result = await api.returnSettlementPreview(id, input, abort.current.signal); if (!alive.current) return;
+      setReview(result); setReviewInput(input); setStep(3); top();
+    } catch (cause) { if (alive.current) { setError((cause as Error).message); top(); } }
+    finally { running.current = false; if (alive.current) setPreviewing(false); }
   }
-  const selected=lines[lineIndex],receipt=receipts[receiptIndex];
-  function moneyFields(value:ReturnMoneyDraft,onChange:(next:ReturnMoneyDraft)=>void,label:string,refund=false){
-    const change=(patch:Partial<ReturnMoneyDraft>)=>{onChange({...value,...patch});clearReview();};
-    return <View style={{gap:16}}>
-      <FormField label={label+' (VND)'} value={value.amount} onChangeText={amount=>change({amount})} keyboardType="number-pad" editable={!locked} maxLength={13}/>
-      <ChoiceField label={label+' · hình thức'} value={value.method} choices={methods} disabled={locked} onChange={method=>{
-        const first=data?.accounts.find(row=>row.method===method);
-        change({method:method as ReturnMoneyDraft['method'],account:first?String(first.id):''});
-      }}/>
-      <ChoiceField label={label+' · tài khoản'} value={value.account} disabled={locked} choices={(data?.accounts??[]).filter(row=>row.method===value.method).map(row=>({value:String(row.id),label:row.label}))} onChange={account=>change({account})}/>
-      <RentalDateTime label={label.toLowerCase()} value={value.paidAt} disabled={locked} onChange={paidAt=>change({paidAt})}/>
-      {refund&&value.method!=='cash'&&<>
-        {lines[0]&&<RefundQrReader id={id} itemId={lines[0].vehicle.id} value={value} onPendingChange={pending=>setQrPending(old=>old[label]===pending?old:{...old,[label]:pending})} onRead={(fields,before)=>{onChange(mergeMobileRefundRecipient(value,fields,before));clearReview();}}/>}
-        <FormField label={label+' · ngân hàng người nhận (tùy chọn)'} value={value.bank} editable={!locked} onChangeText={bank=>change({bank})} maxLength={150}/>
-        <FormField label={label+' · số tài khoản người nhận (tùy chọn)'} value={value.recipientAccount} editable={!locked} onChangeText={recipientAccount=>change({recipientAccount})} maxLength={150}/>
-        <FormField label={label+' · tên người nhận (tùy chọn)'} value={value.recipientName} editable={!locked} onChangeText={recipientName=>change({recipientName})} maxLength={150}/>
+  const selected = lines[lineIndex], receipt = receipts[receiptIndex];
+  function moneyFields(value: ReturnMoneyDraft, onChange: (next: ReturnMoneyDraft) => void, label: string, refund = false) {
+    const change = (patch: Partial<ReturnMoneyDraft>) => { onChange({ ...value, ...patch }); clearReview(); };
+    return <View style={{ gap: 16 }}>
+      <FormField label={label + ' (VND)'} value={value.amount} onChangeText={amount => change({ amount })} keyboardType="number-pad" editable={!locked} maxLength={13} />
+      <ChoiceField label={label + ' · hình thức'} value={value.method} choices={methods} disabled={locked} onChange={method => {
+        const first = data?.accounts.find(row => row.method === method);
+        change({ method: method as ReturnMoneyDraft['method'], account: first ? String(first.id) : '' });
+      }} />
+      <ChoiceField label={label + ' · tài khoản'} value={value.account} disabled={locked} choices={(data?.accounts ?? []).filter(row => row.method === value.method).map(row => ({ value: String(row.id), label: row.label }))} onChange={account => change({ account })} />
+      <RentalDateTime label={label.toLowerCase()} value={value.paidAt} disabled={locked} onChange={paidAt => change({ paidAt })} />
+      {refund && value.method !== 'cash' && <>
+        {lines[0] && <RefundQrReader id={id} itemId={lines[0].vehicle.id} value={value} onPendingChange={pending => setQrPending(old => old[label] === pending ? old : { ...old, [label]: pending })} onRead={(fields, before) => { onChange(mergeMobileRefundRecipient(value, fields, before)); clearReview(); }} />}
+        <FormField label={label + ' · ngân hàng người nhận (tùy chọn)'} value={value.bank} editable={!locked} onChangeText={bank => change({ bank })} maxLength={150} />
+        <FormField label={label + ' · số tài khoản người nhận (tùy chọn)'} value={value.recipientAccount} editable={!locked} onChangeText={recipientAccount => change({ recipientAccount })} maxLength={150} />
+        <FormField label={label + ' · tên người nhận (tùy chọn)'} value={value.recipientName} editable={!locked} onChangeText={recipientName => change({ recipientName })} maxLength={150} />
       </>}
     </View>;
   }
-  const overlays=<>
-    {resolving&&<ConfirmEdit title="Đối chiếu trả xe?" message="Nếu đã ghi, mở phiếu gốc để kiểm tra. Nếu chưa ghi, khóa mã cũ và giữ biểu mẫu để rà soát lại."
-      confirmLabel="Đối chiếu với máy chủ" onCancel={()=>setResolving(false)} onConfirm={()=>{setResolving(false);void action.resolve().then(()=>{
-        if(alive.current){setFees(null);setFeeInput(null);clearReview();setStep(lines.length?1:0);}
-      });}}/>}
-    {action.exit&&<ConfirmEdit title={action.busy?'Đang ghi trả xe':'Rời bước trả xe?'} busy={action.busy}
-      message={action.busy?'Chờ máy chủ xác nhận kết quả.':'Nội dung chưa gửi sẽ mất. Mã yêu cầu đã gửi vẫn được giữ để đối chiếu.'}
-      confirmLabel="Rời bước trả xe" onCancel={action.dismissExit} onConfirm={action.leave}/>}
-    {confirm&&review&&reviewInput&&<ConfirmEdit title="Ghi trả xe và quyết toán?"
-      message={'Nhận '+review.fees.items.length+' xe · thực thu '+money(review.totals.income)+' · hoàn thuê '+money(review.totals.rentalRefund)+' · hoàn cọc '+money(review.totals.depositRefund)+'. Kiểm tra tiền thực tế trước khi xác nhận.'}
-      confirmLabel="Xác nhận trả xe và quyết toán" onCancel={()=>setConfirm(false)} onConfirm={()=>{setConfirm(false);if(Object.values(qrPending).some(Boolean)){setError('Còn ảnh QR chưa lưu. Lưu hoặc bỏ ảnh trước khi xác nhận.');return;}void action.submit({...reviewInput,settlement_snapshot:review.snapshot});}}/>}
+  const overlays = <>
+    {resolving && <ConfirmEdit title="Đối chiếu trả xe?" message="Nếu đã ghi, mở phiếu gốc để kiểm tra. Nếu chưa ghi, khóa mã cũ và giữ biểu mẫu để rà soát lại."
+      confirmLabel="Đối chiếu với máy chủ" onCancel={() => setResolving(false)} onConfirm={() => {
+        setResolving(false); void action.resolve().then(() => {
+          if (alive.current) { setFees(null); setFeeInput(null); clearReview(); setStep(lines.length ? 1 : 0); }
+        });
+      }} />}
+    {action.exit && <ConfirmEdit title={action.busy ? 'Đang ghi trả xe' : 'Rời bước trả xe?'} busy={action.busy}
+      message={action.busy ? 'Chờ máy chủ xác nhận kết quả.' : 'Nội dung chưa gửi sẽ mất. Mã yêu cầu đã gửi vẫn được giữ để đối chiếu.'}
+      confirmLabel="Rời bước trả xe" onCancel={action.dismissExit} onConfirm={action.leave} />}
+    {confirm && review && reviewInput && <ConfirmEdit title="Ghi trả xe và quyết toán?"
+      message={'Nhận ' + review.fees.items.length + ' xe · thực thu ' + money(review.totals.income) + ' · hoàn thuê ' + money(review.totals.rentalRefund) + ' · hoàn cọc ' + money(review.totals.depositRefund) + '. Kiểm tra tiền thực tế trước khi xác nhận.'}
+      confirmLabel="Xác nhận trả xe và quyết toán" onCancel={() => setConfirm(false)} onConfirm={() => { setConfirm(false); if (Object.values(qrPending).some(Boolean)) { setError('Còn ảnh QR chưa lưu. Lưu hoặc bỏ ảnh trước khi xác nhận.'); return; } void action.submit({ ...reviewInput, settlement_snapshot: review.snapshot }); }} />}
   </>;
-  if(!action.checked)return <SafeAreaView edges={['left','right','bottom']} style={{flex:1,backgroundColor:theme.background}}>
-    <KeyboardFormScrollView contentContainerStyle={{padding:20}}><Card style={{gap:16}}>
-      <Text accessibilityRole="header" style={{color:theme.text,fontSize:23,fontWeight:'700'}}>Kiểm tra thao tác trên thiết bị</Text>
-      {!!action.error&&<InlineError message={action.error}/>}
-      <Button label="Đọc lại thao tác trả xe" loading={action.checking} onPress={()=>{void action.checkPending();}}/>
-      <Button label="Mở Tài khoản để đối chiếu" secondary disabled={action.checking} onPress={action.openAccount}/>
+  if (!action.checked) return <SafeAreaView edges={['left', 'right', 'bottom']} style={{ flex: 1, backgroundColor: theme.background }}>
+    <KeyboardFormScrollView contentContainerStyle={{ padding: 20 }}><Card style={{ gap: 16 }}>
+      <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 23, fontWeight: '700' }}>Kiểm tra thao tác trên thiết bị</Text>
+      {!!action.error && <InlineError message={action.error} />}
+      <Button label="Đọc lại thao tác trả xe" loading={action.checking} onPress={() => { void action.checkPending(); }} />
+      <Button label="Mở Tài khoản để đối chiếu" secondary disabled={action.checking} onPress={action.openAccount} />
     </Card></KeyboardFormScrollView>{overlays}
   </SafeAreaView>;
-  if(action.key)return <SafeAreaView edges={['left','right','bottom']} style={{flex:1,backgroundColor:theme.background}}>
-    <KeyboardFormScrollView contentContainerStyle={{padding:20}}><Card style={{gap:16}}>
-      <Text accessibilityRole="header" style={{color:theme.text,fontSize:25,fontWeight:'800'}}>Trả xe đang chờ đối chiếu</Text>
-      <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>Kiểm tra phiếu gốc trước khi trả hoặc ghi tiền thêm. Nội dung đang nhập được giữ trong màn hình này.</Text>
-      {!!action.error&&<InlineError message={action.error}/>}
-      <Button label="Đối chiếu trả xe với máy chủ" loading={action.busy} onPress={()=>setResolving(true)}/>
-      <Button label="Mở phiếu trả xe" secondary disabled={action.busy} onPress={action.openReceipt}/>
+  if (action.key) return <SafeAreaView edges={['left', 'right', 'bottom']} style={{ flex: 1, backgroundColor: theme.background }}>
+    <KeyboardFormScrollView contentContainerStyle={{ padding: 20 }}><Card style={{ gap: 16 }}>
+      <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 25, fontWeight: '800' }}>Trả xe đang chờ đối chiếu</Text>
+      <Text style={{ color: theme.muted, fontSize: 16, lineHeight: 25 }}>Kiểm tra phiếu gốc trước khi trả hoặc ghi tiền thêm. Nội dung đang nhập được giữ trong màn hình này.</Text>
+      {!!action.error && <InlineError message={action.error} />}
+      <Button label="Đối chiếu trả xe với máy chủ" loading={action.busy} onPress={() => setResolving(true)} />
+      <Button label="Mở phiếu trả xe" secondary disabled={action.busy} onPress={action.openReceipt} />
     </Card></KeyboardFormScrollView>{overlays}
   </SafeAreaView>;
-  if(!data)return <><StateView title="Chuẩn bị trả xe" loading={query.isPending} message={query.isError?(query.error as Error).message:undefined} retry={query.isError?()=>{void query.refetch();}:undefined}/>{overlays}</>;
-  return <SafeAreaView edges={['left','right','bottom']} style={{flex:1,backgroundColor:theme.background}}>
+  if (!data) return <><StateView title="Chuẩn bị trả xe" loading={query.isPending} message={query.isError ? (query.error as Error).message : undefined} retry={query.isError ? () => { void query.refetch(); } : undefined} />{overlays}</>;
+  return <SafeAreaView edges={['left', 'right', 'bottom']} style={{ flex: 1, backgroundColor: theme.background }}>
 
       <KeyboardFormScrollView
         ref={scroll}
@@ -172,6 +178,10 @@ function ReturnForm({id}:{id:string}) {
             <RentalDateTime label="nhận xe thực tế" value={selected.returnedAt} disabled={locked} onChange={returnedAt=>editLine({returnedAt})}/>
             <FormField label="Đơn giá trễ mỗi giờ (VND)" value={selected.hourlyRate} keyboardType="number-pad" editable={!locked} maxLength={7} onChangeText={hourlyRate=>editLine({hourlyRate})}/>
             <FormField label="Phí trễ đã đối chiếu (VND, tùy chọn)" hint="Để trống để dùng phí gợi ý theo giờ/ngày. Chỉ nhập thay thế khi đã đối chiếu." value={selected.lateOverride} keyboardType="number-pad" editable={!locked} maxLength={13} onChangeText={lateOverride=>editLine({lateOverride})}/>
+            <View style={{flexDirection:'row',flexWrap:'wrap',gap:8}}>
+              <Button secondary label={selected.lateOverride==='0'?'Đã miễn phí quá hạn (0đ)':'Không thu phí quá hạn (0đ)'} disabled={locked} onPress={()=>editLine({lateOverride:selected.lateOverride==='0'?'':'0'})}/>
+              <Button secondary label="Ảnh & video trả xe" disabled={locked} onPress={()=>router.push({pathname:'/record-media/[entity]/[id]',params:{entity:'contracts',id}})}/>
+            </View>
             <FormField label="Phí sửa chữa (VND)" value={selected.repairFee} keyboardType="number-pad" editable={!locked} maxLength={13} onChangeText={repairFee=>editLine({repairFee})}/>
             <FormField label="Nội dung sửa chữa" value={selected.repairNote} multiline editable={!locked} maxLength={1000} onChangeText={repairNote=>editLine({repairNote})}/>
             {!data.ownership&&<FormField label="Giảm doanh thu trả sớm (VND)" value={selected.earlyDiscount} keyboardType="number-pad" editable={!locked} maxLength={13} onChangeText={earlyDiscount=>editLine({earlyDiscount})}/>}
@@ -209,7 +219,13 @@ function ReturnForm({id}:{id:string}) {
             <Text accessibilityRole="header" style={{color:theme.text,fontSize:21,fontWeight:'700'}}>Hoàn cọc</Text>
             <Text style={{color:theme.muted,fontSize:15,lineHeight:24}}>Đang giữ {money(fees.after.depositHeld)}. Chỉ hoàn khi đã nhận đủ xe và thu đủ công nợ.</Text>
             <ChoiceField label="Ghi hoàn cọc" value={depositRefund?'yes':'no'} choices={[{value:'no',label:'Chưa hoàn cọc'},{value:'yes',label:'Đã thực tế hoàn cọc'}]} disabled={locked||!fees.after.closesRental} onChange={v=>{setDepositRefund(v==='yes'?defaultMoney():null);clearReview();}}/>
-            {depositRefund&&moneyFields(depositRefund,setDepositRefund,'Hoàn cọc',true)}
+            {depositRefund?moneyFields(depositRefund,setDepositRefund,'Hoàn cọc',true):fees.after.depositHeld>0&&<>
+              <Text style={{color:theme.muted,fontSize:13.5,lineHeight:20}}>Có thể tải ảnh QR hoàn cọc hoặc nhập tài khoản nhận để kế toán đối chiếu hoàn sau.</Text>
+              {lines[0]&&<RefundQrReader id={id} itemId={lines[0].vehicle.id} value={deferredRecipient} onPendingChange={pending=>setQrPending(old=>old.deferred===pending?old:{...old,deferred:pending})} onRead={(fields,before)=>{setDeferredRecipient(old=>mergeMobileRefundRecipient(old,fields,before));clearReview();}}/>}
+              <FormField label="Ngân hàng nhận hoàn cọc (tùy chọn)" value={deferredRecipient.bank} editable={!locked} onChangeText={bank=>{setDeferredRecipient(old=>({...old,bank}));clearReview();}} maxLength={150}/>
+              <FormField label="Số tài khoản nhận hoàn cọc (tùy chọn)" value={deferredRecipient.recipientAccount} editable={!locked} onChangeText={recipientAccount=>{setDeferredRecipient(old=>({...old,recipientAccount}));clearReview();}} maxLength={150}/>
+              <FormField label="Tên chủ tài khoản nhận hoàn cọc (tùy chọn)" value={deferredRecipient.recipientName} editable={!locked} onChangeText={recipientName=>{setDeferredRecipient(old=>({...old,recipientName}));clearReview();}} maxLength={150}/>
+            </>}
           </Card>
           <Button label="Rà soát quyết toán" loading={previewing} disabled={locked&&!previewing||query.isError} onPress={()=>{void calculateSettlement();}}/>
           <Button label="Sửa giờ và phí xe" secondary disabled={locked} onPress={()=>{setStep(1);clearReview();top();}}/>

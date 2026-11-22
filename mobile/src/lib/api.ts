@@ -44,6 +44,8 @@ import type {
   MobileWorkspace,
   MobileCustomerInput,
   MobileCustomerProfile,
+  MobileCustomerDetail,
+  MobileCustomerPayment,
   MobileWriteReceipt,
   MobileDraftInput,
   MobileDraftOptions,
@@ -53,6 +55,7 @@ import type {
   MobileVehicleAvailability,
   MobileDraftStaff,
   MobileContractPreparation,
+  MobileContractDetail,
   MobileContractAction,
   MobileContractIssueInput,
 } from "@himoto/mobile-contract";
@@ -278,6 +281,7 @@ export function createApi(
     clockAttendance:(body:FormData)=>request('/attendance',isAttendanceReceipt,{method:'POST',body},45000),
     resolveAttendance:(key:string)=>request(`/attendance?request_id=${encodeURIComponent(key)}`,isAttendanceResolution),
     guideFaq:(params:string,signal?:AbortSignal)=>request(`/guide-faq?${params}`,isMobileGuideFaq,{signal}),
+    guideManual:(signal?:AbortSignal)=>request<{chapters:{id:string;title:string;body:string}[]}>('/guide-manual',(v):v is {chapters:{id:string;title:string;body:string}[]}=>!!v&&typeof v==='object'&&'chapters' in v&&Array.isArray(v.chapters)&&v.chapters.every(c=>!!c&&typeof c==='object'&&typeof c.id==='string'&&typeof c.title==='string'&&typeof c.body==='string'),{signal}),
     saveGuideFaq:(body:FormData)=>request<{success:true}>('/guide-faq',(v):v is {success:true}=>!!v&&typeof v==='object'&&'success'in v&&v.success===true,{method:'POST',body},60000),
     supportPhoto:(kind:'attendance'|'guide-faq',id:string,side?:'in'|'out')=>({uri:`${origin}/api/mobile/v1/${kind}?photo=${encodeURIComponent(id)}${side?'&side='+side:''}`,headers:authorization()}),
     refundQr:(id:string,bytes:ArrayBuffer)=>request<{fields:Partial<Record<'recipient_bank'|'recipient_account'|'recipient_name',string>>;warnings:string[]}>(`/contracts/${id}/refund-qr`,(v):v is {fields:Partial<Record<'recipient_bank'|'recipient_account'|'recipient_name',string>>;warnings:string[]}=>!!v&&typeof v==='object'&&'fields'in v&&!!v.fields&&typeof v.fields==='object'&&Object.entries(v.fields).every(([key,value])=>['recipient_bank','recipient_account','recipient_name'].includes(key)&&typeof value==='string'&&value.length<=150)&&'warnings'in v&&Array.isArray(v.warnings)&&v.warnings.every(w=>typeof w==='string'),{method:'POST',headers:{'Content-Type':'image/jpeg'},body:bytes},60000),
@@ -298,6 +302,7 @@ export function createApi(
     vehicleOptions: (signal?: AbortSignal) => request<MobileVehicleOptions>("/vehicles/options", isVehicleOptions, { signal }),
     fleetInventory:(query:string,signal?:AbortSignal)=>request<MobileFleetInventory>(`/vehicles/inventory?${query}`,isFleetInventory,{signal}),
     saveVehicle: (id: string | null, input: MobileVehicleInput, key: string) => request<MobileWriteReceipt>(`/vehicles${id === null ? "" : `/${encodeURIComponent(id)}`}`, (value): value is MobileWriteReceipt => isWriteReceipt(value) && (id === null || String(value.id) === id), { method: id === null ? "POST" : "PATCH", body: JSON.stringify(input), headers: { "Idempotency-Key": key } }),
+    deleteVehicle: (id: string) => request<{ id: number; deleted: true }>(`/vehicles/${encodeURIComponent(id)}`, (v): v is { id: number; deleted: true } => !!v && typeof v === "object" && "id" in v && String(v.id) === id && "deleted" in v && v.deleted === true, { method: "DELETE" }),
     vehicleResult: (key: string, signal?: AbortSignal) => request<MobileVehicleResult>(`/vehicles/requests/${encodeURIComponent(key)}`, (value): value is MobileVehicleResult => isVehicleResult(value) && value.key === key, { signal }),
     vehicleHistory: (id: string, params: string, signal?: AbortSignal) => request<MobileVehicleHistory>(`/vehicles/${encodeURIComponent(id)}/history?${params}`, (value): value is MobileVehicleHistory => isVehicleHistory(value) && String(value.id) === id, { signal }),
     transferHistory: (params: string, signal?: AbortSignal) => request<MobileTransferHistory>(`/vehicles/transfers?${params}`, isTransferHistory, { signal }),
@@ -318,6 +323,11 @@ export function createApi(
     batteryAction:(id:string,input:MobileBatteryAction,key:string)=>request<MobileWriteReceipt>(`/battery-contracts/${encodeURIComponent(id)}/actions`,(v):v is MobileWriteReceipt=>isWriteReceipt(v)&&String(v.id)===id,{method:"POST",body:JSON.stringify(input),headers:{"Idempotency-Key":key}}),
     deleteBattery:(id:string,revision:string,key:string)=>request<MobileWriteReceipt>(`/battery-contracts/${encodeURIComponent(id)}`,(v):v is MobileWriteReceipt=>isWriteReceipt(v)&&String(v.id)===id,{method:"DELETE",body:JSON.stringify({revision}),headers:{"Idempotency-Key":key}}),
     batteryResult:(key:string,signal?:AbortSignal)=>request<MobileBatteryResult>(`/battery-contracts/requests/${encodeURIComponent(key)}`,(v):v is MobileBatteryResult=>isBatteryResult(v)&&v.key===key,{signal}),
+    batteryPrintPreview:(input:MobileBatteryInput&{code?:string},signal?:AbortSignal)=>request<{html:string}>('/battery-contracts/print-preview',(v):v is {html:string}=>!!v&&typeof v==='object'&&'html' in v&&typeof v.html==='string',{method:'POST',body:JSON.stringify(input),signal},35000),
+    customerDetail:(id:string,signal?:AbortSignal)=>request<MobileCustomerDetail>(`/customers/${encodeURIComponent(id)}?detail=1`,(v):v is MobileCustomerDetail=>!!v&&typeof v==='object'&&'id' in v&&String(v.id)===id&&'code' in v&&typeof v.code==='string'&&'revision' in v&&typeof v.revision==='string'&&Array.isArray((v as {relatives?:unknown}).relatives),{signal}),
+    customerPayments:(id:string,signal?:AbortSignal)=>request<{id:number;rows:MobileCustomerPayment[]}>(`/customers/${encodeURIComponent(id)}/payments`,(v):v is {id:number;rows:MobileCustomerPayment[]}=>!!v&&typeof v==='object'&&'id' in v&&String(v.id)===id&&'rows' in v&&Array.isArray(v.rows),{signal}),
+    toggleCustomerBlacklist:(id:string,input:{blacklisted:boolean;revision:string})=>request<{id:number;status:string;revision:string}>(`/customers/${encodeURIComponent(id)}/blacklist`,(v):v is {id:number;status:string;revision:string}=>!!v&&typeof v==='object'&&'id' in v&&String(v.id)===id&&'status' in v&&typeof v.status==='string'&&'revision' in v&&typeof v.revision==='string',{method:'PATCH',body:JSON.stringify(input)}),
+    deleteCustomer:(id:string)=>request<{id:number;deleted:true}>(`/customers/${encodeURIComponent(id)}`,(v):v is {id:number;deleted:true}=>!!v&&typeof v==='object'&&'id' in v&&String(v.id)===id&&'deleted' in v&&v.deleted===true,{method:'DELETE'}),
     registrationMonth:(month:string,signal?:AbortSignal)=>request<RegistrationMonth>(`/duty-roster/registrations?${new URLSearchParams({month})}`,isRegistrationMonth,{signal}),
     registrationRange:(from:string,to:string,signal?:AbortSignal)=>request<RegistrationRange>(`/duty-roster/registrations?${new URLSearchParams({from,to})}`,(v):v is RegistrationRange=>isRegistrationRange(v)&&v.from===from&&v.to===to,{signal}),
     attendanceLocations:(signal?:AbortSignal)=>request<MobileAttendanceLocation[]>('/attendance/locations',isMobileAttendanceLocations,{signal}),
@@ -326,6 +336,7 @@ export function createApi(
     selfRegistration:(week:string,signal?:AbortSignal)=>request<SelfRegistrationWeek>(`/attendance/shift-registration?${new URLSearchParams({week})}`,isSelfRegistrationWeek,{signal}),
     saveSelfRegistration:(input:SelfRegistrationInput)=>request<SelfRegistrationWeek>('/attendance/shift-registration',isSelfRegistrationWeek,{method:'PUT',body:JSON.stringify(input)}),
     staffAccounts:(id:string,signal?:AbortSignal)=>request<MobileStaffAccount[]>(`/staff/${id}/accounts`,isMobileStaffAccounts,{signal}),
+    updateStaffAccount:(id:string,input:{account_id:number;login_name:string;revision:string;password?:string;confirmation?:string})=>request<{id:number;password_changed:boolean}>(`/staff/${encodeURIComponent(id)}/accounts`,(v):v is {id:number;password_changed:boolean}=>!!v&&typeof v==='object'&&'id'in v&&Number.isSafeInteger(v.id)&&'password_changed'in v&&typeof v.password_changed==='boolean',{method:'PATCH',body:JSON.stringify(input)}),
     shiftOptions:(signal?:AbortSignal)=>request<MobileShiftOptions>("/shift-reports/options",isShiftOptions,{signal}),
     shifts:(params:string,signal?:AbortSignal)=>request<{rows:ShiftReport[]}>(`/shift-reports?${params}`,(v):v is {rows:ShiftReport[]}=>!!v&&typeof v==="object"&&"rows" in v&&Array.isArray(v.rows)&&v.rows.every(isShiftReport),{signal,headers:{[SHIFT_STOCK_FORMAT_HEADER]:SHIFT_STOCK_PLATE_FORMAT}}),
     shift:(id:string,signal?:AbortSignal)=>request<ShiftReport>(`/shift-reports/${encodeURIComponent(id)}`,(v):v is ShiftReport=>isShiftReport(v)&&String(v.id)===id,{signal,headers:{[SHIFT_STOCK_FORMAT_HEADER]:SHIFT_STOCK_PLATE_FORMAT}}),
@@ -374,6 +385,7 @@ export function createApi(
       }
     },
     salesReportExport: (kind: SalesReportKind, params: string, signal?: AbortSignal) => request<MobileFileExport>(`/reports/${kind}/export?${params}&format=xlsx`, isMobileFileExport, { signal, headers: { Accept: `${WORKBOOK_MIME}, application/json` } }, 90000),
+    exportWorkbook: (input: { filename: string; headers: string[]; rows: (string | number | null)[][] }, signal?: AbortSignal) => request<MobileWorkbookExport>("/export-workbook", (v): v is MobileWorkbookExport => isMobileFileExport(v) && v.mimeType === WORKBOOK_MIME, { method: "POST", body: JSON.stringify(input), signal }, 90000),
     cashbookExport: (params: string, signal?: AbortSignal) => request<MobileCsvExport>(`/cashbook/export?${params}`, isMobileCsvExport, { signal }, 70000),
     cashbookExcel: (params:string,signal?:AbortSignal)=>request<MobileFileExport>(`/cashbook/export?${params}&format=xlsx`,isMobileFileExport,{signal,headers:{Accept:`${WORKBOOK_MIME}, application/json`}},70000),
     cashbookDeleteSelection: (params: string, signal?: AbortSignal) => request<VoucherDeleteSelection>(`/cashbook/vouchers/selection?${params}`, isVoucherDeleteSelection, { signal }, 70000),
@@ -573,8 +585,8 @@ export function createApi(
         (value):value is MobileCustomerOcr=>isMobileCustomerOcr(value,requestId,kind,expectedIdentity),
         {method:'POST',body,signal,headers:{'X-Photo-Kind':kind,'X-Ocr-Request':requestId,'X-Expected-Identity':expectedIdentity,
           ...(body instanceof FormData?{}:{'Content-Type':'image/jpeg'})}},45000),
-    draftPrintPreview: (input:MobileDraftInput, signal?:AbortSignal)=>
-      request('/drafts/print-preview',(value):value is {html:string}=>
+    draftPrintPreview: (input:MobileDraftInput, signal?:AbortSignal, draftId?:string|null)=>
+      request(`/drafts/print-preview${draftId&&/^[1-9]\d{0,14}$/.test(draftId)?`?id=${encodeURIComponent(draftId)}`:''}`,(value):value is {html:string}=>
         !!value&&typeof value==='object'&&'html' in value&&typeof value.html==='string'&&
         value.html.length<=2_097_152&&value.html.startsWith('<!doctype html>'),
       {method:'POST',body:JSON.stringify(input),signal},35000),
@@ -647,6 +659,9 @@ export function createApi(
       return v.result === null || isMobileContractCorrectionResult(v.result) && v.result.key === key && v.result.operation.startsWith(`correction.${kind}:`);
     }, { signal }),
     contractEdit: (id: string, signal?: AbortSignal) => request<MobileContractEditProfile>(`/contracts/${encodeURIComponent(id)}/edit`, (v): v is MobileContractEditProfile => isMobileContractEditProfile(v) && String(v.id) === id, { signal }),
+    contractDetail: (id: string, signal?: AbortSignal) => request<MobileContractDetail>(`/contracts/${encodeURIComponent(id)}/detail`, (v): v is MobileContractDetail => !!v && typeof v === 'object' && 'id' in v && String(v.id) === id && 'vehicles' in v && Array.isArray((v as { vehicles?: unknown }).vehicles), { signal }),
+    saveContractProfile: (id: string, body: Record<string, unknown>) => request<{ id: number; revision: string; code: string }>(`/contracts/${encodeURIComponent(id)}/profile`, (v): v is { id: number; revision: string; code: string } => !!v && typeof v === 'object' && 'id' in v && String(v.id) === id && 'revision' in v && typeof v.revision === 'string', { method: 'PATCH', body: JSON.stringify(body) }),
+    hideContract: (id: string) => request<{ id: number; hidden: true }>(`/contracts/${encodeURIComponent(id)}/hide`, (v): v is { id: number; hidden: true } => !!v && typeof v === 'object' && 'id' in v && String(v.id) === id && 'hidden' in v && v.hidden === true, { method: 'POST' }),
     saveContractEdit: (id: string, input: MobileContractEditInput, key: string) => request<MobileContractEditResult>(`/contracts/${encodeURIComponent(id)}/edit`, (v): v is MobileContractEditResult => isMobileContractEditResult(v) && v.key === key && String(v.receipt.id) === id, { method: 'PATCH', headers: { 'Idempotency-Key': key }, body: JSON.stringify(input) }),
     catalogueExportColumns: (kind: MobileCatalogueExportKind, filters: string, signal?: AbortSignal) => request<MobileExportColumns>(`/exports/${kind}/columns?${filters}`, (v): v is MobileExportColumns => isMobileExportColumns(v) && v.kind === kind, { signal }),
     storeMatchTemplate: (signal?: AbortSignal) => request<MobileFileExport>('/imports/customer-stores/template', isMobileFileExport, { signal }, 60000),

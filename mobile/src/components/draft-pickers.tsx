@@ -14,7 +14,7 @@ import type {
   MobileDraftVehicle,
 } from "@himoto/mobile-contract";
 import { useSession } from "@/providers/session";
-import { useTheme } from "@/theme";
+import { money, useTheme } from "@/theme";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { EditorSheet } from "./editor-sheet";
 import { Button, InlineError, StateView, StatusBadge } from "./ui";
@@ -361,7 +361,7 @@ export function DraftVehiclePicker({
   selectedIds: string[];
   lifecycleId?: string;
   onClose: () => void;
-  onPick: (row: MobileDraftVehicle) => void;
+  onPick: (row: MobileDraftVehicle, meta?: { dailyPrice?: number | null }) => void;
 }) {
   const theme = useTheme(),
     { api, session } = useSession();
@@ -443,11 +443,11 @@ export function DraftVehiclePicker({
             <View>
               <PickRow
                 title={`${item.vehicle.license} · ${item.vehicle.name}`}
-                subtitle={item.storeName}
+                subtitle={[item.storeName, item.dailyPrice != null ? `Giá ngày: ${money(item.dailyPrice)}` : ""].filter(Boolean).join(" · ")}
                 label={`Chọn xe ${item.vehicle.license}`}
                 selected={selectedIds.includes(item.vehicle.id)}
                 disabled={selectedIds.includes(item.vehicle.id) || !!lifecycleId && item.status !== 'ready'}
-                onPress={() => onPick(item.vehicle)}
+                onPress={() => onPick(item.vehicle, { dailyPrice: item.dailyPrice })}
               />
               <View style={{ paddingHorizontal: 18, paddingBottom: 10 }}>
                 <StatusBadge status={item.status} />
