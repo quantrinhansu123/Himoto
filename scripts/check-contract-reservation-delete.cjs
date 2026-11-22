@@ -6,16 +6,19 @@ const { requestPermission } = load(path.join(root, 'lib/server/access-request'))
 const { hasPermission, ACCESS_ROLES } = load(path.join(root, 'lib/management/permissions'));
 const { canEditIssuedContract } = load(path.join(root, 'lib/management/contract-profile'));
 const { ownerDatabase } = load(path.join(root, 'lib/server/himoto-database'));
+const { CONTRACT_OPERATION_PERMISSIONS } = load(path.resolve('shared/mobile-contract-operations'));
 
 (async () => {
   const checks = [];
-  assert.equal(requestPermission('/api/auth/order/car-rental/900/reservation', 'DELETE'), 'contracts.draft');
-  assert.equal(hasPermission({ permissions: ['contracts.read'] }, 'contracts.draft'), false);
-  assert(hasPermission({ permissions: [...ACCESS_ROLES.branch_staff.permissions] }, 'contracts.draft'));
+  const deletePermission = requestPermission('/api/auth/order/car-rental/900/reservation', 'DELETE');
+  assert.equal(deletePermission, CONTRACT_OPERATION_PERMISSIONS.delete_reservation);
   const staff = { access_role: 'branch_staff', store_id: 32, permissions: [...ACCESS_ROLES.branch_staff.permissions] };
+  assert.equal(hasPermission(staff, deletePermission), false);
+  assert(hasPermission({ access_role: 'accounting', permissions: ['contracts.delete'] }, deletePermission));
+  assert(hasPermission({ access_role: 'admin' }, deletePermission));
   assert(canEditIssuedContract(staff, 32));
   assert(canEditIssuedContract(staff, 33));
-  checks.push('Staff with contracts.draft may edit/delete deposit holds; reservation DELETE maps to contracts.draft');
+  checks.push('Web and app reservation deletion require the same contract-delete entitlement. Branch staff can still edit deposit holds.');
 
   const c = await ownerDatabase.connect();
   const tables = ['orders', 'order_vehicle_details', 'vehicles', 'transactions', 'stores'];

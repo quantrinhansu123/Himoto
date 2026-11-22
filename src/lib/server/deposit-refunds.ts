@@ -2,10 +2,10 @@ import 'server-only';
 import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import {
-  findPaymentAccount, paymentAccountMatchesMethod, type PaymentContext, type PaymentMethod,
+  findPaymentAccount, paymentAccountMatchesMethod, paymentAccounts, PAYMENT_METHODS, type PaymentContext, type PaymentMethod,
 } from '@/lib/management/contract-payments';
 import { hasPermission, canRecordContractPayment } from '@/lib/management/permissions';
-import type { DepositRefundRequest, DepositRefundState } from '@/lib/management/deposit-refunds';
+import { isDepositRefundRequestId, type DepositRefundRequest, type DepositRefundState } from '@/lib/management/deposit-refunds';
 import type { DataAccess } from './access-context';
 import { VEHICLE_ORDER_SQL } from './contract-classification';
 import { ContractPaymentError, parseContractPayment, readPaymentContext, recordContractPayment } from './contract-payments';
@@ -32,7 +32,7 @@ const canReview = (actor: Actor, storeId: number) => canRecordContractPayment(ac
 const fail = (message: string, status = 409): never => { throw new ContractPaymentError(message, status); };
 
 export function refundRequestId(value: unknown) {
-  if (typeof value !== 'string' || !/^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/i.test(value)) {
+  if (!isDepositRefundRequestId(value)) {
     throw new ContractPaymentError('Mã yêu cầu hoàn cọc chưa hợp lệ.');
   }
   return value.toLowerCase();
@@ -46,12 +46,13 @@ export function refundItemId(value: unknown) {
   return id;
 }
 
-async function returnedOrder(db: Database, actor: Actor, itemId: number, lock = false): Promise<Order> {
+async function returnedOrder(db: Database, actor: Actor, itemId: number, lock = false, orderId?: number): Promise<Order> {
   const { rows } = await db.query(`SELECT o.id,o.store_id,d.id AS item_id
     FROM himoto.orders o JOIN himoto.order_vehicle_details d ON d.order_id=o.id
     WHERE d.id=$1 AND d.completed_at IS NOT NULL AND d.deleted_at IS NULL
       AND o.deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}
-    ${lock ? 'FOR UPDATE OF o' : ''}`, [itemId]);
+      ${orderId === undefined ? '' : 'AND o.id=$2'}
+    ${lock ? 'FOR UPDATE OF o' : ''}`, orderId === undefined ? [itemId] : [itemId, orderId]);
   const row = rows[0];
   if (!row || !(canSubmit(actor, Number(row.store_id)) || canReview(actor, Number(row.store_id)))) {
     return fail('Không tìm thấy lượt trả xe trong cơ sở được phép xử lý hoàn cọc.', 404);
@@ -61,7 +62,7 @@ async function returnedOrder(db: Database, actor: Actor, itemId: number, lock = 
 
 function mapRequest(row: Record<string, unknown>): DepositRefundRequest {
   return {
-    id: String(row.id), order_id: Number(row.order_id), code: String(row.code), store: String(row.store),
+    id: String(row.id), order_id: Number(row.order_id), item_id: Number(row.item_id), code: String(row.code), store: String(row.store),
     actor_id: Number(row.created_by), actor: String(row.actor), reviewer: String(row.reviewer), status: row.status as DepositRefundRequest['status'],
     amount: Number(row.amount), method: row.method as PaymentMethod, account_label: String(row.account_label),
     paid_at: String(row.paid_at), reason: String(row.reason), review_reason: String(row.review_reason),
@@ -107,8 +108,8 @@ async function todayAndClosed(db: Database, storeId: number, day?: string) {
   return rows[0] as { today: string; closed: boolean };
 }
 
-export async function readDepositRefundState(db: Database, actor: Actor, itemId: number): Promise<DepositRefundState> {
-  const order = await returnedOrder(db, actor, itemId);
+export async function readDepositRefundState(db: Database, actor: Actor, itemId: number, orderId?: number): Promise<DepositRefundState> {
+  const order = await returnedOrder(db, actor, itemId, false, orderId);
   const context = await readPaymentContext(db, order.id, { page: 1, size: 0 });
   const existing = await vouchers(db, order.id);
   const { closed } = await todayAndClosed(db, order.store_id);
@@ -119,11 +120,9 @@ export async function readDepositRefundState(db: Database, actor: Actor, itemId:
     can_send_telegram: hasPermission(actor, 'contracts.return'),
     blocked_reason: eligibility(context) || (!existing.length && !context.deposit_held ? 'Hợp đồng không còn tiền cọc để bổ sung.' : ''),
     review_reason: closed ? 'Báo cáo cuối ca hôm nay đã chốt. Khoản bổ sung cần kế toán duyệt.' : '',
-    accounts: context.accounts.map(account => ({
-      id: account.id,
-      method: account.kind === 'cash' ? 'cash' : account.owner_type === 'company' ? 'company_transfer' : 'transfer',
-      label: account.label,
-    })),
+    accounts: PAYMENT_METHODS.flatMap(({value: method}) => paymentAccounts(context, method).map(account => ({
+      id: account.id, method, label: account.label,
+    }))),
     vouchers: existing, requests: rows.map(mapRequest),
   };
 }
@@ -148,6 +147,12 @@ function paymentFor(context: PaymentContext, input: { id: string; amount: string
     request_id: input.id, revision: context.revision, amount: input.amount, method: input.method,
     account_id: input.account_id, paid_at: input.paid_at, note: input.reason, purpose: 'deposit_refund',
   });
+}
+
+export async function readDepositRefundRequest(db: Database, actor: Actor, id: string): Promise<DepositRefundRequest | null> {
+  const row = await findRequest(db, id);
+  if (!row || !(canSubmit(actor, Number(row.store_id)) || canReview(actor, Number(row.store_id)))) return null;
+  return mapRequest(row);
 }
 
 function validAmountAndAccount(context: PaymentContext, payment: ReturnType<typeof paymentFor>, previous?: Voucher) {
@@ -199,8 +204,8 @@ export type DepositRefundSubmission = {
   replaces_revision: string | null;
 };
 
-export async function submitDepositRefund(db: Database, actor: Actor, input: DepositRefundSubmission) {
-  const order = await returnedOrder(db, actor, input.item_id, true);
+export async function submitDepositRefund(db: Database, actor: Actor, input: DepositRefundSubmission, orderId?: number) {
+  const order = await returnedOrder(db, actor, input.item_id, true, orderId);
   if (!canSubmit(actor, order.store_id)) return fail('Tài khoản chưa có quyền bổ sung hoàn cọc ở cơ sở này.', 403);
   const { evidence, ...fields } = input;
   const hash = createHash('sha256').update(JSON.stringify({ actor: actor.id, ...fields })).update(evidence).digest('hex');

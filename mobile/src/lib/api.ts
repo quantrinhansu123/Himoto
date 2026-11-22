@@ -23,6 +23,10 @@ import { isMobileContractHistory, type MobileContractHistory } from '../../../sh
 import { isMobileOwnershipTerms, isMobileOwnershipTermsResult, type MobileOwnershipTerms, type MobileOwnershipTermsInput, type MobileOwnershipTermsResult } from '../../../shared/mobile-ownership-terms';
 import { isMobileDraftDeleteReview, isMobileDraftDeleteResult, type MobileDraftDeleteReview, type MobileDraftDeleteInput, type MobileDraftDeleteResult } from '../../../shared/mobile-draft-delete';
 import { isMobileReturnCorrectionOptions, isMobileReturnCorrectionProfile, isMobileReturnCorrectionResult, type MobileReturnCorrectionOptions, type MobileReturnCorrectionProfile, type MobileReturnCorrectionInput, type MobileReturnCorrectionResult } from '../../../shared/mobile-return-corrections';
+import { isDepositRefundRequest, isDepositRefundQueuePage, isDepositRefundState, type DepositRefundDecision, type DepositRefundRequest, type DepositRefundState } from '../../../shared/deposit-refunds';
+import { isContractOperationContext, type ContractOperation, type ContractOperationContext, type ContractOperationInput } from '../../../shared/mobile-contract-operations';
+import { isCollectionReport, isCollectionFollowupView, type CollectionFollowup, type CollectionFollowupView } from '../../../shared/collection-report';
+import { isSePayReceiptEvents } from '../../../shared/sepay-events';
 import { isMobileLifecycleContext, isMobileLifecyclePreview, isMobileLifecycleInventory, isMobileLifecycleResult, type MobileLifecycleContext, type MobileLifecycleInput, type MobileLifecyclePreview, type MobileLifecycleInventory, type MobileLifecycleResult } from '../../../shared/mobile-contract-lifecycle';
 import { isMobileReceiptCorrections, isMobileRenewalCorrections, isMobileContractCorrectionResult, type MobileCorrectionKind, type MobileReceiptCorrections, type MobileRenewalCorrections, type MobileReceiptCorrectionInput, type MobileRenewalCorrectionInput, type MobileContractCorrectionResult } from '../../../shared/mobile-contract-corrections';
 import { isMobileContractEditProfile, isMobileContractEditResult, type MobileContractEditInput, type MobileContractEditProfile, type MobileContractEditResult } from "../../../shared/mobile-contract-edit";
@@ -580,6 +584,48 @@ export function createApi(
       }),
     returnCorrectionOptions: (id: string, page = 1, signal?: AbortSignal) => request<MobileReturnCorrectionOptions>(`/contracts/${encodeURIComponent(id)}/return-corrections?page=${page}`, (v): v is MobileReturnCorrectionOptions => isMobileReturnCorrectionOptions(v) && String(v.id) === id && v.page === Math.min(page, v.pages), { signal }),
     returnCorrection: (id: string, itemId: string, signal?: AbortSignal) => request<MobileReturnCorrectionProfile>(`/contracts/${encodeURIComponent(id)}/return-corrections/${encodeURIComponent(itemId)}`, (v): v is MobileReturnCorrectionProfile => isMobileReturnCorrectionProfile(v) && String(v.id) === id && String(v.anchorItemId) === itemId, { signal }),
+    contractOperation: (id: string, action: ContractOperation, signal?: AbortSignal) =>
+      request(`/contracts/${encodeURIComponent(id)}/operations/${action}`, (v): v is ContractOperationContext =>
+        isContractOperationContext(v) && String(v.id) === id && v.action === action, { signal }),
+    saveContractOperation: (id: string, action: ContractOperation, input: ContractOperationInput, key: string) =>
+      request(`/contracts/${encodeURIComponent(id)}/operations/${action}`, (v): v is MobileWriteReceipt =>
+        isWriteReceipt(v) && String(v.id) === id,
+      { method: 'POST', body: JSON.stringify(input), headers: { 'Idempotency-Key': key } }, 45000),
+    depositRefund: (id: string, itemId: string, signal?: AbortSignal) =>
+      request(`/contracts/${encodeURIComponent(id)}/deposit-refunds/${encodeURIComponent(itemId)}`, (v): v is DepositRefundState =>
+        isDepositRefundState(v) && v.requests.every(row => String(row.order_id) === id), { signal }),
+    saveDepositRefund: (id: string, itemId: string, body: FormData, key: string) =>
+      request(`/contracts/${encodeURIComponent(id)}/deposit-refunds/${encodeURIComponent(itemId)}`, (v): v is DepositRefundRequest =>
+        isDepositRefundRequest(v) && v.id === key && String(v.order_id) === id && String(v.item_id) === itemId,
+      { method: 'POST', body, headers: { 'Idempotency-Key': key } }, 60000),
+    depositRefundQueue: (page: number, signal?: AbortSignal) =>
+      request(`/deposit-refunds?page=${page}`, isDepositRefundQueuePage, { signal }),
+    depositRefundRequest: (id: string, signal?: AbortSignal) =>
+      request(`/deposit-refunds/${encodeURIComponent(id)}`, (v): v is DepositRefundRequest =>
+        isDepositRefundRequest(v) && v.id === id, { signal }),
+    decideDepositRefund: (id: string, decision: DepositRefundDecision, note: string) =>
+      request(`/deposit-refunds/${encodeURIComponent(id)}`, (v): v is DepositRefundRequest =>
+        isDepositRefundRequest(v) && v.id === id && v.status === (decision === 'approve' ? 'approved' : 'rejected'),
+      { method: 'PATCH', body: JSON.stringify({ decision, note }) }, 45000),
+    depositRefundEvidence: (id: string) => ({
+      uri: `${origin}/api/mobile/v1/deposit-refunds/${encodeURIComponent(id)}?evidence=1`, headers: authorization(),
+    }),
+    collectionReport: (store: string, signal?: AbortSignal) =>
+      request(`/collection-report?store=${encodeURIComponent(store)}`, isCollectionReport, { signal }),
+    collectionReportExcel: (params: URLSearchParams, signal?: AbortSignal) =>
+      request(`/collection-report/export?${params.toString()}`, isMobileFileExport, { signal, headers: { Accept: `${WORKBOOK_MIME}, application/json` } }, 70000),
+    collectionFollowup: (id: string, signal?: AbortSignal) =>
+      request(`/collection-report/followups/${encodeURIComponent(id)}`, (v): v is CollectionFollowupView =>
+        isCollectionFollowupView(v) && String(v.id) === id, { signal }),
+    saveCollectionFollowup: (id: string, input: Omit<CollectionFollowup, 'updated_at'>) =>
+      request(`/collection-report/followups/${encodeURIComponent(id)}`, (v): v is { revision: number } =>
+        !!v && typeof v === 'object' && 'revision' in v && v.revision === input.revision + 1,
+      { method: 'PATCH', body: JSON.stringify({ ...input, order_id: Number(id) }) }),
+    sendCollectionReport: (store: number, hash: string) =>
+      request('/collection-report', (v): v is { queued: number } =>
+        !!v && typeof v === 'object' && 'queued' in v && Number.isSafeInteger(v.queued) && Number(v.queued) > 0,
+      { method: 'POST', body: JSON.stringify({ store_id: store, hash }) }, 45000),
+    sepayEvents: (after = 0, signal?: AbortSignal) => request(`/payment-events?after=${after}`, isSePayReceiptEvents, { signal }),
     saveReturnCorrection: (id: string, input: MobileReturnCorrectionInput, key: string) => request<MobileReturnCorrectionResult>(`/contracts/${encodeURIComponent(id)}/return-corrections`, (v): v is MobileReturnCorrectionResult => isMobileReturnCorrectionResult(v) && v.key === key && String(v.receipt.id) === id, { method: 'PATCH', headers: { 'Idempotency-Key': key }, body: JSON.stringify(input) }),
     returnCorrectionResult: (key: string, signal?: AbortSignal) => request<{ result: MobileReturnCorrectionResult | null }>(`/return-corrections/requests/${encodeURIComponent(key)}`, (v): v is { result: MobileReturnCorrectionResult | null } => {
       if (!v || typeof v !== 'object' || !('result' in v)) return false;

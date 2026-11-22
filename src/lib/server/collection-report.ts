@@ -7,6 +7,11 @@ import { VEHICLE_GPS_JOIN_SQL } from './vehicle-gps-query';
 import { CONTACT_STATUSES,HANDLING_STATUSES,type CollectionRow } from '@/lib/management/collection-report';
 import { GPS_STATE_LABELS } from '@/lib/management/gps';
 import { vietnamDate } from '@/lib/management/duty-roster';
+import { queueReportTelegram } from './report-telegram';
+import { CollectionFollowupError } from './collection-followups';
+
+const deliveryKeys = (store:string|number, date:string, hash:string, count:number) =>
+  Array.from({length:count},(_,i)=>`debt:${store}:${date}:${hash}:${i}`);
 
 type Database=Pick<PoolClient,'query'>;
 export async function readCollectionReport(db:Database,store:string) {
@@ -23,7 +28,7 @@ export async function readCollectionReport(db:Database,store:string) {
     const m=byId.get(row.id)||{},number=(value:unknown)=>value===undefined||value===null||value===''||!Number.isFinite(Number(value))?null:Number(value);
     return {id:row.id,code:row.code,customer:String(row.customer_name||''),phone:String(row.customer_phone||''),store_id:Number(row.store_id),store_name:String(row.store_name||''),vehicle:String(row.license||''),started_at:String(row.start_date||''),due_at:String(row.billing_plan_json?row.billing_overdue_at||row.billing_next_due_at||'':row.end_date||''),days:Number(row.overdue_days||0),amount:number(row.billing_plan_json?row.billing_due_amount:row.rental_debt_amount),late_fee:number(row.overdue_fee_estimate),
       gps:m.gps_states||[],customer_status:row.status==='completed'&&row.bad_debt_closed_at?'Đã đóng · còn công nợ':Number(m.customer_status)===2?'Nợ xấu':m.warning?'Cảnh báo':row.status==='bad_debt'?'Nợ xấu':'Bình thường',
-      followup:{contact_status:m.contact_status||'uncontacted',handling_status:m.handling_status||'branch',customer_condition:m.customer_condition||'',notes:m.notes||'',revision:Number(m.revision||0),updated_at:m.updated_at}};
+      followup:{contact_status:m.contact_status||'uncontacted',handling_status:m.handling_status||'branch',customer_condition:m.customer_condition||'',notes:m.notes||'',revision:Number(m.revision||0),...(m.updated_at?{updated_at:new Date(m.updated_at).toISOString()}:{})}};
   }).sort((a,b)=>b.days-a.days||a.id-b.id);
   return {rows:data,read_at:new Date().toISOString()};
 }
@@ -40,4 +45,24 @@ export function collectionReportMessages(rows:CollectionRow[],storeName:string,d
   }
   chunks.push(chunk);
   return {messages:chunks,hash:createHash('sha256').update(JSON.stringify(chunks)).digest('hex')};
+}
+
+export async function readCollectionReportView(db:Database,store:string) {
+  const data=await readCollectionReport(db,store),date=vietnamDate();
+  const storeName=store==='all'?'Toàn hệ thống':String((await db.query('SELECT store_name FROM himoto.stores WHERE id=$1',[store])).rows[0]?.store_name||'PGD');
+  const preview=collectionReportMessages(data.rows,storeName,date);
+  const keys=deliveryKeys(store,date,preview.hash,preview.messages.length);
+  const deliveries=store==='all'?[]:(await db.query('SELECT status,message_id FROM himoto.management_report_deliveries WHERE delivery_key=ANY($1::text[])',[keys])).rows;
+  return {...data,...preview,deliveries};
+}
+
+export async function queueCollectionReport(db:Database,storeId:number,hash:string) {
+  const store=(await db.query('SELECT store_name FROM himoto.stores WHERE id=$1',[storeId])).rows[0];
+  if(!store)throw new CollectionFollowupError('PGD nằm ngoài phạm vi được phân công.',403);
+  const report=await readCollectionReport(db,String(storeId)),date=vietnamDate();
+  const preview=collectionReportMessages(report.rows,store.store_name,date);
+  if(preview.hash!==hash)throw new CollectionFollowupError('Báo cáo đã thay đổi. Làm mới và kiểm tra trước khi gửi.',409);
+  const keys=deliveryKeys(storeId,date,preview.hash,preview.messages.length);
+  for(const [index,text] of preview.messages.entries())await queueReportTelegram(db,keys[index],storeId,text,'store');
+  return keys;
 }

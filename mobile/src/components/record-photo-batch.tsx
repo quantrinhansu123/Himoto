@@ -12,7 +12,9 @@ import type {RecordMediaPhoto} from '@/lib/record-media-photo';
 export function RecordPhotoBatch({target,slot,onPrepared,onPendingChange,onBusyChange,showTelegram=true,queueId,allowSave=true,disabled=false,autoSave=false}:{target:MobileMediaIdentity;slot:string;onPrepared?:(photo:RecordMediaPhoto,index:number)=>Promise<void>;onPendingChange?:(pending:boolean)=>void;onBusyChange?:(busy:boolean)=>void;showTelegram?:boolean;queueId?:string;allowSave?:boolean;disabled?:boolean;autoSave?:boolean}){
   const{api}=useSession(),cache=useQueryClient(),base=photoBaseSlot(slot),identityKey=queueId??JSON.stringify([target,base]);
   const nextHint=useRef<{identity:string;slot:string|null}>({identity:'',slot:null});
-  const telegram=target.entity==='contracts'?()=>router.push({pathname:'/contract-telegram/[id]',params:{id:String(target.id)}}):target.entity==='vehicles'&&['transfer','receive'].includes(target.kind)?()=>router.push({pathname:'/transfer-telegram/[id]/[eventId]',params:{id:String(target.id),eventId:String(target.referenceId)}}):undefined;
+  const telegram=target.entity==='contracts'?()=>router.push({pathname:'/contract-telegram/[id]',params:{id:String(target.id),
+    ...(target.kind==='return'?{eventKind:'return',returnItemId:String(target.referenceId)}:target.kind==='battery_swap'
+      ?{event:`battery-swap:${target.id}:${target.referenceId}`,onlyEvent:'1'}:{})}}):target.entity==='vehicles'&&['transfer','receive'].includes(target.kind)?()=>router.push({pathname:'/transfer-telegram/[id]/[eventId]',params:{id:String(target.id),eventId:String(target.referenceId)}}):undefined;
   return <PhotoBatch allowSave={allowSave} autoSave={autoSave} disabled={disabled} onBusyChange={onBusyChange} adapter={{identity:identityKey,label:'Chọn và lưu bộ ảnh',operation:mediaOperation(target.entity,target.id),conflicts:mediaMutationOperations(target.entity,target.id),
     prepare:async row=>{
       if(row.recordId!==undefined&&row.recordId!==target.id)throw Error('Bộ ảnh thuộc hồ sơ gốc khác. Giữ nguyên để đối chiếu.');

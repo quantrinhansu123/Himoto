@@ -2,10 +2,12 @@ const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
+const { NextRequest } = require('next/server');
+const sharp = require('sharp');
 const { load, root } = require('./lib/load-typescript.cjs');
 require('@next/env').loadEnvConfig(process.cwd(), false, { info() {}, error() {} });
 
-const { ownerDatabase } = load(path.join(root, 'lib/server/himoto-database'));
+const { ownerDatabase, himotoPool } = load(path.join(root, 'lib/server/himoto-database'));
 const {
   submitDepositRefund, decideDepositRefund, readDepositRefundState, readDepositRefundEvidence, listDepositRefundRequests,
 } = load(path.join(root, 'lib/server/deposit-refunds'));
@@ -29,13 +31,16 @@ async function main() {
     await client.query('BEGIN');
     await client.query(`CREATE SCHEMA ${schema}`);
     for (const table of ['orders','customers','stores','users','vehicles','order_vehicle_details','transactions','banks','cash',
-      'management_contract_payments','management_contract_notifications','management_record_photos','management_contract_vehicle_swaps',
+      'management_contract_payments','management_contract_notifications','management_record_photos','management_contract_vehicle_swaps','management_mobile_requests',
       'staff_profiles','management_shift_reports','battery_contracts']) {
       await client.query(`CREATE TABLE ${schema}.${table}(LIKE himoto.${table} INCLUDING DEFAULTS INCLUDING INDEXES)`);
     }
     await db.query(`CREATE SEQUENCE himoto.qa_transaction_ids START 10000;
       ALTER TABLE himoto.transactions ALTER COLUMN id SET DEFAULT nextval('himoto.qa_transaction_ids');
       CREATE VIEW himoto.staff_account_attribution AS SELECT id,user_id,full_name,store_id FROM himoto.staff_profiles;
+      CREATE FUNCTION himoto.contract_vehicles_for_orders(order_ids bigint[]) RETURNS SETOF himoto.vehicles
+        LANGUAGE sql STABLE AS 'SELECT v.* FROM himoto.vehicles v WHERE EXISTS (
+          SELECT 1 FROM himoto.order_vehicle_details d WHERE d.order_id=ANY(order_ids) AND d.vehicle_id=v.id)';
       INSERT INTO himoto.stores(id,store_name) VALUES(23,'QA Branch'),(31,'QA Other');
       INSERT INTO himoto.users(id,name,email,password,role_id) VALUES
         (143,'QA Branch Staff','refund-staff@example.invalid','unused',1),(144,'QA Finance','refund-finance@example.invalid','unused',1);
@@ -113,6 +118,59 @@ async function main() {
     await assert.rejects(() => correctReturn(db, staff.id, legacyEdit, { useDepositRefundWorkflow: true }), predicate(409));
     assert.equal(await transactionCount(1), 2);
     console.log('Pass: scoped evidence, open and closed shift, duplicate prevention, queue permissions, review, replacement, Telegram and web edit guard (rolled back).');
+
+    const descriptor = Object.getOwnPropertyDescriptor(himotoPool, 'connect');
+    Object.defineProperty(himotoPool, 'connect', { configurable: true, value: async () => ({
+      query: (sql, values) => db.query(
+        /^BEGIN/.test(sql) ? 'SAVEPOINT mobile_refund' : sql === 'COMMIT' ? 'RELEASE SAVEPOINT mobile_refund'
+          : sql === 'ROLLBACK' ? 'ROLLBACK TO SAVEPOINT mobile_refund; RELEASE SAVEPOINT mobile_refund' : sql, values),
+      release() {},
+    }) });
+    try {
+      const mobile = load(path.join(root, 'lib/server/mobile-deposit-refunds'));
+      const recovery = load(path.join(root, 'lib/server/mobile-write-recovery'));
+      const dto = load(path.resolve('shared/deposit-refunds'));
+      const actor = { ...staff, store_id: 31, permissions: ['contracts.read', 'contracts.return'] };
+      const jpeg = await sharp({ create: { width: 4,height: 4,channels: 3,background: '#f2f2f2' } }).jpeg().toBuffer();
+      const formRequest = (key, overrides = {}) => {
+        const body = new FormData();
+        for (const [name,value] of Object.entries({ id:key,item_id:'1003',amount:'2000000',method:'cash',account_id:'98',paid_at:paidAt,reason:'Synthetic app receipt', ...overrides })) body.set(name,value);
+        body.set('evidence',new Blob([jpeg],{type:'image/jpeg'}),'qa.jpg');
+        return new NextRequest('https://qa.invalid/api/mobile/v1/contracts/3/deposit-refunds/1003',{method:'POST',headers:{'Idempotency-Key':key},body});
+      };
+      const json = (body,method='PATCH') => new NextRequest('https://qa.invalid/api/mobile/v1/deposit-refunds',{
+        method,headers:{'Content-Type':'application/json'},body:JSON.stringify(body),
+      });
+      const initial = await mobile.mobileDepositRefundState(actor,'3','1003');
+      assert(dto.isDepositRefundState(initial));assert.equal(initial.held,2000000);
+      await assert.rejects(() => mobile.mobileDepositRefundState(actor,'2','1003'),predicate(404));
+      const cancelledKey=randomUUID();
+      assert.equal((await recovery.resolveMobileWrite(actor,cancelledKey,json({operation:'return.refund:3'},'POST'))).status,'cancelled');
+      await assert.rejects(() => mobile.saveMobileDepositRefund(actor,'3','1003',formRequest(cancelledKey)),error=>error.code==='REQUEST_CANCELLED');
+      const key = randomUUID();
+      const saved = await mobile.saveMobileDepositRefund(actor,'3','1003',formRequest(key));
+      assert(dto.isDepositRefundRequest(saved));assert.equal(saved.status,'posted');
+      assert.deepEqual(await mobile.saveMobileDepositRefund(actor,'3','1003',formRequest(key)),saved);
+      assert.equal(await transactionCount(3),1);
+      assert.equal((await recovery.resolveMobileWrite(actor,key,json({operation:'return.refund:3'},'POST'))).status,'committed');
+      await assert.rejects(() => mobile.mobileDepositRefundRequest({...actor,store_id:23},key,new URLSearchParams('evidence=1')),predicate(404));
+      assert((await mobile.mobileDepositRefundRequest(actor,key,new URLSearchParams('evidence=1'))).evidence.length > 0);
+      const refundVoucher=(await mobile.mobileDepositRefundState(actor,'3','1003')).vouchers[0];
+      const replacementKey=randomUUID();
+      const pending=await mobile.saveMobileDepositRefund(actor,'3','1003',formRequest(replacementKey,{amount:'1800000',
+        replaces_id:String(refundVoucher.id),replaces_revision:refundVoucher.revision}));
+      assert.equal(pending.status,'pending');assert.equal(await transactionCount(3),1);
+      assert.deepEqual((await mobile.mobileDepositRefundQueue(finance,new URLSearchParams())).rows.map(row=>row.id),[replacementKey]);
+      await assert.rejects(() => mobile.decideMobileDepositRefund({...finance,id:actor.id},replacementKey,json({decision:'approve'})),predicate(403));
+      const final=await mobile.decideMobileDepositRefund(finance,replacementKey,json({decision:'approve'}));
+      assert.equal(final.status,'approved');
+      assert.match(await preview(3,1003),/Hoàn cọc: 1\.800\.000/);
+      assert.equal((await ledger(3)).filter(row=>row.status==='approved').length,1);
+      console.log('Pass: app multipart proof, order binding, write recovery, replay, branch scoping and finance replacement on the same vouchers (rolled back).');
+    } finally {
+      if (descriptor) Object.defineProperty(himotoPool,'connect',descriptor);
+      else delete himotoPool.connect;
+    }
   } finally {
     await client.query('ROLLBACK').catch(() => {});
     client.release();

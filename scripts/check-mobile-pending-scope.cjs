@@ -19,7 +19,7 @@ function createStore() {
 const scope = { origin: "https://mobile-api.example.invalid", userId: 7, storeId: 23, allStores: false };
 const globalScope = { ...scope, storeId: null, allStores: true };
 async function run() {
-  for (const operation of ["contract.edit:101", "correction.receipts:101", "correction.renewal:101", "lifecycle.hold:101", "lifecycle.resume:101", "lifecycle.settle:101", "gps.mapping:101", "media.customer:101", "media.contract:101", "media.vehicle:101", "payment.record:101", "renewal.bill:101", "return.record:101", "return.swap:101", "return.recover:101", "vehicle.transfer:101", "vehicle.receive:101", "vehicle.reject:101", "vehicle.cancel:101", "customer.update:101", "draft.update:101", "contract.finalize:101", "contract.handover:101"]) {
+  for (const operation of ["contract.edit:101", "correction.receipts:101", "correction.renewal:101", "lifecycle.hold:101", "lifecycle.resume:101", "lifecycle.settle:101", "gps.mapping:101", "media.customer:101", "media.contract:101", "media.vehicle:101", "payment.record:101", "renewal.bill:101", "return.record:101", "return.swap:101", "return.recover:101", "return.refund:101", "vehicle.transfer:101", "vehicle.receive:101", "vehicle.reject:101", "vehicle.cancel:101", "customer.update:101", "draft.update:101", "contract.finalize:101", "contract.handover:101", "contract.no_show:101", "contract.delete_reservation:101", "contract.battery_swap:101", "contract.payment_settlement:101"]) {
     values.clear(); let store = createStore(), generated = 0;
     await store.reserve(scope, operation, () => keys[0]);
     store = createStore();

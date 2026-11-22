@@ -6,7 +6,7 @@ import { validDraftTime } from './mobile-draft-validation';
 export interface MobileReturnCorrectionOptions { id: number; code: string; page: number; pages: number; total: number; rows: { itemId: number; vehicleId: number; license: string; name: string; returnedAt: string }[] }
 export interface MobileReturnCorrectionProfile {
   id: number; anchorItemId: number; code: string; customer: string; revision: string; eventKey: string; note: string; blockedReason: string | null;
-  previousAdjustment: number; totalAmount: number | null; rentalPaid: number | null; depositHeld: number; billing: boolean;
+  previousAdjustment: number; totalAmount: number | null; rentalPaid: number | null; depositHeld: number; billing: boolean; allReturned?: boolean;
   lines: { id: number; vehicleId: number; revision: string; license: string; name: string; startsAt: string | null; scheduledReturnAt: string | null; returnedAt: string; reconciled: boolean; lateFee: number; repairFee: number; repairNote: string; earlyDiscount: number; hourlyRate: number }[];
   accounts: MobileCorrectionAccount[]; settlement: MobileReturnSettlement & { revision: string };
 }
@@ -36,6 +36,7 @@ export function isMobileReturnCorrectionOptions(v: unknown): v is MobileReturnCo
 export function isMobileReturnCorrectionProfile(v: unknown): v is MobileReturnCorrectionProfile {
   return object(v) && id(v.id) && id(v.anchorItemId) && typeof v.revision === 'string' && /^[a-f0-9]{64}$/.test(v.revision) && ['code', 'customer', 'eventKey', 'note'].every(k => text(v[k])) &&
     (v.blockedReason === null || text(v.blockedReason)) && typeof v.previousAdjustment === 'number' && Number.isSafeInteger(v.previousAdjustment) && amount(v.totalAmount) && amount(v.rentalPaid) && nonnegative(v.depositHeld) && typeof v.billing === 'boolean' &&
+    (v.allReturned === undefined || typeof v.allReturned === 'boolean') &&
     Array.isArray(v.lines) && v.lines.length > 0 && v.lines.length <= 50 && v.lines.every(l => object(l) && id(l.id) && id(l.vehicleId) && revision(l.revision) && text(l.license) && text(l.name) && (l.startsAt === null || stamp(l.startsAt)) && (l.scheduledReturnAt === null || stamp(l.scheduledReturnAt)) && stamp(l.returnedAt) && typeof l.reconciled === 'boolean' && text(l.repairNote) && ['lateFee', 'repairFee', 'earlyDiscount', 'hourlyRate'].every(k => nonnegative(l[k]))) && v.lines.some(l => l.id === v.anchorItemId) && new Set(v.lines.map(l => l.id)).size === v.lines.length &&
     Array.isArray(v.accounts) && v.accounts.every(a => object(a) && id(a.id) && method(a.method) && text(a.label)) && new Set(v.accounts.map(a => `${a.method}:${a.id}`)).size === v.accounts.length && settlement(v.settlement);
 }

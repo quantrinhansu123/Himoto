@@ -219,6 +219,12 @@ export function ContractDetailView({
                 onPress={() => router.push({ pathname: "/draft/[id]", params: { id } })}
               />
             )}
+            {record.status === 'deposit_contract' && permissions.includes('contracts.finalize') &&
+              <Button secondary label="Khách không đến nhận xe"
+                onPress={() => router.push({ pathname: '/contract-operation/[action]/[id]', params: { id, action: 'no_show' } })} />}
+            {record.status === 'deposit_contract' && permissions.includes('contracts.delete') &&
+              <Button secondary label="Xóa hợp đồng cọc"
+                onPress={() => router.push({ pathname: '/contract-operation/[action]/[id]', params: { id, action: 'delete_reservation' } })} />}
           </Card>
         )}
 
@@ -519,6 +525,11 @@ export function ContractDetailView({
                 icon={<BatteryCharging size={16} color={theme.text} />}
                 onPress={() => router.push({ pathname: "/battery-contracts", params: { source: id } })}
               />
+              {!isDraft && <Button secondary label="Đổi pin theo hợp đồng xe"
+                onPress={() => router.push({ pathname: '/contract-operation/[action]/[id]', params: { id, action: 'battery_swap' } })} />}
+              {permissions.includes('contracts.settle') && ['renting','overdue','wait_payment','bad_debt','completed'].includes(record.status) &&
+                <Button secondary label="Thanh toán và đóng hợp đồng"
+                  onPress={() => router.push({ pathname: '/contract-operation/[action]/[id]', params: { id, action: 'payment_settlement' } })} />}
 
               {record.reminderEligible && permissions.some((p) => p === "contracts.draft" || p === "finance.write") && (
                 <Button
@@ -528,6 +539,9 @@ export function ContractDetailView({
                   onPress={() => router.push({ pathname: "/reminder-editor/[id]", params: { id } })}
                 />
               )}
+              {(record.monitoring?.collectionOverdue || isBadDebt || record.status === 'overdue') &&
+                <Button secondary label="Tình trạng khách và ghi chú công nợ"
+                  onPress={() => router.push({ pathname: '/collection-followup/[id]', params: { id } })} />}
 
               <Button
                 secondary
@@ -608,7 +622,7 @@ export function ContractDetailView({
               {record.status !== "draft" && permissions.includes("contracts.return") && (
                 <Button
                   secondary
-                  label="Sửa hồ sơ / quyết toán xe đã trả"
+                  label="Hồ sơ trả xe"
                   onPress={() => router.push({ pathname: "/return-correction/[id]", params: { id } })}
                 />
               )}

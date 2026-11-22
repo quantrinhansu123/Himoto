@@ -62,6 +62,7 @@ export async function readMobileReturnCorrection(user: SessionUser, value: strin
       id, anchorItemId: itemId, code: context.code, customer: context.customer, revision: context.revision, eventKey: context.event_key,
       note: context.note, blockedReason: context.blocked_reason || null, previousAdjustment: context.previous_adjustment,
       totalAmount: context.payment.total_amount, rentalPaid: context.payment.paid_amount, depositHeld: context.payment.deposit_held, billing: !!context.payment.billing,
+      allReturned: context.payment.all_returned,
       lines: context.lines.map(l => ({ id: l.item_id, vehicleId: l.vehicle_id, revision: l.item_revision, license: l.license, name: l.vehicle_name,
         startsAt: l.scheduled_start_at, scheduledReturnAt: l.scheduled_return_at, returnedAt: l.completed_at, reconciled: l.return_reconciled === true,
         lateFee: l.late_fee, repairFee: l.repair_fee, repairNote: l.repair_note, earlyDiscount: l.early_discount, hourlyRate: l.hourly_rate })),
@@ -93,7 +94,7 @@ export async function writeMobileReturnCorrection(user: SessionUser, value: stri
       const receipt = <T extends object>(v: T) => ({ ...v, request_id: randomUUID() });
       await correctReturn(client, user.id, { ...input, request_id: key, settlement: { order_id: id, revision,
         receipts: settlement.receipts.map(receipt), ...(settlement.refund ? { refund: receipt(settlement.refund) } : {}), ...(settlement.rental_refund ? { rental_refund: receipt(settlement.rental_refund) } : {}),
-        ...(settlement.refund_deferred ? { refund_deferred: true } : {}), ...(settlement.refund_recipient ? { refund_recipient: settlement.refund_recipient } : {}) } });
+        ...(settlement.refund_deferred ? { refund_deferred: true } : {}), ...(settlement.refund_recipient ? { refund_recipient: settlement.refund_recipient } : {}) } }, { useDepositRefundWorkflow: true });
       return { id, revision: String((await visible(client, id)).revision) };
     });
     const found = await result(client, user, key); if (!found) throw new MobileError('Chưa xác nhận được sửa lượt trả. Giữ mã để đối chiếu.', 503, 'INVALID_WRITE_RECEIPT');

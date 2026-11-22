@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import sharp from 'sharp';
 import { withAccessRequest } from '@/lib/server/access-request';
 import { dataAccess } from '@/lib/server/access-context';
 import { himotoPool } from '@/lib/server/himoto-database';
@@ -9,42 +8,10 @@ import {
   refundItemId, refundRequestId, submitDepositRefund,
 } from '@/lib/server/deposit-refunds';
 import { failureResponse } from '@/lib/server/public-failure';
+import { parseDepositRefundDecision, readDepositRefundSubmission } from '@/lib/server/deposit-refund-input';
 
 export const runtime = 'nodejs';
 const headers = { 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' };
-const MAX_PHOTO = 2 * 1024 * 1024;
-
-async function submission(request: NextRequest) {
-  if (Number(request.headers.get('content-length')) > MAX_PHOTO + 16 * 1024) {
-    throw new ContractPaymentError('Ảnh chứng từ tối đa 2 MB.', 413);
-  }
-  const form = await request.formData();
-  const file = form.get('evidence');
-  if (!file || typeof file === 'string' || file.size < 1 || file.size > MAX_PHOTO) {
-    throw new ContractPaymentError('Chọn ảnh chứng từ hợp lệ, tối đa 2 MB.');
-  }
-  const reason = String(form.get('reason') || '').trim();
-  if (!reason || reason.length > 500) throw new ContractPaymentError('Nhập lý do bổ sung, tối đa 500 ký tự.');
-  const replaces = form.get('replaces_id');
-  const replacesRevision = String(form.get('replaces_revision') || '');
-  if (replaces && !/^\d{1,20}$/.test(replacesRevision)) throw new ContractPaymentError('Tải lại phiếu chi cần sửa.');
-  let evidence: Buffer;
-  try {
-    evidence = await sharp(Buffer.from(await file.arrayBuffer()), { limitInputPixels: 8_000_000 })
-      .rotate().resize({ width: 1800, height: 1800, fit: 'inside', withoutEnlargement: true })
-      .flatten({ background: '#fff' }).jpeg({ quality: 87 }).toBuffer();
-  } catch {
-    throw new ContractPaymentError('Không đọc được ảnh chứng từ. Chọn lại ảnh JPG hoặc PNG.');
-  }
-  if (evidence.length > MAX_PHOTO) throw new ContractPaymentError('Ảnh chứng từ sau khi xử lý vượt 2 MB.');
-  return {
-    id: refundRequestId(form.get('id')), item_id: refundItemId(form.get('item_id')),
-    amount: String(form.get('amount') || ''), method: form.get('method'),
-    account_id: Number(form.get('account_id')), paid_at: String(form.get('paid_at') || ''),
-    reason, evidence, replaces_id: replaces ? refundItemId(replaces) : null,
-    replaces_revision: replaces ? replacesRevision : null,
-  };
-}
 
 async function handle(request: NextRequest) {
   const actor = dataAccess.getStore()!;
@@ -52,7 +19,7 @@ async function handle(request: NextRequest) {
   const read = request.method === 'GET';
   let client;
   try {
-    const input = request.method === 'POST' ? await submission(request) : null;
+    const input = request.method === 'POST' ? await readDepositRefundSubmission(request) : null;
     const review = request.method === 'PATCH' ? await request.json() : null;
     const evidenceId = read ? params.get('evidence') : null;
     client = await himotoPool.connect();
@@ -67,11 +34,7 @@ async function handle(request: NextRequest) {
     let data;
     if (input) data = await submitDepositRefund(client, actor, input);
     else if (!read) {
-      const decision = review?.decision;
-      const note = typeof review?.note === 'string' ? review.note.trim() : '';
-      if (!['approve', 'reject'].includes(decision) || note.length > 500 || decision === 'reject' && !note) {
-        throw new ContractPaymentError('Chọn duyệt hoặc từ chối. Khi từ chối, nhập lý do tối đa 500 ký tự.');
-      }
+      const { decision, note } = parseDepositRefundDecision(review);
       data = await decideDepositRefund(client, actor, refundRequestId(review.id), decision, note);
     } else if (params.has('item_id')) {
       data = await readDepositRefundState(client, actor, refundItemId(params.get('item_id')));

@@ -101,7 +101,15 @@ export function RecordActionsModal({
 
     // 2. Trả xe
     if (has("contracts.return")) {
-      if (["renting", "overdue", "wait_payment"].includes(status)) {
+      if (status === "completed") {
+        actions.push({
+          id: "return",
+          label: "Hồ sơ trả xe",
+          icon: RotateCcw,
+          color: "#4F46E5",
+          onPress: () => router.push({ pathname: "/return-correction/[id]", params: { id } }),
+        });
+      } else if (["renting", "overdue", "wait_payment"].includes(status)) {
         actions.push({
           id: "return",
           label: "Trả xe tại quầy",

@@ -59,6 +59,10 @@ export function CashbookScreen({ initialStore }: { initialStore?: string }) {
     refreshControl={<RefreshControl refreshing={query.isRefetching||accounts.isRefetching} onRefresh={() => { if(valid) void query.refetch(); void accounts.refetch(); }} tintColor={theme.primary} />}
     ListHeaderComponent={<View style={{ gap: 16 }}>
       <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 27, fontWeight: "800" }}>Sổ quỹ / Sổ két</Text>
+      {session!.user.permissions.includes('finance.write') && <Button secondary label="Yêu cầu hoàn cọc chờ duyệt"
+        onPress={() => router.push('/deposit-refund-queue')} />}
+      {session!.user.permissions.includes('contracts.read') && <Button secondary label="Tiền về qua SePay"
+        onPress={() => router.push('/payment-events')} />}
       <FileExportButton key={new URLSearchParams({ store_id: store, search, actor, from, to }).toString()} disabled={!valid || query.isFetching || query.isError || !data || input.trim() !== search} load={signal => api!.cashbookExcel(new URLSearchParams({ store_id: store, search, actor, from, to }).toString(), signal)} />
       <Button secondary label={open ? "Ẩn bộ lọc sổ quỹ" : "Bộ lọc sổ quỹ"} onPress={() => setOpen(value => !value)} />
       {open && <Card style={{ gap: 16 }}>

@@ -84,6 +84,14 @@ export default function ReportsHub() {
       href: "/debt-reminders",
       permission: "contracts.read",
     },
+    {
+      key: "collection-report",
+      title: "Báo cáo nợ chậm",
+      description: "Theo dõi khách quá hạn, cập nhật xử lý và gửi báo cáo theo PGD.",
+      icon: CalendarDays,
+      href: "/collection-report",
+      permission: "contracts.read",
+    },
   ];
 
   const filterReports = (items: ReportItem[]) =>

@@ -18,6 +18,7 @@ import { canApproveOwnershipContract } from '@/lib/management/contract-approval'
 import { requireMobileOwnershipTerms } from './mobile-ownership-terms';
 import { requireMobileCustomerImport } from './mobile-customer-import';
 import {resolveMobileTelegram} from './mobile-telegram';
+import { CONTRACT_OPERATION_PERMISSIONS, isContractOperation } from '../../../shared/mobile-contract-operations';
 
 // Use the existing unique actor/key constraint, exactly like idempotentMobileWrite.
 // A tombstone's different operation also blocks writes from older server versions.
@@ -69,8 +70,9 @@ export async function resolveMobileWrite(
   const customerMedia=operation.startsWith('media.customer:')||operation.startsWith('media.delete.customer:');
   const read = cashAccount||voucherBulk ? "finance.read" : family === "duty"||family === "staff" ? "hr.read" : family === "vehicle"||vehicleMedia ? "vehicles.read" : family === "customer"||customerMedia ? "customers.read" : "contracts.read";
   const write = voucherBulk ? "settings.write" : cashAccount ? "finance.write" : family === "duty"||family === "staff" ? "hr.write" : family === "customer" ? "customers.write" : family === "draft" || (operation.startsWith("contract.edit:") || operation.startsWith("contract.terms:")) ? "contracts.draft" : family === "payment" ? "finance.write" : family === "renewal" ? "contracts.renew" : family === "return" ? "contracts.return" : "contracts.finalize";
+  const contractAction = family === 'contract' ? operation.split(':')[0].slice('contract.'.length) : '';
   const vehicleProfile=operation==='vehicle.create'||operation.startsWith('vehicle.update:')||operation.startsWith('vehicle.status:');
-  const neededWrite=vehicleProfile?'vehicles.write':customerMedia?'customers.write':family==='media'?'vehicles.read':family==="vehicle" ? (/^vehicle\.(transfer|cancel):/.test(operation)?"vehicles.transfer":"vehicles.receive") : write;
+  const neededWrite=isContractOperation(contractAction)?CONTRACT_OPERATION_PERMISSIONS[contractAction]:vehicleProfile?'vehicles.write':customerMedia?'customers.write':family==='media'?'vehicles.read':family==="vehicle" ? (/^vehicle\.(transfer|cancel):/.test(operation)?"vehicles.transfer":"vehicles.receive") : write;
   if (!video&&!customerImport&&!ownershipTerms&&!lifecycle&&!correction&&!managedAccount&&!storeWrite&&!gpsMapping&&!reminder&&!shift&&!battery&&family!=='media'&&(!hasPermission(user, read) || !hasPermission(user, neededWrite)))
     throw new MobileError("Tài khoản không có quyền đối chiếu thao tác này.", 403, "FORBIDDEN");
   return withMobileData(user, gpsMapping||family==="vehicle"||vehicleMedia?"fleet_read":"", async () => {
@@ -116,7 +118,7 @@ export async function resolveMobileWrite(
           managedAccount ? "SELECT id FROM himoto.users WHERE id=$1" : battery ? "SELECT id FROM himoto.battery_contracts WHERE id=$1" : shift ? "SELECT id FROM himoto.management_shift_reports WHERE id=$1" : cashAccount ? `SELECT id FROM himoto.${family==='bank'?'banks':'cash'} WHERE id=$1` : family==='staff' ? "SELECT id FROM himoto.staff_profiles WHERE id=$1" : storeWrite ? "SELECT id FROM himoto.stores WHERE id=$1" : family === "duty" ? "SELECT id FROM himoto.store_duty_schedules WHERE id=$1" : gpsMapping?"SELECT device_id FROM himoto.management_mobile_gps_mappings WHERE device_id=$1 AND user_id=$2 AND request_id=$3":family === "customer"||customerMedia
             ? "SELECT id FROM himoto.customers WHERE id=$1"
             : family === "vehicle"||vehicleMedia ? "SELECT id FROM himoto.vehicles WHERE id=$1"
-            : operation.startsWith('return.recover:')||operation.startsWith('draft.delete:')||family==='media'||video?"SELECT id FROM himoto.orders WHERE id=$1"
+            : operation.startsWith('return.recover:')||operation.startsWith('draft.delete:')||contractAction==='delete_reservation'||family==='media'||video?"SELECT id FROM himoto.orders WHERE id=$1"
             : "SELECT id FROM himoto.orders WHERE id=$1 AND deleted_at IS NULL",
           gpsMapping?[id,user.id,key]:[id],
         );

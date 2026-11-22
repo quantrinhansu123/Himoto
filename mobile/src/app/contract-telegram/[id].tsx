@@ -11,11 +11,14 @@ import {Button,Card,InlineError,StateView} from '@/components/ui';
 import {ChoiceField,FormField} from '@/components/form-fields';
 import {ConfirmEdit} from '@/components/editor-sheet';
 import {TelegramAttachments} from '@/components/telegram-attachments';
-function Telegram({id,initialEvent,preferReturn}:{id:string;initialEvent:string;preferReturn:boolean}){
+function Telegram({id,initialEvent,preferReturn,returnItemId,onlyEvent}:{id:string;initialEvent:string;preferReturn:boolean;returnItemId?:string;onlyEvent:boolean}){
   const {api,session}=useSession(),theme=useTheme(),write=useTelegramWrite(`telegram.contract:${id}`),[selected,setSelected]=useState(initialEvent),[focused,setFocused]=useState(false),[confirm,setConfirm]=useState<{command:MobileTelegramCommand;message:string}|null>(null),[resolving,setResolving]=useState(false);
   useFocusEffect(useCallback(()=>{setFocused(true);return()=>setFocused(false);},[]));
   const query=useQuery({queryKey:['telegram','contract',api!.origin,session!.user.id,session!.user.storeId,session!.user.allStores,id],queryFn:({signal})=>api!.contractTelegram(id,signal),enabled:write.checked&&!write.key&&focused,retry:false,refetchInterval:q=>!write.busy&&q.state.data?.events.some(e=>['pending','sending','retracting'].includes(e.status||''))?2000:false,refetchIntervalInBackground:false});
-  const events=query.data?.events||[],event=events.find(e=>e.key===selected)||(preferReturn?events.find(e=>e.kind==='return'):undefined)||events[0],locked=write.busy||!!write.key||!write.checked,muted={color:theme.muted,fontSize:15,lineHeight:24};
+  const available=query.data?.events||[];
+  const events=onlyEvent?available.filter(e=>e.key===initialEvent)
+    :returnItemId?available.filter(e=>e.kind==='return'&&e.phases.includes(`return-${returnItemId}`)):available;
+  const event=events.find(e=>e.key===selected)||(preferReturn?events.find(e=>e.kind==='return'):undefined)||events[0],locked=write.busy||!!write.key||!write.checked,muted={color:theme.muted,fontSize:15,lineHeight:24};
   return <ScrollView contentContainerStyle={{padding:20,paddingBottom:40,gap:18,maxWidth:760,width:'100%',alignSelf:'center'}}>
     <Text accessibilityRole="header" style={{color:theme.text,fontSize:25,fontWeight:'800'}}>Telegram hợp đồng</Text>
     <Text style={muted}>Kiểm tra giao dịch, nội dung, nhóm nhận và toàn bộ ảnh/video đã lưu trước khi gửi. Mở hoặc đóng màn hình này không xếp tin mới.</Text>
@@ -24,7 +27,9 @@ function Telegram({id,initialEvent,preferReturn}:{id:string;initialEvent:string;
     {write.key?<Card style={{gap:14}}><Text style={{color:theme.text,fontSize:20,fontWeight:'700'}}>Thao tác Telegram cần đối chiếu</Text><Text style={muted}>Giữ mã gốc để biết máy chủ đã nhận yêu cầu hay chưa. Chưa gửi lại trong lúc chưa rõ kết quả.</Text><Button label="Đối chiếu thao tác Telegram" loading={write.busy} onPress={()=>setResolving(true)}/><Button secondary label="Mở xác nhận Telegram" disabled={write.busy} onPress={write.openResult}/></Card>:<>
       {query.isPending?<StateView title="Đang đọc nội dung Telegram" loading/>:query.isError?<StateView title="Chưa đọc được nội dung Telegram" message={query.error.message} retry={()=>void query.refetch()}/>:<>
         {!!events.length&&<ChoiceField label="Giao dịch cần gửi Telegram" value={event?.key||''} choices={events.map(e=>({value:e.key,label:`${e.label} · ${e.photo_count} ảnh · ${e.video_count||0} video · ${e.can_resume?'Gửi chưa hoàn tất':e.status?NOTICE_STATUS_LABELS[e.status]||e.status:'Chưa gửi'}`}))} searchable disabled={locked} onChange={setSelected}/>}
-        {event?<Event key={`${event.key}:${event.notice_id||''}`} id={id} event={event} locked={locked||query.isFetching||query.isError} onReview={(command,message)=>setConfirm({command,message})}/>:<Text style={muted}>Chưa có giao dịch hoàn tất để gửi. Hoàn tất giao dịch và lưu minh chứng trong hồ sơ trước.</Text>}
+        {event?<Event key={`${event.key}:${event.notice_id||''}`} id={id} event={event} locked={locked||query.isFetching||query.isError} onReview={(command,message)=>setConfirm({command,message})}/>:<Text style={muted}>{returnItemId
+          ? 'Chưa có nội dung Telegram cho lượt trả xe này. Kiểm tra lượt trả và minh chứng đã lưu.'
+          : 'Chưa có giao dịch hoàn tất để gửi. Hoàn tất giao dịch và lưu minh chứng trong hồ sơ trước.'}</Text>}
       </>}
       <Button secondary label="Làm mới nội dung và ảnh Telegram" loading={query.isFetching} disabled={locked} onPress={()=>void query.refetch()}/>
       {!write.checked&&<Button secondary label="Đọc lại mã Telegram" loading={write.busy} onPress={()=>void write.check()}/>}
@@ -54,4 +59,10 @@ function Event({id,event:e,locked,onReview}:{id:string;event:ContractTelegramEve
     {!!e.deliveries?.length&&<><Button secondary label={history?'Ẩn lịch sử gửi và thu hồi':'Lịch sử gửi và thu hồi Telegram'} disabled={locked} onPress={()=>setHistory(!history)}/>{history&&<View style={{gap:14}}><FormField label="Lý do thu hồi Telegram" value={reason} maxLength={500} multiline editable={!locked} onChangeText={setReason}/>{e.deliveries.map(delivery=><Card key={delivery.id} style={{gap:12}}><Text style={{...text,fontWeight:'700'}}>{delivery.sent_at?dateTime(delivery.sent_at):'Lần gửi đã lưu'} · {delivery.message_count} tin/tệp</Text><Text selectable style={text}>{delivery.text}</Text>{!!delivery.expires_at&&<Text style={muted}>Hạn thu hồi: {dateTime(delivery.expires_at)}</Text>}<Text style={muted}>{delivery.retraction_state==='done'?'Đã thu hồi lần gửi này.':delivery.blocked_reason}</Text><Button secondary label={`Thu hồi lần gửi ${delivery.id.slice(0,8)}`} disabled={locked||!delivery.can_retract} onPress={()=>onReview({action:'retract',event_key:e.key,notice_id:delivery.id,confirmed:true,reason},`${e.label}\nLần gửi: ${delivery.sent_at?dateTime(delivery.sent_at):delivery.id}\n${delivery.message_count} tin/tệp\nLý do: ${reason.trim()||'Không ghi lý do'}\nThu hồi đúng lần gửi đã chọn. Hồ sơ hợp đồng vẫn được giữ.`)}/></Card>)}</View>}</>}
   </View>;
 }
-export default function Screen(){const{id,event,eventKind}=useLocalSearchParams<{id:string;event?:string;eventKind?:string}>(),{api,session}=useSession();if(!api||!session||typeof id!=='string'||!/^[1-9]\d{0,14}$/.test(id)||!session.user.permissions.includes('contracts.read'))return <StateView title="Không mở được Telegram hợp đồng"/>;return <Telegram key={[api.origin,session.token,session.user.storeId,session.user.allStores,session.user.permissions.join(','),id,event??'',eventKind??''].join('|')} id={id} initialEvent={typeof event==='string'?event:''} preferReturn={eventKind==='return'}/>;}
+export default function Screen(){
+  const{id,event,eventKind,returnItemId,onlyEvent}=useLocalSearchParams<{id:string;event?:string;eventKind?:string;returnItemId?:string;onlyEvent?:string}>(),{api,session}=useSession();
+  const identifier=/^[1-9]\d{0,14}$/;
+  if(!api||!session||typeof id!=='string'||!identifier.test(id)||returnItemId!==undefined&&(typeof returnItemId!=='string'||!identifier.test(returnItemId))||!session.user.permissions.includes('contracts.read'))return <StateView title="Không mở được Telegram hợp đồng"/>;
+  return <Telegram key={[api.origin,session.token,session.user.storeId,session.user.allStores,session.user.permissions.join(','),id,event??'',eventKind??'',returnItemId??'',onlyEvent??''].join('|')}
+    id={id} initialEvent={typeof event==='string'?event:''} preferReturn={eventKind==='return'} returnItemId={returnItemId} onlyEvent={onlyEvent==='1'}/>;
+}

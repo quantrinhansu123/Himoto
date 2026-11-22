@@ -20,12 +20,18 @@ export function NotificationBridge() {
       const response = (activity=false) => { if (!disposed) { refresh(); router.push(activity?'/notification-activity':'/notifications'); } };
       const a = n.addNotificationReceivedListener(refresh);
       const b = n.addNotificationResponseReceivedListener(event => {
-        if (event.notification.request.content.data?.screen === 'notifications') response(event.notification.request.content.data?.kind==='activity');
+        const data = event.notification.request.content.data;
+        if (data?.screen === 'notifications') response(data.kind === 'activity');
+        if (!disposed && data?.screen === 'payment-events') router.push('/payment-events');
       });
       cleanup.push(() => a.remove(), () => b.remove());
       const last = await n.getLastNotificationResponseAsync();
       if (!disposed && last?.notification.request.content.data?.screen === 'notifications') {
         await n.clearLastNotificationResponseAsync(); response(last.notification.request.content.data?.kind==='activity');
+      }
+      if (!disposed && last?.notification.request.content.data?.screen === 'payment-events') {
+        await n.clearLastNotificationResponseAsync();
+        router.push('/payment-events');
       }
       const register = async () => {
         const status = await api.pushStatus();

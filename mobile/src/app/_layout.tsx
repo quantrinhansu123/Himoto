@@ -11,6 +11,7 @@ import { NotificationBridge } from "@/components/notification-bridge";
 import { OfflineBanner } from '@/components/offline-banner';
 import { BiometricGate } from '@/components/biometric-gate';
 import { AppUpdateBridge } from '@/components/app-update-bridge';
+import { SePayNotice } from '@/components/sepay-notice';
 
 export function ErrorBoundary({ retry }: ErrorBoundaryProps) {
   return (
@@ -52,6 +53,7 @@ function Navigator() {
       <AppUpdateBridge />
       <NotificationBridge />
       <SafeAreaProvider style={{ flex: 1 }}>
+      <SePayNotice />
       <Stack
         screenOptions={{
           headerStyle: { backgroundColor: theme.surface },
@@ -73,6 +75,7 @@ function Navigator() {
           <Stack.Screen name="offline-sync" options={{ title: 'Dữ liệu và đồng bộ' }}/>
           <Stack.Screen name="notifications" options={{title:'Thông báo công việc'}}/>
           <Stack.Screen name="notification-activity" options={{title:'Sự kiện gần đây'}}/>
+          <Stack.Screen name="payment-events" options={{title:'Tiền về qua SePay'}}/>
           <Stack.Screen name="notification-list/[kind]" options={{title:'Công việc cần xử lý'}}/>
           <Stack.Screen name="integrations" options={{ title: "Tích hợp GPS và Telegram" }} />
           <Stack.Screen name="integration-result/[key]" options={{ title: "Xác nhận cấu hình tích hợp" }} />
@@ -101,6 +104,7 @@ function Navigator() {
           <Stack.Screen name="fleet-inventory" options={{title:'Kho xe toàn hệ thống'}}/>
           <Stack.Screen name="import-contracts" options={{title:'Nhập nháp hợp đồng từ Excel'}} />
           <Stack.Screen name="contract-telegram/[id]" options={{title:'Telegram hợp đồng'}} />
+          <Stack.Screen name="contract-operation/[action]/[id]" options={{title:'Thao tác hợp đồng'}} />
           <Stack.Screen name="transfer-telegram/[id]/[eventId]" options={{title:'Telegram điều chuyển'}} />
           <Stack.Screen name="telegram-result/[key]" options={{title:'Xác nhận yêu cầu Telegram'}} />
           <Stack.Screen name="telegram-pending" options={{title:'Giao dịch chưa gửi Telegram'}} />
@@ -108,9 +112,13 @@ function Navigator() {
           <Stack.Screen name="shift-audit/[id]" options={{ title: "Đối soát KTNB" }} />
           <Stack.Screen name="shift-result/[key]" options={{ title: "Xác nhận báo cáo ca" }} />
           <Stack.Screen name="debt-reminders" options={{ title: "Gửi nhắc nợ" }} />
+          <Stack.Screen name="collection-report" options={{ title: "Báo cáo nợ chậm" }} />
+          <Stack.Screen name="collection-followup/[id]" options={{ title: "Tình trạng khách" }} />
           <Stack.Screen name="reminder-editor/[id]" options={{ title: "Soạn nhắc nợ" }} />
           <Stack.Screen name="reminder-result/[key]" options={{ title: "Kết quả nhắc nợ" }} />
           <Stack.Screen name="cashbook" options={{ title: "Sổ quỹ / Sổ két" }} />
+          <Stack.Screen name="deposit-refund-queue" options={{ title: "Yêu cầu hoàn cọc chờ duyệt" }} />
+          <Stack.Screen name="deposit-refund/[id]/[itemId]" options={{ title: "Bổ sung hoàn cọc" }} />
           <Stack.Screen name="staff-sales" options={{ title: "Báo cáo doanh thu thuê xe" }} />
           <Stack.Screen name="sales-report/[kind]" options={{ title: "Chi tiết báo cáo" }} />
           <Stack.Screen name="cashbook-delete-result/[key]" options={{ title: "Xác nhận xóa phiếu" }} />

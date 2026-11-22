@@ -7,6 +7,7 @@ import { Text, View } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import type { MobileWriteResolution } from "../../../shared/mobile-write-recovery";
+import { CONTRACT_OPERATIONS, isContractOperation } from '../../../shared/mobile-contract-operations';
 import { useSession } from "@/providers/session";
 import {findDraftWorkRequest} from "@/lib/draft-work-links";
 import {draftWorkDestination} from "@/lib/draft-work-access";
@@ -26,6 +27,8 @@ function operationLabel(operation: string) {
   if (operation.startsWith('import.customers:')) return 'Nhập Excel khách hàng';
   if (operation.startsWith('import.contracts:')) return 'Nhập nháp hợp đồng từ Excel';
   const [kind, id] = operation.split(":");
+  const contractAction = kind.startsWith('contract.') ? kind.slice('contract.'.length) : '';
+  if (isContractOperation(contractAction)) return CONTRACT_OPERATIONS[contractAction];
   const labels: Record<string, string> = {
     "integration.gps-account": "Lưu tài khoản GPS",
     "integration.gps-enabled": "Bật hoặc tắt đồng bộ GPS",
@@ -63,6 +66,7 @@ function operationLabel(operation: string) {
     "renewal.record": "Gia hạn hợp đồng",
     "return.record": "Trả xe và quyết toán",
     "return.correct": "Sửa hồ sơ / quyết toán trả xe",
+    "return.refund": "Bổ sung hoàn cọc",
     "return.swap": "Đổi xe trong hợp đồng",
     "return.recover": "Thu hồi xe nợ xấu",
     "vehicle.transfer": "Chuyển kho",
@@ -198,10 +202,23 @@ export function PendingWriteRecovery() {
       if(entry.operation.startsWith('draft.delete:')){router.push({pathname:'/draft-delete/[id]',params:{id:String(result.receipt.id)}});return;}
       if(entry.operation.startsWith('account.')){router.push({pathname:'/managed-account-result/[key]',params:{key:entry.key}});return;}
       if(entry.operation.startsWith('return.correct:')){router.push({pathname:'/return-correction/[id]',params:{id:String(result.receipt.id)}});return;}
+      if(entry.operation.startsWith('return.refund:')){
+        const refund=await api!.depositRefundRequest(entry.key);
+        if(refund.order_id!==result.receipt.id||refund.actor_id!==scope.userId)throw Error('Chưa xác nhận đúng yêu cầu hoàn cọc.');
+        router.push({pathname:'/deposit-refund/[id]/[itemId]',params:{id:String(refund.order_id),itemId:String(refund.item_id)}});
+        return;
+      }
       if(entry.operation.startsWith('lifecycle.')){router.push({pathname:'/contract-lifecycle/[id]',params:{id:String(result.receipt.id)}});return;}
       if(entry.operation.startsWith('correction.')){router.push({pathname:'/contract-correction/[kind]/[id]',params:{kind:entry.operation.startsWith('correction.receipts:')?'receipts':'renewal',id:String(result.receipt.id)}});return;}
       if(entry.operation.startsWith('contract.ownership_terms:')){router.push({pathname:'/ownership-terms/[id]',params:{id:String(result.receipt.id)}});return;}
       if(entry.operation.startsWith('contract.terms:')){router.push({pathname:'/rental-terms/[id]',params:{id:String(result.receipt.id)}});return;}
+      const contractAction = entry.operation.startsWith('contract.') ? entry.operation.split(':')[0].slice('contract.'.length) : '';
+      if(isContractOperation(contractAction)){
+        router.push({pathname:'/contract-operation/[action]/[id]',params:{
+          action:contractAction,id:String(result.receipt.id),...(contractAction==='battery_swap'?{swapId:result.receipt.revision}:{}),
+        }});
+        return;
+      }
       if(entry.operation.startsWith('contract.edit:')){router.push({pathname:'/contract-edit/[id]',params:{id:String(result.receipt.id)}});return;}
       if(entry.operation.startsWith('contract.approve:')){router.push({pathname:'/contract-approval/[id]',params:{id:String(result.receipt.id)}});return;}
       if (entry.operation.startsWith("duty.")) {

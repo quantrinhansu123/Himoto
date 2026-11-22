@@ -1,6 +1,7 @@
 import 'server-only';
 import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
+import { BATTERY_SWAP_FEE, BATTERY_SWAP_LOW_PERCENT } from '../../../shared/mobile-contract-operations';
 import { ContractPaymentError,parseContractPayment,readPaymentContext,recordContractPayment } from './contract-payments';
 type Database=Pick<PoolClient,'query'>;
 export class BatterySwapError extends Error {constructor(message:string,public status=400){super(message);}}
@@ -24,7 +25,7 @@ export async function writeBatterySwap(db:Database,orderId:number,actor:number,v
   return (await db.query('INSERT INTO himoto.management_contract_battery_swaps(order_id,item_id,vehicle_id,request_id,created_by) VALUES($1,$2,$3,$4,$5) RETURNING *,xmin::text AS revision',[orderId,body.item_id,item.vehicle_id,body.request_id,actor])).rows[0];
  }
  if(body.action!=='confirm'||Object.keys(body).some(key=>!['action','id','revision','order_revision','battery_percent','note','receipt'].includes(key))||!Number.isSafeInteger(body.id)||Number(body.id)<=0||typeof body.revision!=='string'||!/^\d{1,20}$/.test(body.revision)||typeof body.order_revision!=='string'||!/^\d{1,20}$/.test(body.order_revision)||!Number.isInteger(body.battery_percent)||Number(body.battery_percent)<0||Number(body.battery_percent)>100||typeof body.note!=='string'||body.note.length>1000)throw new BatterySwapError('Nhập đúng phần trăm pin, ghi chú và phiên bản lượt đổi pin.');
- const fee=Number(body.battery_percent)<20?100000:0;
+ const fee=Number(body.battery_percent)<BATTERY_SWAP_LOW_PERCENT?BATTERY_SWAP_FEE:0;
  let receipt:ReturnType<typeof parseContractPayment>|undefined;
  if(body.receipt!==undefined){
   if(!fee||!body.receipt||typeof body.receipt!=='object'||Array.isArray(body.receipt)||Object.keys(body.receipt).some(key=>!['request_id','method','account_id','paid_at'].includes(key)))throw new BatterySwapError('Chỉ ghi phiếu thu 100.000 đ khi nhận pin dưới 20%.');
@@ -42,7 +43,7 @@ export async function writeBatterySwap(db:Database,orderId:number,actor:number,v
  if(fee&&(context.total_amount===null||context.total_amount+fee>9999999999999))throw new BatterySwapError('Tổng phí hợp đồng chưa hợp lệ.',409);
  if(fee)await db.query('UPDATE himoto.orders SET total=(total::numeric+$2)::text,updated_at=now() WHERE id=$1',[orderId,fee]);
  let transactionId:number|null=null;
- if(receipt){context=await readPaymentContext(db,orderId);const paid=await recordContractPayment(db,orderId,actor,{...receipt,revision:context.revision,note:`Thu phí pin dưới 20%_${context.code}`});transactionId=paid.transaction_id;await db.query("UPDATE himoto.transactions SET name='order:battery_swap' WHERE id=$1",[transactionId]);}
+ if(receipt){context=await readPaymentContext(db,orderId);const paid=await recordContractPayment(db,orderId,actor,{...receipt,revision:context.revision,note:`Thu phí pin dưới 20%_${context.code}`},undefined,{batterySwap:true});transactionId=paid.transaction_id;}
  return (await db.query(`UPDATE himoto.management_contract_battery_swaps SET status='confirmed',battery_percent=$3,fee=$4,note=$5,confirmed_by=$6,transaction_id=$7,confirmation_hash=$8,confirmed_at=now() WHERE id=$1 AND order_id=$2 RETURNING *,xmin::text AS revision`,[body.id,orderId,body.battery_percent,fee,body.note,actor,transactionId,hash])).rows[0];
 }
 export { ContractPaymentError };

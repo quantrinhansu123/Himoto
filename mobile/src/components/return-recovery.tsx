@@ -62,14 +62,15 @@ function Recovery({id}:{id:string}) {
     }catch(cause){if(alive.current&&epoch.current===current)setError((cause as Error).message);}
     finally{running.current=false;if(alive.current&&epoch.current===current)setBusy(false);}
   }
-  async function acknowledge(){
+  async function acknowledge(itemId?:string){
     if(!key||!receipt||receipt.requestId!==key||running.current)return;
     running.current=true;setBusy(true);setError('');const current=epoch.current;
     try{
       await pendingWrites.complete(scope,operation,key);
       if(!alive.current||epoch.current!==current)return;
       for(const queryKey of [['record'],['catalogue'],['overview'],['contract-finance'],['return-preparation']])void cache.invalidateQueries({queryKey});
-      router.dismissTo({pathname:'/record/[kind]/[id]',params:{kind:'contracts',id}});
+      if(itemId)router.replace({pathname:'/return-correction/[id]',params:{id,itemId}});
+      else router.dismissTo({pathname:'/record/[kind]/[id]',params:{kind:'contracts',id}});
     }catch(cause){if(alive.current&&epoch.current===current)setError((cause as Error).message);}
     finally{running.current=false;if(alive.current&&epoch.current===current)setBusy(false);}
   }
@@ -119,6 +120,8 @@ function Recovery({id}:{id:string}) {
           ].map(([label,value])=><Text key={label} style={{color:theme.text,fontSize:17,lineHeight:27}}>{label}: {value}</Text>)}
         </Card>
         <Button label="Xác nhận đã kiểm tra phiếu trả xe" loading={busy} onPress={()=>{void acknowledge();}}/>
+        {!!receipt.review.fees.items[0]&&<Button label="Mở hồ sơ trả xe" secondary disabled={busy}
+          onPress={()=>{void acknowledge(String(receipt.review.fees.items[0].id));}}/>}
         <Button label="Tải lại phiếu trả xe" secondary loading={busy} onPress={()=>{void load();}}/>
       </>}
     </ScrollView>

@@ -111,7 +111,7 @@ export async function readMobileLifecyclePreview(user: SessionUser, value: strin
 }
 async function result(client: PoolClient, user: SessionUser, key: string): Promise<MobileLifecycleResult | null> {
   const row = (await client.query('SELECT operation,resource_id,resource_revision FROM himoto.management_mobile_requests WHERE user_id=$1 AND request_id=$2', [user.id, key])).rows[0];
-  if (!row || !/^lifecycle\.(mark_bad_debt|settle|hold|resume|update_hold|complete_hold):[1-9]\d{0,14}$/.test(String(row.operation)) || row.resource_id == null) return null;
+  if (!row || !/^lifecycle\.(mark_bad_debt|close_bad_debt|settle|hold|resume|update_hold|complete_hold):[1-9]\d{0,14}$/.test(String(row.operation)) || row.resource_id == null) return null;
   requireMobileLifecycle(user, String(row.operation).split('.')[1].split(':')[0]);
   const found = { key, operation: row.operation, receipt: { id: Number(row.resource_id), revision: String(row.resource_revision), replayed: true } };
   if (!isMobileLifecycleResult(found)) throw new MobileError('Kết quả tình trạng hợp đồng cần đối chiếu.', 409, 'INVALID_WRITE_RECEIPT');

@@ -1,5 +1,6 @@
 import 'server-only';
-import { canSettleContract } from '@/lib/management/permissions';
+import { canSettleContract, hasPermission } from '@/lib/management/permissions';
+import { BATTERY_SWAP_FEE } from '../../../shared/mobile-contract-operations';
 import { dataAccess } from './access-context';
 import { renewalDurationUnits,renewalFeeWarning } from '@/lib/management/contract-renewals';
 import { badDebtClock,badDebtCutoff } from '@/lib/management/contract-bad-debt';
@@ -159,16 +160,19 @@ export async function readPaymentContext(client: Database, id: number, options?:
 }
 
 // Caller owns BEGIN/COMMIT. The receipt, income and paid total are atomic.
-export async function recordContractPayment(client: Database, id: number, actorId: number, input: PaymentInput, options?: PaymentReadOptions, validation: {allowFutureTime?:boolean;contractSettlement?:boolean;vehicleReturn?:boolean} = {}) {
+export async function recordContractPayment(client: Database, id: number, actorId: number, input: PaymentInput, options?: PaymentReadOptions, validation: {allowFutureTime?:boolean;contractSettlement?:boolean;vehicleReturn?:boolean;batterySwap?:boolean} = {}) {
   input = parseContractPayment(input, validation);
   if (!Number.isSafeInteger(id) || id <= 0 || !Number.isSafeInteger(actorId) || actorId <= 0) throw new ContractPaymentError('Hợp đồng hoặc người thực hiện không hợp lệ.');
   const renewal = input.purpose === 'renewal', extra = input.purpose === 'extra', deposit=input.purpose==='deposit', rentalRefund=input.purpose==='rental_refund', refund = input.purpose === 'deposit_refund'||rentalRefund;
   const actor=dataAccess.getStore();
-  if(!renewal&&!extra&&!deposit&&!refund&&input.renewal_version===undefined&&actor&&((!validation.vehicleReturn&&!canSettleContract(actor))||actor.id!==actorId))throw new ContractPaymentError('Chỉ tài khoản được chỉ định và Quản lý Thuê sở hữu được thanh toán công nợ hợp đồng.',403);
+  const batterySwap=validation.batterySwap===true;
+  if(batterySwap&&(Number(input.amount)!==BATTERY_SWAP_FEE||input.purpose||input.renewal_version!==undefined))throw new ContractPaymentError('Phiếu thu phí đổi pin không hợp lệ.');
+  if(batterySwap&&actor&&(actor.id!==actorId||!hasPermission(actor,'contracts.renew')))throw new ContractPaymentError('Tài khoản chưa có quyền thu phí đổi pin.',403);
+  if(!batterySwap&&!renewal&&!extra&&!deposit&&!refund&&input.renewal_version===undefined&&actor&&((!validation.vehicleReturn&&!canSettleContract(actor))||actor.id!==actorId))throw new ContractPaymentError('Chỉ tài khoản được chỉ định và Quản lý Thuê sở hữu được thanh toán công nợ hợp đồng.',403);
   const fingerprint = createHash('sha256').update(JSON.stringify({ id, actorId, amount: input.amount, method: input.method, account_id: input.account_id, paid_at: input.paid_at, note: input.note,
     ...(input.renewal_version !== undefined ? { renewal_version: input.renewal_version } : {}),
     ...(renewal ? { purpose: input.purpose, ...(input.items ? { items: input.items.map(item => [item.item_id, item.return_at, item.amount]) } : { item_id: input.item_id, return_at: input.return_at }) }
-      : extra || refund || deposit ? { purpose: input.purpose } : {}) })).digest('hex');
+      : extra || refund || deposit ? { purpose: input.purpose } : batterySwap ? { purpose: 'battery_swap' } : {}) })).digest('hex');
   await client.query("SET LOCAL lock_timeout = '5s'");
   await client.query("SET LOCAL statement_timeout = '15s'");
   await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`contract-payment:${input.request_id}`]);
@@ -201,7 +205,7 @@ export async function recordContractPayment(client: Database, id: number, actorI
     // (already-paid / overpaid contracts can still have remaining 0 after the fee is added to total).
     // Thu vượt / HĐ đã thu dư (pid >> total, còn thiếu = 0): vẫn cho ghi phiếu và đóng HĐ.
     // Nếu còn thiếu > 0 thì cộng phần dư vào total; nếu vẫn không đủ remaining (đã thu dư sẵn) thì bỏ qua chặn.
-    if (!renewal && !extra && input.renewal_version === undefined && amount > context.remaining && !validation.contractSettlement) {
+    if (!renewal && !extra && !batterySwap && input.renewal_version === undefined && amount > context.remaining && !validation.contractSettlement) {
       if (context.remaining > 0) {
         const excess = amount - context.remaining;
         if (!Number.isSafeInteger(excess) || context.total_amount + excess > MAX_PAYMENT_AMOUNT) throw new ContractPaymentError('Số tiền thu vượt giới hạn lưu trữ của hợp đồng.', 409);
@@ -266,7 +270,7 @@ export async function recordContractPayment(client: Database, id: number, actorI
     [id, `${input.paid_at}:00+07:00`, amount, input.note || (deposit?`Thu cọc hợp đồng_${context.code}`:rentalRefund?`Hoàn tiền thuê trả sớm_${context.code}`:refund ? `Trả cọc hợp đồng_${context.code}` : `Gia hạn hợp đồng_${context.code}`), actorId, context.store_id,
       cash ? null : account.id, cash ? account.id : null,
       cash ? 1 : 2, cash ? null : (input.method === 'company_transfer' ? 'company' : 'personal'),
-      renewal ? 'order:renewal' : extra ? 'order:extra' : deposit?'order:deposit':rentalRefund?'order:rental_refund':refund ? DEPOSIT_REFUND_NAME : 'order:payment',
+      renewal ? 'order:renewal' : extra ? 'order:extra' : deposit?'order:deposit':rentalRefund?'order:rental_refund':refund ? DEPOSIT_REFUND_NAME : batterySwap ? 'order:battery_swap' : 'order:payment',
       singleItem ? 'line_item_id' : 'order', singleItem ?? id, singleItem, refund ? 'out' : 'in']);
   const transactionId = Number(transaction.rows[0].id);
   if (renewal) {

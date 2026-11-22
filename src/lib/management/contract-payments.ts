@@ -1,10 +1,7 @@
-export const PAYMENT_METHODS = [
-  { value: 'cash', label: 'Tiền mặt' },
-  { value: 'transfer', label: 'Chuyển khoản' },
-  { value: 'company_transfer', label: 'CK tài khoản công ty' },
-] as const;
-export type PaymentMethod = typeof PAYMENT_METHODS[number]['value'];
-export const paymentMethodLabel = (method: PaymentMethod) => method === 'transfer' ? 'CK tài khoản cá nhân' : PAYMENT_METHODS.find(item => item.value === method)?.label || method;
+import type { PaymentMethod } from '../../../shared/payment-methods';
+import type { ContractSettlementInput } from '../../../shared/mobile-contract-operations';
+export { PAYMENT_METHODS, paymentMethodLabel, vietnamPaymentTime, type PaymentMethod } from '../../../shared/payment-methods';
+export type { ContractSettlementInput, ContractSettlementMode } from '../../../shared/mobile-contract-operations';
 export const PAYABLE_STATUSES = ['renting', 'overdue', 'wait_payment', 'bad_debt', 'deposit_contract','completed','reserved'];
 export const RENEWABLE_STATUSES = ['renting', 'overdue', 'bad_debt'];
 export const MAX_PAYMENT_AMOUNT = 9_999_999_999_999;
@@ -62,13 +59,6 @@ export interface PaymentContext {
   all_returned?: boolean;
   payment_closed_at?: string;
 }
-export type ContractSettlementMode = 'partial' | 'full' | 'close_unpaid';
-export interface ContractSettlementInput {
-  request_id:string; revision:string; mode:ContractSettlementMode; amount:string;
-  paid_at:string; note:string; confirmed:true; method?:PaymentMethod; account_id?:number;
-  vehicles_confirmed?:true;
-  vehicles?:{item_id:number;revision:string;status:'with_customer'|'returned';returned_at?:string}[];
-}
 export interface ContractSettlementResult {context:PaymentContext;transaction_id:number|null;replayed:boolean}
 export async function saveContractSettlement(id:number,input:ContractSettlementInput):Promise<ContractSettlementResult> {
   const response=await fetch(`/api/auth/order/car-rental/${id}/payments/settlement`,{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify(input)});
@@ -109,9 +99,6 @@ export function paymentAccounts(context: PaymentContext, method: PaymentMethod) 
 }
 export function findPaymentAccount(context: PaymentContext, method: PaymentMethod, accountId: number) {
   return paymentAccounts(context, method).find(account => account.id === accountId);
-}
-export function vietnamPaymentTime(now = new Date()) {
-  return new Date(now.getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 16);
 }
 async function paymentRequest<T>(id: number, input?: PaymentInput, signal?: AbortSignal): Promise<T> {
   const response = await fetch(`/api/auth/order/car-rental/${id}/payments`, {

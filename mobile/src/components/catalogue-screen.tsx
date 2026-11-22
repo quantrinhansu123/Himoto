@@ -388,6 +388,7 @@ export function CatalogueScreen({
   const actions: { label: string; onPress: () => void; disabled?: boolean }[] = [];
   if (kind === "contracts" && !operationsCatalogue) {
     actions.push({ label: "Chưa gửi Telegram", onPress: () => router.push("/telegram-pending") });
+    actions.push({ label: "Báo cáo nợ chậm", onPress: () => router.push("/collection-report") });
     if (session?.user.permissions.includes("contracts.draft") || session?.user.permissions.includes("finance.write"))
       actions.push({ label: "Nhắc nợ hợp đồng", onPress: () => router.push("/debt-reminders") });
   }
