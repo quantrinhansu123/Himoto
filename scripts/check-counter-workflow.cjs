@@ -97,7 +97,7 @@ async function main(){
    const mobileWrite=(user,action,body,key=randomUUID())=>writeMobileContractOperation(user,'1',action,new NextRequest('https://qa.invalid/api/mobile/v1/contracts/1/operations/'+action,{
      method:'POST',headers:{'content-type':'application/json','idempotency-key':key},body:JSON.stringify(body),
    }));
-   await proxy.query(`UPDATE himoto.orders SET order_status='renting',total='600000',pid=650000,draft_payload='{}' WHERE id=1;
+   await proxy.query(`UPDATE himoto.orders SET order_status='renting',total='600000',pid=1650000,draft_payload='{}' WHERE id=1;
      UPDATE himoto.order_vehicle_details SET completed_at=NULL WHERE id=1001; UPDATE himoto.vehicles SET status='using' WHERE id=101`);
    await assert.rejects(async()=>readMobileContractOperation(branch,'1','payment_settlement'),error=>error.status===403);
    const start=await mobileWrite(branch,'battery_swap',{action:'prepare',item_id:1001});
@@ -110,7 +110,7 @@ async function main(){
    assert.equal((await mobileWrite(branch,'battery_swap',receipt,key)).revision,String(draft.id));
    assert.equal((await mobileWrite(branch,'battery_swap',receipt,key)).replayed,true);
    const swapTotal=(await proxy.query('SELECT total,pid FROM himoto.orders WHERE id=1')).rows[0];
-   assert.equal(Number(swapTotal.total),700000);assert.equal(Number(swapTotal.pid),750000);
+   assert.equal(Number(swapTotal.total),700000);assert.equal(Number(swapTotal.pid),1750000);
    assert.equal((await proxy.query(`SELECT count(*)::int n FROM himoto.management_contract_notifications WHERE event_key=$1 AND status='manual'`,[`battery-swap:1:${draft.id}`])).rows[0].n,1);
    assert.equal((await readMobileContractOperation(branch,'1','battery_swap')).swaps.find(row=>row.id===draft.id).fee,100000);
    checks.push('App swap uses the branch renewal grant and adds one fee and one receipt, even on an overpaid contract. The exact swap preview stays manual.');
