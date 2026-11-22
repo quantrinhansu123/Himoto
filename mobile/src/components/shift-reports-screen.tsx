@@ -9,7 +9,7 @@ import { shiftReportTypeLabel, type ShiftReportType } from '../../../shared/mobi
 import { useSession } from '@/providers/session';
 import { useGlobalBranch } from '@/providers/branch';
 import { useTheme, money } from '@/theme';
-import { Button, Card, Chip, InlineError, KeyValueRow, SegmentedBar, StateView, StatusBadge } from '@/components/ui';
+import { Button, Card, Chip, InlineError, KeyValueRow, SegmentedBar, SkeletonList, StateView, StatusBadge } from '@/components/ui';
 import { ChoiceField } from '@/components/form-fields';
 import { DateField } from '@/components/date-field';
 import { FilteredListExport } from '@/components/filtered-list-export';
@@ -110,7 +110,7 @@ function ShiftReportsList({ initialReportType }: { initialReportType: ShiftRepor
           </Card>
         );
       }}
-      ListEmptyComponent={query.isPending ? <StateView title="Đang tải báo cáo…" loading /> : query.isError ? <StateView title="Chưa tải được báo cáo" message={query.error.message} retry={() => void query.refetch()} /> : <StateView title="Chưa có báo cáo phù hợp." />}
+      ListEmptyComponent={query.isPending ? <SkeletonList count={4} lines={3} /> : query.isError ? <StateView title="Chưa tải được báo cáo" message={query.error.message} retry={() => void query.refetch()} /> : <StateView title="Chưa có báo cáo phù hợp." />}
     />
   </SafeAreaView>;
 }

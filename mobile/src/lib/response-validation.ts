@@ -113,6 +113,8 @@ export function isRecord(value: unknown): value is MobileRecord {
     object(value) &&
     (value.monitoring === undefined || isContractMonitoring(value.monitoring)) &&
     (value.reminderEligible === undefined || typeof value.reminderEligible === "boolean") &&
+    (value.missingOpenContract === undefined || typeof value.missingOpenContract === "boolean") &&
+    (value.overdueDays === undefined || nullableNumber(value.overdueDays)) &&
     (value.thumbnailRevision === undefined || value.thumbnailRevision === null || typeof value.thumbnailRevision === 'string' && /^[1-9]\d{0,19}$/.test(value.thumbnailRevision)) &&
     integer(value.id, 1) &&
     [
@@ -121,6 +123,12 @@ export function isRecord(value: unknown): value is MobileRecord {
       "contactChannel",
       "contactDetail",
       "customerNote",
+      "approvedAt",
+      "holdUntil",
+      "holderName",
+      "beneficiaryStoreName",
+      "locationStatus",
+      "transferRoute",
     ].every(
       (key) => value[key] === undefined || typeof value[key] === "string",
     ) &&

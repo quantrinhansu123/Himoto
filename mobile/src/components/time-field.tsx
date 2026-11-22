@@ -42,8 +42,8 @@ export function TimeField({
     }
   }
   return (
-    <View style={{ gap: 8 }}>
-      <Text style={{ color: theme.text, fontSize: 14, fontWeight: "600" }}>
+    <View style={{ gap: 5 }}>
+      <Text style={{ color: theme.text, fontSize: 13.5, fontWeight: "600" }}>
         {label}
       </Text>
       <Pressable
@@ -54,18 +54,20 @@ export function TimeField({
         disabled={disabled}
         onPress={show}
         style={{
-          minHeight: 56,
-          borderRadius: 12,
+          minHeight: 46,
+          borderRadius: 10,
           borderWidth: 1,
           borderColor: error ? theme.danger : theme.controlBorder,
-          padding: 14,
+          paddingHorizontal: 12,
+          paddingVertical: 10,
           flexDirection: "row",
           alignItems: "center",
-          gap: 12,
+          gap: 8,
+          backgroundColor: theme.surface,
         }}
       >
-        <Clock3 size={21} color={theme.muted} accessible={false} />
-        <Text style={{ color: theme.text, fontSize: 16 }}>
+        <Clock3 size={18} color={theme.muted} accessible={false} />
+        <Text style={{ color: theme.text, fontSize: 15 }}>
           {value || "Chọn giờ"}
         </Text>
       </Pressable>

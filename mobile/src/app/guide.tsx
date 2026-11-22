@@ -6,7 +6,7 @@ import {Image} from 'expo-image';
 import {openURL} from 'expo-linking';
 import {useSession} from '@/providers/session';
 import {useDebouncedValue} from '@/hooks/use-debounced-value';
-import {Button,Card,InlineError,StateView} from '@/components/ui';
+import {Button,Card,InlineError,PaginationBar,SegmentedBar,SkeletonList,StateView,StatusBadge} from '@/components/ui';
 import {ChoiceField,FormField} from '@/components/form-fields';
 import {EditorSheet,ConfirmEdit} from '@/components/editor-sheet';
 import {selectRecordMediaPhotos,type RecordMediaPhoto} from '@/lib/record-media-photo';
@@ -68,20 +68,23 @@ function FaqList({onZoom}:{onZoom:(uri:string,headers?:Record<string,string>)=>v
         <FormField label="Tìm câu hỏi" value={search} onChangeText={value=>{setSearch(value);setPage(1);}} maxLength={120} placeholder="Câu hỏi, câu trả lời, người hỏi…"/>
         <ChoiceField label="Hạng mục hỏi đáp" value={category} choices={[{value:'',label:'Tất cả hạng mục'},...FAQ_CATEGORIES.map(item=>({value:item,label:item}))]} onChange={value=>{setCategory(value);setPage(1);}}/>
         <ChoiceField label="Trạng thái câu hỏi" value={status} choices={[{value:'',label:'Tất cả'},{value:'answered',label:'Đã trả lời'},{value:'pending',label:'Chờ trả lời'}]} onChange={value=>{setStatus(value);setPage(1);}}/>
-        {query.isPending&&<StateView loading title="Đang tải hỏi đáp"/>}
+        {query.isPending&&<SkeletonList count={3} lines={3}/>}
         {query.isError&&<StateView title="Chưa tải được hỏi đáp" message={query.error.message} retry={()=>{void query.refetch();}}/>}
       </View>}
-      renderItem={({item:row})=><Card style={{gap:12}}>
-        <Text style={{color:theme.primary,fontSize:13,fontWeight:'700'}}>{row.category} · {row.answer||row.images.length?'Đã trả lời':'Chờ trả lời'}</Text>
-        <Text selectable style={{color:theme.text,fontSize:18,fontWeight:'700',lineHeight:26}}>{row.question}</Text>
-        <Text style={{color:theme.muted,fontSize:13,lineHeight:21}}>{row.asker_name} · {dateTime(row.created_at)}</Text>
-        {!!row.answer&&<Text selectable style={{color:theme.text,fontSize:16,lineHeight:25}}>{row.answer}</Text>}
-        {!!row.answerer_name&&<Text style={{color:theme.muted}}>Trả lời: {row.answerer_name}</Text>}
-        {row.images.map(id=>{const src=api!.supportPhoto('guide-faq',String(id));return <Pressable key={id} accessibilityRole="button" accessibilityLabel={`Phóng to ảnh minh họa câu trả lời #${id}`} onPress={()=>onZoom(src.uri,src.headers)}><Image cachePolicy="memory" source={{...src,cacheKey:JSON.stringify([session!.user.id,session!.sessionId||session!.expiresAt,src.uri])}} style={{width:'100%',aspectRatio:4/3,borderRadius:12}} contentFit="contain" accessibilityLabel={`Ảnh minh họa câu trả lời #${id}`}/></Pressable>;})}
-        {query.data?.can_answer&&<Button secondary label={`Trả lời câu hỏi #${row.id}`} onPress={()=>setEditor({row})}/>}
+      renderItem={({item:row})=><Card style={{gap:9,padding:13}}>
+        <View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center',gap:8}}>
+          <Text style={{color:theme.primary,fontSize:12.5,fontWeight:'700',flex:1}}>{row.category}</Text>
+          <StatusBadge status={row.answer||row.images.length?'answered':'pending'} label={row.answer||row.images.length?'Đã trả lời':'Chờ trả lời'} />
+        </View>
+        <Text selectable style={{color:theme.text,fontSize:16,fontWeight:'700',lineHeight:23}}>{row.question}</Text>
+        <Text style={{color:theme.muted,fontSize:12.5}}>{row.asker_name} · {dateTime(row.created_at)}</Text>
+        {!!row.answer&&<Text selectable style={{color:theme.text,fontSize:14.5,lineHeight:22}}>{row.answer}</Text>}
+        {!!row.answerer_name&&<Text style={{color:theme.muted,fontSize:12.5}}>Trả lời: {row.answerer_name}</Text>}
+        {row.images.map(id=>{const src=api!.supportPhoto('guide-faq',String(id));return <Pressable key={id} accessibilityRole="button" accessibilityLabel={`Phóng to ảnh minh họa câu trả lời #${id}`} onPress={()=>onZoom(src.uri,src.headers)}><Image cachePolicy="memory" source={{...src,cacheKey:JSON.stringify([session!.user.id,session!.sessionId||session!.expiresAt,src.uri])}} style={{width:'100%',aspectRatio:4/3,borderRadius:10}} contentFit="contain" accessibilityLabel={`Ảnh minh họa câu trả lời #${id}`}/></Pressable>;})}
+        {query.data?.can_answer&&<Button size="sm" secondary label="Trả lời câu hỏi" onPress={()=>setEditor({row})}/>}
       </Card>}
-      ListEmptyComponent={!query.isPending&&!query.isError?<Text style={{color:theme.muted,padding:20,textAlign:'center'}}>Chưa có câu hỏi phù hợp.</Text>:undefined}
-      ListFooterComponent={query.data?<View style={{gap:10}}><Text style={{color:theme.muted}}>Trang {query.data.page} · {query.data.total} câu hỏi</Text><Button secondary label="Trang câu hỏi trước" disabled={page<=1||query.isFetching} onPress={()=>setPage(value=>value-1)}/><Button secondary label="Trang câu hỏi sau" disabled={!query.data.hasMore||query.isFetching} onPress={()=>setPage(value=>value+1)}/></View>:undefined}/>
+      ListEmptyComponent={!query.isPending&&!query.isError?<StateView title="Chưa có câu hỏi phù hợp" />:undefined}
+      ListFooterComponent={query.data?<PaginationBar page={query.data.page} total={query.data.total} unit="câu hỏi" hasNext={query.data.hasMore} disabled={query.isFetching} onChange={setPage} />:undefined}/>
     {editor&&<FaqEditor row={editor.row} name={query.data?.user_name||session!.user.name} onClose={()=>setEditor(null)} onSaved={()=>{setEditor(null);void query.refetch();}}/>}
   </>;
 }
@@ -104,17 +107,13 @@ export default function Guide() {
   const current=selected.steps[Math.min(step,selected.steps.length-1)];
   const chapters=manualQuery.data?.chapters||[];
   const activeChapter=chapters.find(c=>c.id===chapterId)||chapters[0];
-  return <View style={{flex:1}}>
-    <View style={{paddingHorizontal:20,paddingTop:16,gap:10}}>
-      <Text accessibilityRole="header" style={{color:theme.text,fontSize:27,fontWeight:'800'}}>Hướng dẫn và hỏi đáp</Text>
-      <View style={{flexDirection:'row',gap:8}}>
-        <Button equalWidth secondary={tab!=='guide'} label="Quy trình" onPress={()=>setTab('guide')}/>
-        <Button equalWidth secondary={tab!=='manual'} label="Sổ tay (17 mục)" onPress={()=>setTab('manual')}/>
-        <Button equalWidth secondary={tab!=='faq'} label="Hỏi đáp" onPress={()=>setTab('faq')}/>
-      </View>
+  return <View style={{flex:1,backgroundColor:theme.background}}>
+    <View style={{paddingHorizontal:16,paddingTop:14,paddingBottom:6,gap:10,maxWidth:760,width:'100%',alignSelf:'center'}}>
+      <Text accessibilityRole="header" style={{color:theme.text,fontSize:22,fontWeight:'800'}}>Hướng dẫn & Hỏi đáp</Text>
+      <SegmentedBar value={tab} onChange={setTab} options={[{value:'guide',label:'Quy trình'},{value:'manual',label:'Sổ tay (17)'},{value:'faq',label:'Hỏi đáp'}]} />
     </View>
-    {tab==='faq'?<FaqList onZoom={(uri,headers)=>setZoomImage({uri,headers})}/>:tab==='manual'?<ScrollView contentContainerStyle={{padding:20,gap:16,maxWidth:800,width:'100%',alignSelf:'center'}}>
-      {manualQuery.isPending?<StateView title="Đang tải sổ tay hướng dẫn…" loading/>:manualQuery.isError?<StateView title="Chưa tải được sổ tay" message={manualQuery.error.message} retry={()=>void manualQuery.refetch()}/>:<>
+    {tab==='faq'?<FaqList onZoom={(uri,headers)=>setZoomImage({uri,headers})}/>:tab==='manual'?<ScrollView contentContainerStyle={{padding:16,gap:14,maxWidth:760,width:'100%',alignSelf:'center'}}>
+      {manualQuery.isPending?<SkeletonList count={3} lines={4}/>:manualQuery.isError?<StateView title="Chưa tải được sổ tay" message={manualQuery.error.message} retry={()=>void manualQuery.refetch()}/>:<>
         <ChoiceField label="Chương sổ tay hướng dẫn" value={activeChapter?.id||''} choices={chapters.map(c=>({value:c.id,label:c.title}))} searchable onChange={setChapterId}/>
         {activeChapter&&<Card style={{gap:12}}>
           <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'800'}}>{activeChapter.title}</Text>
@@ -144,7 +143,10 @@ export default function Guide() {
         {current.telegram&&current.telegram.map(line=><Text key={line} style={{color:theme.text,lineHeight:24}}>• {line}</Text>)}
         <Text style={{color:theme.success,fontSize:16,fontWeight:'600',lineHeight:25}}>Kiểm tra: {current.check}</Text>
       </Card>
-      <Button label="Bước tiếp theo" disabled={step>=selected.steps.length-1} onPress={()=>setStep(value=>value+1)}/><Button secondary label="Bước trước" disabled={step<=0} onPress={()=>setStep(value=>value-1)}/>
+      <View style={{flexDirection:'row',gap:8}}>
+        <Button size="sm" equalWidth secondary label="Bước trước" disabled={step<=0} onPress={()=>setStep(value=>value-1)}/>
+        <Button size="sm" equalWidth label="Bước tiếp theo" disabled={step>=selected.steps.length-1} onPress={()=>setStep(value=>value+1)}/>
+      </View>
     </ScrollView>}
     {zoomImage&&<Modal visible transparent animationType="fade" onRequestClose={()=>setZoomImage(null)}>
       <View style={{flex:1,backgroundColor:'rgba(0,0,0,0.88)',justifyContent:'center',padding:16,gap:14}}>

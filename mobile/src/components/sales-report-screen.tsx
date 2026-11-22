@@ -1,12 +1,13 @@
 import { useCallback, useRef, useState } from "react";
 import { useFocusEffect } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
-import { ScrollView, RefreshControl, Text, type ScrollViewInstance } from "react-native";
+import { ScrollView, RefreshControl, Text, View, type ScrollViewInstance } from "react-native";
+import { SlidersHorizontal } from "lucide-react-native";
 import { SALES_REPORTS, REPORT_PRESETS, salesReportPeriod, type SalesReportKind } from "../../../shared/mobile-reports";
 import { useSession } from "@/providers/session";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useTheme } from "@/theme";
-import { Button, Card, InlineError, StateView } from "./ui";
+import { Button, Card, Chip, InlineError, SkeletonList, StateView } from "./ui";
 import { DateField } from "./date-field";
 import { ChoiceField, FormField } from "./form-fields";
 import { FileExportButton } from "./file-export-button";
@@ -19,6 +20,7 @@ export function SalesReportScreen() {
   useFocusEffect(useCallback(() => { setToday(new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 10)); }, []));
   const [kind, setKind] = useState<SalesReportKind>("actual"), [from, setFrom] = useState(`${today.slice(0, 7)}-01`), [to, setTo] = useState(today), [store, setStore] = useState(session!.user.allStores ? "all" : String(session!.user.storeId || "all"));
   const [preset, setPreset] = useState("month"), [input, setInput] = useState(""), search = useDebouncedValue(input);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [category, setCategory] = useState(""), [method, setMethod] = useState(""), [side, setSide] = useState("in"), [view, setView] = useState("stores"), [department, setDepartment] = useState(""), [source, setSource] = useState(""), [presence, setPresence] = useState("");
   const [sort, setSort] = useState("revenue"), [direction, setDirection] = useState("desc"), [paging, setPaging] = useState<Record<string, { filter: string; page: number; size: string }>>({});
   const [sectionPaging, setSectionPaging] = useState<Record<string, { filter: string; pages: Record<string, number> }>>({});
@@ -45,27 +47,52 @@ export function SalesReportScreen() {
     scroll.current?.scrollTo({ y: 0, animated: false });
   }
   const mainChoices = SALES_REPORTS.filter(row => !["by-staff", "by-store", "new-customers", "assigned"].includes(row.value) && (row.value !== "fleet" || options.data?.canViewFleet));
-  return <ScrollView ref={scroll} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 20, paddingBottom: 40, gap: 18, width: "100%", maxWidth: 760, alignSelf: "center" }} refreshControl={<RefreshControl refreshing={report.isRefetching || options.isRefetching} tintColor={theme.primary} onRefresh={() => { void report.refetch(); void options.refetch(); }} />}>
-    <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 27, fontWeight: "800" }}>Báo cáo doanh thu thuê xe</Text>
-    <ChoiceField label="Chọn báo cáo" value={contractKinds.includes(kind) ? "contracts" : kind} choices={mainChoices} onChange={value => chooseKind(value as SalesReportKind)} />
-    {contractKinds.includes(kind) && <ChoiceField label="Mục thống kê hợp đồng" value={kind} choices={SALES_REPORTS.filter(row => contractKinds.includes(row.value))} onChange={value => chooseKind(value as SalesReportKind)} />}
-    <Card style={{ gap: 15 }}>
-      <ChoiceField label="Kỳ báo cáo" value={preset} choices={[...REPORT_PRESETS, { value: "custom", label: "Tùy chọn ngày" }]} onChange={value => { setPreset(value); if (value !== "custom") { const [start, end] = salesReportPeriod(value, today); setFrom(start); setTo(end); } }} />
-      <DateField label="Từ ngày doanh số" value={from} onChange={value => { setPreset("custom"); setFrom(value); if (value > to) setTo(value); }} error={from > today ? "Ngày không được sau hôm nay." : undefined} />
-      <DateField label="Đến ngày doanh số" value={to} onChange={value => { setPreset("custom"); setTo(value); if (value < from) setFrom(value); }} error={to > today ? "Ngày không được sau hôm nay." : undefined} />
-      <ChoiceField label={kind === "fleet" ? "Cơ sở chủ quản" : "Cơ sở báo cáo"} value={store} choices={[...(canReadAll ? [{ value: "all", label: "Tất cả cơ sở" }] : []), ...(options.data?.stores || []).filter(row => canReadAll || row.id === session!.user.storeId).map(row => ({ value: String(row.id), label: row.name }))]} onChange={setStore} searchable />
-      <Button secondary label="Đặt lại kỳ tháng này" onPress={() => { setPreset("month"); setFrom(`${today.slice(0, 7)}-01`); setTo(today); setDepartment(""); }} />
-    </Card>
+  const storeName = store === "all" ? "Tất cả cơ sở" : (options.data?.stores || []).find(r => String(r.id) === store)?.name || "Cơ sở đã chọn";
+  return <ScrollView ref={scroll} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, paddingBottom: 36, gap: 11, width: "100%", maxWidth: 760, alignSelf: "center" }} refreshControl={<RefreshControl refreshing={report.isRefetching || options.isRefetching} tintColor={theme.primary} onRefresh={() => { void report.refetch(); void options.refetch(); }} />}>
+    <View style={{ gap: 2 }}>
+      <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 22, fontWeight: "800" }}>Báo cáo doanh thu</Text>
+      <Text style={{ color: theme.muted, fontSize: 12.5 }}>{storeName} · {from.split("-").reverse().join("/")} → {to.split("-").reverse().join("/")}</Text>
+    </View>
+    {/* Horizontal Report Kind Chips */}
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 7 }}>
+      {mainChoices.map(opt => {
+        const active = contractKinds.includes(kind) ? opt.value === "contracts" : kind === opt.value;
+        return <Chip key={opt.value} label={opt.label} selected={active} onPress={() => chooseKind(opt.value as SalesReportKind)} />;
+      })}
+    </ScrollView>
+    {contractKinds.includes(kind) && (
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 7 }}>
+        {SALES_REPORTS.filter(row => contractKinds.includes(row.value)).map(opt => (
+          <Chip key={opt.value} label={opt.label} selected={kind === opt.value} onPress={() => chooseKind(opt.value as SalesReportKind)} />
+        ))}
+      </ScrollView>
+    )}
+    {/* Horizontal Period Preset Chips + Filter Toggle */}
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 7 }}>
+      {REPORT_PRESETS.map(p => (
+        <Chip key={p.value} label={p.label} selected={preset === p.value} onPress={() => { setPreset(p.value); const [start, end] = salesReportPeriod(p.value, today); setFrom(start); setTo(end); }} />
+      ))}
+      <Chip label={filtersOpen ? "Ẩn bộ lọc" : "Ngày & Cơ sở"} selected={filtersOpen || preset === "custom"} icon={<SlidersHorizontal size={14} color={filtersOpen || preset === "custom" ? theme.primary : theme.text} />} onPress={() => setFiltersOpen(v => !v)} />
+    </ScrollView>
+    {filtersOpen && (
+      <Card style={{ gap: 10 }}>
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <View style={{ flex: 1 }}><DateField label="Từ ngày" value={from} onChange={value => { setPreset("custom"); setFrom(value); if (value > to) setTo(value); }} error={from > today ? "Không sau hôm nay." : undefined} /></View>
+          <View style={{ flex: 1 }}><DateField label="Đến ngày" value={to} onChange={value => { setPreset("custom"); setTo(value); if (value < from) setFrom(value); }} error={to > today ? "Không sau hôm nay." : undefined} /></View>
+        </View>
+        <ChoiceField label={kind === "fleet" ? "Cơ sở chủ quản" : "Cơ sở báo cáo"} value={store} choices={[...(canReadAll ? [{ value: "all", label: "Tất cả cơ sở" }] : []), ...(options.data?.stores || []).filter(row => canReadAll || row.id === session!.user.storeId).map(row => ({ value: String(row.id), label: row.name }))]} onChange={setStore} searchable />
+        {report.data?.canExport && <FileExportButton key={`${kind}:${params}`} disabled={!valid || report.isFetching || report.isError} load={signal => api!.salesReportExport(kind, params, signal)} />}
+        <Button size="sm" secondary label="Đặt lại kỳ tháng này" onPress={() => { setPreset("month"); setFrom(`${today.slice(0, 7)}-01`); setTo(today); setDepartment(""); }} />
+      </Card>
+    )}
     {["ledger", "vehicles", "new-customers"].includes(kind) && <FormField label="Tìm trong báo cáo" value={input} onChangeText={setInput} maxLength={kind === "ledger" ? 200 : 255} />}
-    {kind === "ledger" && <Card style={{ gap: 14 }}><ChoiceField label="Sổ thu / chi" value={side} choices={[{ value: "in", label: "Phiếu thu" }, { value: "out", label: "Phiếu chi" }]} onChange={setSide} /><ChoiceField label="Nghiệp vụ sổ thu chi" value={category} choices={options.data?.ledgerCategories || [{ value: "", label: "Tất cả nghiệp vụ" }]} onChange={setCategory} /><ChoiceField label="Hình thức thu chi" value={method} choices={options.data?.ledgerMethods || [{ value: "", label: "Tất cả hình thức" }]} onChange={setMethod} /></Card>}
+    {kind === "ledger" && <Card style={{ gap: 10 }}><ChoiceField label="Sổ thu / chi" value={side} choices={[{ value: "in", label: "Phiếu thu" }, { value: "out", label: "Phiếu chi" }]} onChange={setSide} /><ChoiceField label="Nghiệp vụ" value={category} choices={options.data?.ledgerCategories || [{ value: "", label: "Tất cả nghiệp vụ" }]} onChange={setCategory} /><ChoiceField label="Hình thức" value={method} choices={options.data?.ledgerMethods || [{ value: "", label: "Tất cả hình thức" }]} onChange={setMethod} /></Card>}
     {kind === "overview" && <ChoiceField label="Xem tổng quan theo" value={view} choices={[{ value: "stores", label: "Theo cơ sở" }, { value: "days", label: "Theo ngày" }]} onChange={setView} />}
-    {kind === "assigned" && <ChoiceField label="Bộ phận báo cáo bổ sung" value={department} choices={[{ value: "", label: "Tất cả bộ phận" }, { value: "NVKD", label: "NVKD" }, { value: "TLS", label: "TLS" }]} onChange={setDepartment} />}
-    {kind === "new-customers" && <Card style={{ gap: 14 }}><ChoiceField label="Tình trạng nguồn khách" value={presence} choices={[{ value: "", label: "Tất cả khách mới" }, { value: "with", label: "Đã có nguồn" }, { value: "without", label: "Chưa ghi nguồn" }]} onChange={setPresence} /><ChoiceField label="Nguồn khách cụ thể" value={source} choices={[{ value: "", label: "Tất cả nguồn" }, ...report.data?.sources || []]} onChange={setSource} searchable /></Card>}
-    {kind === "vehicles" && <Card style={{ gap: 14 }}><ChoiceField label="Sắp xếp doanh thu xe" value={sort} choices={[{ value: "revenue", label: "Doanh thu" }, { value: "rentals", label: "Lượt thuê" }, { value: "license", label: "Biển số" }]} onChange={setSort} /><ChoiceField label="Chiều sắp xếp xe" value={direction} choices={[{ value: "desc", label: "Giảm dần" }, { value: "asc", label: "Tăng dần" }]} onChange={setDirection} /></Card>}
-    {(kind === "vehicles" || kind === "ledger") && <ChoiceField label="Số dòng báo cáo mỗi trang" value={size} choices={(kind === "ledger" ? [10, 20, 50, 100] : [10, 20, 50]).map(value => ({ value: String(value), label: String(value) }))} onChange={value => changePage(1, Number(value))} />}
+    {kind === "assigned" && <ChoiceField label="Bộ phận" value={department} choices={[{ value: "", label: "Tất cả" }, { value: "NVKD", label: "NVKD" }, { value: "TLS", label: "TLS" }]} onChange={setDepartment} />}
+    {kind === "new-customers" && <Card style={{ gap: 10 }}><ChoiceField label="Tình trạng nguồn khách" value={presence} choices={[{ value: "", label: "Tất cả" }, { value: "with", label: "Đã có nguồn" }, { value: "without", label: "Chưa ghi nguồn" }]} onChange={setPresence} /><ChoiceField label="Nguồn khách cụ thể" value={source} choices={[{ value: "", label: "Tất cả nguồn" }, ...report.data?.sources || []]} onChange={setSource} searchable /></Card>}
+    {kind === "vehicles" && <Card style={{ gap: 10 }}><ChoiceField label="Sắp xếp theo" value={sort} choices={[{ value: "revenue", label: "Doanh thu" }, { value: "rentals", label: "Lượt thuê" }, { value: "license", label: "Biển số" }]} onChange={setSort} /><ChoiceField label="Chiều sắp xếp" value={direction} choices={[{ value: "desc", label: "Giảm dần" }, { value: "asc", label: "Tăng dần" }]} onChange={setDirection} /></Card>}
+    {(kind === "vehicles" || kind === "ledger") && <ChoiceField label="Số dòng mỗi trang" value={size} choices={(kind === "ledger" ? [10, 20, 50, 100] : [10, 20, 50]).map(value => ({ value: String(value), label: String(value) }))} onChange={value => changePage(1, Number(value))} />}
     {options.isError && <InlineError message={options.error.message} />}
-    {report.data?.canExport && <FileExportButton key={`${kind}:${params}`} disabled={!valid || report.isFetching || report.isError} load={signal => api!.salesReportExport(kind, params, signal)} />}
-    {!valid ? <StateView title="Kiểm tra ngày báo cáo" message="Chọn khoảng ngày hợp lệ, không sau hôm nay." /> : report.isPending ? <StateView title="Đang tính báo cáo" loading /> : report.isError ? <StateView title="Chưa tải được báo cáo" message={report.error.message} retry={() => { void report.refetch(); }} /> : <SalesReportView key={`${kind}:${params}`} report={report.data} onPage={changePage} />}
-    <Button secondary label="Tải lại báo cáo" loading={report.isFetching} onPress={() => { void report.refetch(); }} disabled={!valid} />
+    {!valid ? <StateView title="Kiểm tra ngày báo cáo" message="Chọn khoảng ngày hợp lệ, không sau hôm nay." /> : report.isPending ? <SkeletonList count={4} lines={3} /> : report.isError ? <StateView title="Chưa tải được báo cáo" message={report.error.message} retry={() => { void report.refetch(); }} /> : <SalesReportView key={`${kind}:${params}`} report={report.data} onPage={changePage} />}
   </ScrollView>;
 }

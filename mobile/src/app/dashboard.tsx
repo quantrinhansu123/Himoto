@@ -10,7 +10,7 @@ import {useSession} from '@/providers/session';
 import {useGlobalBranch} from '@/providers/branch';
 import {useWorkspace} from '@/hooks/use-workspace';
 import {money,useTheme} from '@/theme';
-import {Button,Card,Chip,KeyValueRow,StateView} from '@/components/ui';
+import {Button,Card,Chip,KeyValueRow,SkeletonList,StateView} from '@/components/ui';
 import {ChoiceField} from '@/components/form-fields';
 import {FileExportButton} from '@/components/file-export-button';
 import {DateField} from '@/components/date-field';
@@ -43,7 +43,7 @@ function Dashboard(){
       <ChoiceField label="Cơ sở" value={store} choices={[...(canReadAll?[{value:'all',label:'Tất cả cơ sở'}]:[]),...(workspace.data?.stores||[]).filter(s=>canReadAll||s.id===session!.user.storeId).map(s=>({value:String(s.id),label:s.name}))]} searchable onChange={setStore}/>
       <Button size="sm" secondary label="Tải lại" loading={query.isFetching} onPress={()=>void query.refetch()}/>
     </Card>}
-    {query.isPending?<StateView title="Đang đọc Tổng quan giao dịch" loading/>:query.isError?<StateView title="Chưa đọc được Tổng quan giao dịch" message={query.error.message} retry={()=>void query.refetch()}/>:<>
+    {query.isPending?<SkeletonList count={4} lines={3}/>:query.isError?<StateView title="Chưa đọc được Tổng quan giao dịch" message={query.error.message} retry={()=>void query.refetch()}/>:<>
       <View style={{flexDirection:'row',flexWrap:'wrap',gap:9}}>{DASHBOARD_METRICS.map(m=><Card key={m.key} style={{flexBasis:m.money?'100%':'47%',flexGrow:1,gap:4,minWidth:140,padding:13}}><Text style={{color:theme.muted,fontSize:12.5}}>{m.label}</Text><Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.65} style={{color:m.key==='overdue_contracts'?theme.danger:theme.text,fontSize:20,fontWeight:'800'}}>{m.money?money(query.data.total[m.key]):query.data.total[m.key].toLocaleString('vi-VN')}</Text><Text style={{color:theme.muted,fontSize:11.5,lineHeight:16}}>{m.hint}</Text></Card>)}</View>
       <Text style={{color:theme.muted,fontSize:12,lineHeight:18}}>Số HĐ / thuê / sở hữu / quá hạn / doanh số theo ngày bắt đầu thuê. Doanh thu và chi phí sửa theo ngày thu/chi thực tế trên sổ quỹ; doanh thu không gồm cọc và phí sửa chữa.</Text>
       <Text accessibilityRole="header" style={{color:theme.text,fontSize:17,fontWeight:'800'}}>Tổng hợp theo cơ sở</Text>

@@ -8,7 +8,7 @@ import { DepositRefundRequestCard } from '@/components/deposit-refund-request-ca
 import { ConfirmEdit } from '@/components/editor-sheet';
 import { FormField } from '@/components/form-fields';
 import { KeyboardFormScrollView } from '@/components/keyboard-form-scroll-view';
-import { Button, Card, InlineError, StateView } from '@/components/ui';
+import { Button, Card, InlineError, KeyValueRow, PaginationBar, SkeletonList, StateView, StatusBadge } from '@/components/ui';
 import { useSession } from '@/providers/session';
 import { money, useTheme } from '@/theme';
 
@@ -95,23 +95,26 @@ function Queue() {
               pathname: '/contract-telegram/[id]', params: { id: String(saved.order_id), eventKind: 'return', returnItemId: String(saved.item_id) },
             })} />}
         </Card>}
-        {query.isPending && <StateView title="Đang tải yêu cầu hoàn cọc" loading />}
+        {query.isPending && <SkeletonList count={4} lines={3} />}
         {query.isError && <StateView title="Chưa tải được danh sách" message={query.error.message} retry={refresh} />}
         {!query.isFetching && query.data?.rows.length === 0 && <StateView title="Không có yêu cầu chờ duyệt" />}
-        {query.data?.rows.map(row => <Card key={row.id} style={{ gap: 10 }}>
-          <Text style={{ color: theme.text, fontWeight: '800', fontSize: 18 }}>HĐ {row.code} · {money(row.amount)}</Text>
-          <Text style={muted}>{row.store} · {row.actor}{row.review_reason ? ` · ${row.review_reason}` : ''}</Text>
-          <Button secondary label={`Xem và duyệt HĐ ${row.code}`} disabled={query.isFetching} onPress={() => {
+        {query.data?.rows.map(row => <Card key={row.id} style={{ gap: 8, padding: 13 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+            <Text style={{ color: theme.primary, fontWeight: '800', fontSize: 15 }}>HĐ {row.code}</Text>
+            <StatusBadge status="pending" label="Chờ duyệt" />
+          </View>
+          <View style={{ gap: 2 }}>
+            <KeyValueRow label="Số tiền hoàn cọc" strong value={money(row.amount)} />
+            <KeyValueRow label="Cơ sở / Người đề xuất" value={`${row.store} · ${row.actor}`} />
+            {!!row.review_reason && <KeyValueRow label="Lý do" value={row.review_reason} />}
+          </View>
+          <Button size="sm" secondary label="Xem & Duyệt hoàn cọc" disabled={query.isFetching} onPress={() => {
             setNote(''); setError(''); setSaved(undefined); setSelected(row);
           }} />
         </Card>)}
-        {query.data && (page > 1 || query.data.has_more) && <>
-          <Text style={muted}>Trang {page}</Text>
-          <View style={{ flexDirection: 'row', gap: 10 }}>
-            <Button equalWidth secondary label="Trang trước" disabled={page === 1 || query.isFetching} onPress={() => setPage(value => value - 1)} />
-            <Button equalWidth secondary label="Trang sau" disabled={!query.data.has_more || query.isFetching} onPress={() => setPage(value => value + 1)} />
-          </View>
-        </>}
+        {query.data && (page > 1 || query.data.has_more) && (
+          <PaginationBar page={page} hasNext={query.data.has_more} disabled={query.isFetching} onChange={setPage} />
+        )}
       </>}
     </KeyboardFormScrollView>
     {selected && decision && <ConfirmEdit title={decision === 'approve' ? 'Duyệt và ghi phiếu chi?' : 'Từ chối yêu cầu hoàn cọc?'}

@@ -8,7 +8,7 @@ import { dutyAddDays, dutyToday, dutyWeekStart } from '../../../shared/mobile-du
 import { shiftCreditLabel } from '../../../shared/attendance-shifts';
 import { useSession } from '@/providers/session';
 import { useTheme } from '@/theme';
-import { Button, Card, InlineError, StateView } from '@/components/ui';
+import { Button, Card, InlineError, SkeletonList, StateView } from '@/components/ui';
 import { ChoiceField } from '@/components/form-fields';
 import { ConfirmEdit } from '@/components/editor-sheet';
 import { KeyboardFormScrollView } from '@/components/keyboard-form-scroll-view';
@@ -39,11 +39,16 @@ function WeekForm({ initial, moveWeek }: { initial: SelfRegistrationWeek; moveWe
     if (running.current) return; running.current = true; setBusy(true); setError('');
     try { const result = await api!.selfRegistration(data.week); apply(result); setUncertain(false); setMessage('Đã tải lại đăng ký ca.'); } catch (cause) { setError((cause as Error).message); } finally { running.current = false; setBusy(false); }
   }
-  return <KeyboardFormScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40, gap: 16, maxWidth: 760, width: '100%', alignSelf: 'center' }}>
-    <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 26, fontWeight: '800' }}>Đăng ký ca làm việc</Text>
-    <Text style={{ color: theme.text }}>{data.staff.name} · {data.staff.store_name}</Text>
-    <Text style={{ color: theme.muted }}>Tuần {labelDate(data.week)} – {labelDate(data.dates[6])}</Text>
-    <View style={{ gap: 8 }}><Button secondary label="Tuần trước" disabled={busy || changed.length > 0 || data.week <= dutyWeekStart(dutyToday())} onPress={() => moveWeek(dutyAddDays(data.week, -7))} /><Button secondary label="Tuần sau" disabled={busy || changed.length > 0} onPress={() => moveWeek(dutyAddDays(data.week, 7))} /></View>
+  return <KeyboardFormScrollView contentContainerStyle={{ padding: 16, paddingBottom: 36, gap: 12, maxWidth: 760, width: '100%', alignSelf: 'center' }}>
+    <View style={{ gap: 2 }}>
+      <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 22, fontWeight: '800' }}>Đăng ký ca làm việc</Text>
+      <Text style={{ color: theme.muted, fontSize: 13 }}>{data.staff.name} · {data.staff.store_name}</Text>
+      <Text style={{ color: theme.muted, fontSize: 12.5 }}>Tuần {labelDate(data.week)} – {labelDate(data.dates[6])}</Text>
+    </View>
+    <View style={{ flexDirection: 'row', gap: 8 }}>
+      <Button size="sm" equalWidth secondary label="Tuần trước" disabled={busy || changed.length > 0 || data.week <= dutyWeekStart(dutyToday())} onPress={() => moveWeek(dutyAddDays(data.week, -7))} />
+      <Button size="sm" equalWidth secondary label="Tuần sau" disabled={busy || changed.length > 0} onPress={() => moveWeek(dutyAddDays(data.week, 7))} />
+    </View>
     {data.dates.map(date => <Card key={date} style={{ gap: 8 }}><ChoiceField label={`Ca làm ngày ${labelDate(date)}${date < data.today ? ' · Đã qua' : date === data.today ? ' · Hôm nay' : ''}`} value={draft[date] || ''} searchable disabled={busy || uncertain || date < data.today} choices={[{ value: '', label: 'Chưa đăng ký' }, ...REGISTRATION_SHIFTS.map(shift => ({ value: shift.code, label: `${shift.code} · ${shift.name}${shift.start ? ` (${shift.start}–${shift.end}${shift.code === 'G1+G3' ? ', nghỉ 12:00–17:00' : ''})` : ''} · ${shiftCreditLabel(shift.credit)} công` }))]} onChange={value => { setDraft(current => ({ ...current, [date]: value })); setMessage(''); }} /></Card>)}
     <Text style={{ color: theme.text, fontWeight: '700' }}>Tổng công đăng ký dự kiến: {shiftCreditLabel(data.dates.reduce((sum, date) => sum + registrationCredit(draft[date]), 0))} công</Text>
     <Text style={{ color: theme.muted, lineHeight: 22 }}>Chỉ đăng ký ca của chính bạn tại cơ sở trong hồ sơ. Ngày đã qua không thể sửa. Ca đăng ký được hiển thị trên bảng tháng của quản lý, chưa thay thế lịch trực và công chấm thực tế.</Text>
@@ -58,5 +63,5 @@ function WeekForm({ initial, moveWeek }: { initial: SelfRegistrationWeek; moveWe
 export default function Route() {
   const { api, session } = useSession(), [week, setWeek] = useState(() => dutyWeekStart(dutyToday()));
   const query = useQuery({ queryKey: ['self-shift-registration', session?.user.id, week], queryFn: ({ signal }) => api!.selfRegistration(week, signal), enabled: !!api && !!session, retry: false, refetchOnReconnect: false, refetchOnWindowFocus: false });
-  return <SafeAreaView edges={['bottom', 'left', 'right']} style={{ flex: 1 }}>{query.isPending ? <StateView title="Đang tải đăng ký ca…" loading /> : query.isError ? <StateView title="Chưa mở được đăng ký ca" message={query.error.message} retry={() => void query.refetch()} /> : <WeekForm key={`${api!.origin}:${session!.token}:${week}`} initial={query.data} moveWeek={setWeek} />}</SafeAreaView>;
+  return <SafeAreaView edges={['bottom', 'left', 'right']} style={{ flex: 1 }}>{query.isPending ? <View style={{ padding: 16 }}><SkeletonList count={4} lines={2} /></View> : query.isError ? <StateView title="Chưa mở được đăng ký ca" message={query.error.message} retry={() => void query.refetch()} /> : <WeekForm key={`${api!.origin}:${session!.token}:${week}`} initial={query.data} moveWeek={setWeek} />}</SafeAreaView>;
 }

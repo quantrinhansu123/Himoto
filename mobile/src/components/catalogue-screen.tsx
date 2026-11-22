@@ -21,6 +21,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   Check,
+  CheckCircle2,
   ChevronRight,
   ChevronDown,
   Download,
@@ -29,7 +30,9 @@ import {
   MoreHorizontal,
   Plus,
   Search,
+  Send,
   SlidersHorizontal,
+  TriangleAlert,
   X,
 } from "lucide-react-native";
 import type { CatalogueKind, MobileRecord } from "@himoto/mobile-contract";
@@ -39,6 +42,7 @@ import {
   Button,
   Card,
   InlineError,
+  SkeletonList,
   StateView,
   StatusBadge,
 } from "@/components/ui";
@@ -53,6 +57,15 @@ import { ManagementDrawer } from "@/components/management-drawer";
 import { RecordActionsModal } from "@/components/record-actions-modal";
 import { backfillActions } from '../../../shared/mobile-backfill';
 import { isAdminAccount } from '../../../shared/mobile-managed-accounts';
+
+const GPS_CARD_LABELS: Record<string, string> = {
+  online: "GPS trực tuyến",
+  stopped: "GPS đang dừng",
+  stale: "GPS chưa cập nhật",
+  warning: "GPS cảnh báo",
+  offline: "GPS mất kết nối",
+  none: "Chưa gắn GPS",
+};
 
 const RecordCard = memo(function RecordCard({
   record,
@@ -88,7 +101,10 @@ const RecordCard = memo(function RecordCard({
     }
   };
 
-  const canReceiveTransfer = kind === "vehicles" && record.status === "in_transit" && Boolean(session?.user.permissions.includes("vehicles.receive") || session?.user.permissions.includes("vehicles.transfer"));
+  const perms = session?.user.permissions || [];
+  const canReceiveTransfer = kind === "vehicles" && record.status === "in_transit" && Boolean(perms.includes("vehicles.receive") || perms.includes("vehicles.transfer"));
+  const canApproveContract = kind === "contracts" && record.status !== "draft" && record.status !== "cancelled" && !record.approvedAt && perms.includes("contracts.approve");
+  const showContractTelegram = kind === "contracts" && record.status !== "draft";
   const contractBalance =
     kind === "contracts" && record.totalAmount !== null && record.paidAmount !== null
       ? Math.max(0, record.totalAmount - record.paidAmount)
@@ -193,11 +209,55 @@ const RecordCard = memo(function RecordCard({
           </View>
         )}
 
-        <View style={[styles.row, { flexWrap: "wrap", alignItems: "center", gap: 8 }]}>
+        {kind === "vehicles" && (!!record.holderName || !!record.beneficiaryStoreName || !!record.transferRoute) && (
+          <View style={{ gap: 3 }}>
+            {!!record.holderName && record.holderName !== "Lưu kho" && (
+              <Text numberOfLines={1} style={{ color: theme.text, fontSize: 13, fontWeight: "600" }}>
+                Người giữ: {record.holderName}
+              </Text>
+            )}
+            {!!record.beneficiaryStoreName && (
+              <Text numberOfLines={1} style={{ color: theme.muted, fontSize: 12.5 }}>
+                Nguồn khách: {record.beneficiaryStoreName}
+              </Text>
+            )}
+            {!!record.transferRoute && (
+              <Text numberOfLines={1} style={{ color: theme.primary, fontSize: 12.5, fontWeight: "700" }}>
+                Điều chuyển: {record.transferRoute}
+              </Text>
+            )}
+          </View>
+        )}
+
+        <View style={[styles.row, { flexWrap: "wrap", alignItems: "center", gap: 6 }]}>
           <StatusBadge
-            status={record.status}
+            status={kind === "vehicles" && record.missingOpenContract ? "warning" : record.status}
             label={kind === 'contracts' && scope === 'drafts' && record.status === 'draft' ? 'Lưu nháp' : contextualStatusLabel(kind, record.status)}
           />
+          {kind === "contracts" && record.status !== "draft" && record.status !== "cancelled" && (
+            <StatusBadge
+              status={record.approvedAt ? "approved" : "unapproved"}
+              label={record.approvedAt ? "Đã duyệt" : "Chờ duyệt"}
+            />
+          )}
+          {kind === "contracts" && record.status === "reserved" && !!record.holdUntil && (
+            <StatusBadge status="reserved" label={`Giữ đến ${dateTime(record.holdUntil)}`} />
+          )}
+          {kind === "vehicles" && !!record.locationStatus && record.locationStatus !== "none" && (
+            <StatusBadge
+              status={record.locationStatus}
+              label={GPS_CARD_LABELS[record.locationStatus] || record.locationStatus}
+            />
+          )}
+          {kind === "vehicles" && record.missingOpenContract && (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, backgroundColor: theme.warningBackground, borderWidth: 1, borderColor: `${theme.warning}44` }}>
+              <TriangleAlert size={12} color={theme.warning} accessible={false} />
+              <Text style={{ color: theme.warning, fontSize: 11.5, fontWeight: "700" }}>Không có HĐ</Text>
+            </View>
+          )}
+          {kind === "vehicles" && typeof record.overdueDays === "number" && record.overdueDays > 0 && (
+            <StatusBadge status="overdue" label={`Quá hạn ${record.overdueDays} ngày`} />
+          )}
           <Text
             numberOfLines={1}
             style={{
@@ -209,6 +269,12 @@ const RecordCard = memo(function RecordCard({
             {kind === "vehicles" ? `Kho: ${record.storeName || "Chưa xác định"}` : (record.storeName || "Chưa xác định cơ sở")}
           </Text>
         </View>
+
+        {kind === "customers" && !!record.address && (
+          <Text numberOfLines={1} style={{ color: theme.muted, fontSize: 12.5 }}>
+            {record.address}
+          </Text>
+        )}
 
         {kind === "customers" && !!record.customerNote && (
           <Text numberOfLines={2} style={{ color: theme.warning, fontSize: 12.5, lineHeight: 17 }}>
@@ -229,14 +295,35 @@ const RecordCard = memo(function RecordCard({
         )}
       </Pressable>
 
-      {canReceiveTransfer && (
+      {(canReceiveTransfer || canApproveContract || showContractTelegram) && (
         <View style={{ flexDirection: "row", gap: 8, paddingTop: 2 }}>
-          <Button
-            size="sm"
-            equalWidth
-            label={session?.user.permissions.includes("vehicles.receive") ? "Nhận / Từ chối xe" : "Xem / Huỷ chuyển"}
-            onPress={() => router.push({ pathname: "/vehicle-transfer-editor/[id]", params: { id: String(record.id) } })}
-          />
+          {canReceiveTransfer && (
+            <Button
+              size="sm"
+              equalWidth
+              label={perms.includes("vehicles.receive") ? "Nhận / Từ chối xe" : "Xem / Huỷ chuyển"}
+              onPress={() => router.push({ pathname: "/vehicle-transfer-editor/[id]", params: { id: String(record.id) } })}
+            />
+          )}
+          {canApproveContract && (
+            <Button
+              size="sm"
+              equalWidth
+              icon={<CheckCircle2 size={14} color={theme.primaryText} accessible={false} />}
+              label="Duyệt hợp đồng"
+              onPress={() => router.push({ pathname: "/contract-approval/[id]", params: { id: String(record.id) } })}
+            />
+          )}
+          {showContractTelegram && (
+            <Button
+              size="sm"
+              equalWidth={canApproveContract}
+              secondary
+              icon={<Send size={13} color={theme.text} accessible={false} />}
+              label="Telegram"
+              onPress={() => router.push({ pathname: "/contract-telegram/[id]", params: { id: String(record.id) } })}
+            />
+          )}
         </View>
       )}
     </Card>
@@ -340,18 +427,18 @@ export function CatalogueScreen({
     ...(extraFilters.direction ? { direction: extraFilters.direction } : {}),
     ...(kind === "contracts"
       ? {
-          ...(extraFilters.rentalType ? { rental_type: extraFilters.rentalType } : {}),
-          ...(extraFilters.ownershipTerm ? { ownership_term_months: extraFilters.ownershipTerm } : {}),
-          ...(extraFilters.overdueBucket ? { overdue_bucket: extraFilters.overdueBucket } : {}),
-        }
+        ...(extraFilters.rentalType ? { rental_type: extraFilters.rentalType } : {}),
+        ...(extraFilters.ownershipTerm ? { ownership_term_months: extraFilters.ownershipTerm } : {}),
+        ...(extraFilters.overdueBucket ? { overdue_bucket: extraFilters.overdueBucket } : {}),
+      }
       : {}),
     ...(kind === "vehicles"
       ? {
-          ...(extraFilters.vehicleType ? { vehicle_type: extraFilters.vehicleType } : {}),
-          ...(extraFilters.warehouseStore ? { warehouse_store_id: extraFilters.warehouseStore } : {}),
-          ...(extraFilters.beneficiaryStore ? { beneficiary_store_id: extraFilters.beneficiaryStore } : {}),
-          ...(extraFilters.missingContract ? { missing_contract: extraFilters.missingContract } : {}),
-        }
+        ...(extraFilters.vehicleType ? { vehicle_type: extraFilters.vehicleType } : {}),
+        ...(extraFilters.warehouseStore ? { warehouse_store_id: extraFilters.warehouseStore } : {}),
+        ...(extraFilters.beneficiaryStore ? { beneficiary_store_id: extraFilters.beneficiaryStore } : {}),
+        ...(extraFilters.missingContract ? { missing_contract: extraFilters.missingContract } : {}),
+      }
       : {}),
   }), [kind, extraFilters]);
   const query = useInfiniteQuery({
@@ -1009,7 +1096,7 @@ export function CatalogueScreen({
         }
         ListEmptyComponent={
           !datesValid ? <StateView title="Kiểm tra khoảng ngày" message="Chọn ngày kết thúc từ ngày bắt đầu trở đi." /> : query.isPending ? (
-            <StateView title="Đang tải danh mục" loading />
+            <SkeletonList count={4} lines={3} />
           ) : query.isError ? (
             <StateView
               title="Chưa tải được dữ liệu"

@@ -7,6 +7,8 @@ import {
 } from "@/lib/management/permissions";
 import type { ManagementRow } from "@/lib/management/types";
 import { mapApiRow } from "@/lib/management/repository";
+import { vehicleHolderLabel, vehicleMissingOpenContract } from "@/lib/management/vehicle-holder";
+import { vehicleTransferRoute } from "@/lib/management/vehicle-history";
 import { canMobileCrossStoreRead, withMobileReadData } from "./mobile-context";
 import { himotoPool } from "./himoto-database";
 import {
@@ -66,7 +68,19 @@ export function mobileRecord(
     code: row.code,
     name: kind === "contracts" ? text(row.customer_name) : row.name,
     status: row.status,
-    ...(kind === "contracts" ? { reminderEligible: isRemindableContract(row) } : {}),
+    ...(kind === "contracts" ? {
+      reminderEligible: isRemindableContract(row),
+      ...(text(row.approval_at) ? { approvedAt: text(row.approval_at) } : {}),
+      ...(text(row.hold_until) ? { holdUntil: text(row.hold_until) } : {}),
+    } : {}),
+    ...(kind === "vehicles" ? {
+      ...(vehicleHolderLabel(row.status, row.holder_name) && vehicleHolderLabel(row.status, row.holder_name) !== "—" ? { holderName: vehicleHolderLabel(row.status, row.holder_name) } : {}),
+      ...(text(row.beneficiary_store_name) ? { beneficiaryStoreName: text(row.beneficiary_store_name) } : {}),
+      ...(text(row.location_status) ? { locationStatus: text(row.location_status) } : {}),
+      ...(number(row.overdue_days) !== null ? { overdueDays: number(row.overdue_days) } : {}),
+      ...(vehicleMissingOpenContract(row) ? { missingOpenContract: true } : {}),
+      ...(vehicleTransferRoute(row) ? { transferRoute: vehicleTransferRoute(row) } : {}),
+    } : {}),
     storeId: number(row.store_id),
     storeName: text(row.store_name),
     license: kind === "customers" ? "" : text(row.license),

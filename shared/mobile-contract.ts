@@ -47,6 +47,15 @@ export interface MobileRecord {
   customerNote?: string;
   monitoring?: MobileContractMonitoring;
   reminderEligible?: boolean;
+  /** Safe display metadata projected to match Web ManagementMobileList cards (no PII/coordinates). */
+  approvedAt?: string;
+  holdUntil?: string;
+  holderName?: string;
+  beneficiaryStoreName?: string;
+  locationStatus?: string;
+  overdueDays?: number | null;
+  missingOpenContract?: boolean;
+  transferRoute?: string;
   /** Present in newer vehicle list responses; null means no readable thumbnail. */
   thumbnailRevision?: string | null;
 }

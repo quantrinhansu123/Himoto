@@ -2,8 +2,8 @@ import { useState } from "react";
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
-import { FlatList, Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
-import { Plus } from "lucide-react-native";
+import { FlatList, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from "react-native";
+import { Plus, Search, SlidersHorizontal, X } from "lucide-react-native";
 import type { MobileDirectoryKind } from "../../../shared/mobile-directory";
 import { STAFF_PROFILE_STATUSES } from "../../../shared/mobile-staff";
 import { STAFF_POSITIONS } from "../../../shared/staff-positions";
@@ -13,8 +13,8 @@ import { useGlobalBranch } from "@/providers/branch";
 import { useWorkspace } from "@/hooks/use-workspace";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useTheme } from "@/theme";
-import { Button, Card, Chip, InlineError, KeyValueRow, SegmentedBar, StateView, StatusBadge } from "./ui";
-import { ChoiceField, FormField } from "./form-fields";
+import { Button, Card, Chip, InlineError, KeyValueRow, SegmentedBar, SkeletonList, StateView, StatusBadge } from "./ui";
+import { ChoiceField } from "./form-fields";
 import { FilteredListExport } from "./filtered-list-export";
 
 const storeStatuses = [{ value: 'active', label: 'Hoạt động' }, { value: 'inactive', label: 'Tạm ngừng' }];
@@ -33,6 +33,7 @@ export function DirectoryScreen({ kind, initialStore }: { kind: MobileDirectoryK
   };
   const [input, setInput] = useState(""), [status, setStatus] = useState("");
   const [position, setPosition] = useState(""), search = useDebouncedValue(input);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [storeTab, setStoreTab] = useState<"stores" | "work_shifts">("stores");
   const searchAllStaff = kind === 'staff' && !initialStore && canReadAll && Boolean(search);
   const readStore = searchAllStaff ? 'all' : store;
@@ -106,11 +107,68 @@ export function DirectoryScreen({ kind, initialStore }: { kind: MobileDirectoryK
             />
           )}
         </ScrollView>
-        <FormField label={kind === "staff" ? "Tìm tên, mã nhân sự, điện thoại" : "Tìm tên, mã, địa chỉ cơ sở"} value={input} onChangeText={setInput} maxLength={120} />
-        <ChoiceField label="Trạng thái" value={status} choices={[{ value: "", label: "Tất cả trạng thái" }, ...(kind === "staff" ? STAFF_PROFILE_STATUSES : [{ value: "active", label: "Hoạt động" }, { value: "inactive", label: "Tạm ngừng" }])]} onChange={setStatus} />
-        {kind === "staff" && <ChoiceField label="Lọc chức vụ nhân sự" value={position} choices={[{ value: "", label: "Tất cả chức vụ" }, ...[...new Set([...STAFF_POSITIONS, ...rows.map(row => row.position)].filter(Boolean))].map(value => ({ value, label: value }))]} onChange={setPosition} searchable />}
-        {kind === "staff" && <ChoiceField label="Cơ sở nhân sự" value={readStore} choices={[...(canReadAll ? [{ value: "all", label: "Tất cả cơ sở" }] : []), ...stores.map(item => ({ value: String(item.id), label: item.name }))]} onChange={setStore} disabled={searchAllStaff} searchable />}
-        <Text accessibilityLiveRegion="polite" style={{ color: theme.muted, fontSize: 13 }}>{query.data ? `${query.data.pages[0].total} hồ sơ${searchAllStaff ? ' trong các cơ sở được phép xem' : ''}` : query.isError ? 'Chưa tải được danh bạ.' : 'Đang tải…'}</Text>
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <View style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1, borderRadius: 10, borderColor: theme.controlBorder, backgroundColor: theme.surface, paddingHorizontal: 11, minHeight: 44 }}>
+            <Search size={18} color={theme.muted} accessible={false} />
+            <TextInput
+              accessibilityLabel={kind === "staff" ? "Tìm tên, mã nhân sự, điện thoại" : "Tìm tên, mã, địa chỉ cơ sở"}
+              placeholder={kind === "staff" ? "Tìm tên, mã, SĐT nhân sự…" : "Tìm tên, mã, địa chỉ cơ sở…"}
+              placeholderTextColor={theme.muted}
+              value={input}
+              onChangeText={setInput}
+              maxLength={120}
+              autoCorrect={false}
+              style={{ flex: 1, color: theme.text, fontSize: 14.5, paddingVertical: 8 }}
+            />
+            {!!input && (
+              <Pressable accessibilityRole="button" accessibilityLabel="Xóa tìm kiếm" onPress={() => setInput("")} hitSlop={8}>
+                <X size={17} color={theme.muted} />
+              </Pressable>
+            )}
+          </View>
+          {kind === "staff" && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Bộ lọc chức vụ và cơ sở"
+              onPress={() => setFiltersOpen(v => !v)}
+              style={{
+                minWidth: 44,
+                minHeight: 44,
+                paddingHorizontal: 11,
+                borderRadius: 10,
+                borderWidth: 1,
+                borderColor: filtersOpen || position || readStore !== defaultStore ? theme.primary : theme.controlBorder,
+                backgroundColor: filtersOpen || position || readStore !== defaultStore ? theme.tint : theme.surface,
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 4,
+              }}
+            >
+              <SlidersHorizontal size={18} color={filtersOpen || position || readStore !== defaultStore ? theme.primary : theme.text} accessible={false} />
+              {!!(Number(Boolean(position)) + Number(readStore !== defaultStore)) && (
+                <Text style={{ color: theme.primary, fontSize: 12, fontWeight: "700" }}>
+                  {Number(Boolean(position)) + Number(readStore !== defaultStore)}
+                </Text>
+              )}
+            </Pressable>
+          )}
+        </View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 7 }}>
+          {[{ value: "", label: "Tất cả" }, ...(kind === "staff" ? STAFF_PROFILE_STATUSES : storeStatuses)].map(opt => (
+            <Chip key={opt.value || "all"} label={opt.label} selected={status === opt.value} onPress={() => setStatus(opt.value)} />
+          ))}
+        </ScrollView>
+        {kind === "staff" && filtersOpen && (
+          <Card style={{ gap: 10 }}>
+            <ChoiceField label="Chức vụ nhân sự" value={position} choices={[{ value: "", label: "Tất cả chức vụ" }, ...[...new Set([...STAFF_POSITIONS, ...rows.map(row => row.position)].filter(Boolean))].map(value => ({ value, label: value }))]} onChange={setPosition} searchable />
+            <ChoiceField label="Cơ sở nhân sự" value={readStore} choices={[...(canReadAll ? [{ value: "all", label: "Tất cả cơ sở" }] : []), ...stores.map(item => ({ value: String(item.id), label: item.name }))]} onChange={setStore} disabled={searchAllStaff} searchable />
+            {!!(position || store !== defaultStore) && (
+              <Button size="sm" secondary label="Đặt lại bộ lọc" onPress={() => { setPosition(""); setStore(defaultStore); }} />
+            )}
+          </Card>
+        )}
+        <Text accessibilityLiveRegion="polite" style={{ color: theme.muted, fontSize: 12.5 }}>{query.data ? `${query.data.pages[0].total} hồ sơ${searchAllStaff ? ' trong các cơ sở được phép xem' : ''}` : query.isError ? 'Chưa tải được danh bạ.' : 'Đang tải…'}</Text>
         {query.isError && rows.length > 0 && <><InlineError message={query.error.message} /><Button size="sm" secondary label="Tải lại danh bạ" onPress={() => { void query.refetch(); }} /></>}
       </View>}
       renderItem={({ item }) => (
@@ -137,7 +195,7 @@ export function DirectoryScreen({ kind, initialStore }: { kind: MobileDirectoryK
         </Pressable>
       )}
       onEndReachedThreshold={0.4} onEndReached={() => { if (query.hasNextPage && !query.isFetching && !query.isFetchNextPageError) void query.fetchNextPage(); }}
-      ListEmptyComponent={query.isPending ? <StateView title="Đang tải danh bạ" loading /> : query.isError ? <StateView title="Chưa tải được danh bạ" message={query.error.message} retry={() => { void query.refetch(); }} /> : <StateView title="Không có kết quả" message="Thử từ khóa hoặc bộ lọc khác." />}
+      ListEmptyComponent={query.isPending ? <SkeletonList count={4} lines={3} /> : query.isError ? <StateView title="Chưa tải được danh bạ" message={query.error.message} retry={() => { void query.refetch(); }} /> : <StateView title="Không có kết quả" message="Thử từ khóa hoặc bộ lọc khác." />}
       ListFooterComponent={query.isFetchingNextPage ? <StateView title="Đang tải tiếp" loading /> : query.isFetchNextPageError ? <Button size="sm" secondary label="Tải tiếp danh bạ" onPress={() => { void query.fetchNextPage(); }} /> : undefined}
     />
   </SafeAreaView>;

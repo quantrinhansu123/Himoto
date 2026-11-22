@@ -39,11 +39,11 @@ export function DateField({
     }
   }
   return (
-    <View style={{ gap: 8 }}>
-      <Text style={{ color: theme.text, fontSize: 14, fontWeight: "600" }}>
+    <View style={{ gap: 5 }}>
+      <Text style={{ color: theme.text, fontSize: 13.5, fontWeight: "600" }}>
         {label}
       </Text>
-      <View style={{ flexDirection: "row", gap: 8 }}>
+      <View style={{ flexDirection: "row", gap: 6 }}>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={label}
@@ -52,22 +52,24 @@ export function DateField({
           onPress={show}
           style={{
             flex: 1,
-            minHeight: 56,
-            padding: 14,
+            minHeight: 46,
+            paddingHorizontal: 12,
+            paddingVertical: 10,
             flexDirection: "row",
             alignItems: "center",
-            gap: 12,
+            gap: 8,
             borderWidth: 1,
-            borderRadius: 12,
+            borderRadius: 10,
             borderColor: error ? theme.danger : theme.controlBorder,
             backgroundColor: theme.surface,
           }}
         >
-          <CalendarDays size={21} color={theme.muted} accessible={false} />
+          <CalendarDays size={18} color={theme.muted} accessible={false} />
           <Text
+            numberOfLines={1}
             style={{
               color: value ? theme.text : theme.muted,
-              fontSize: 16,
+              fontSize: 14.5,
               flex: 1,
             }}
           >
@@ -81,13 +83,13 @@ export function DateField({
             disabled={disabled}
             onPress={() => onChange("")}
             style={{
-              minWidth: 48,
-              minHeight: 56,
+              minWidth: 42,
+              minHeight: 46,
               alignItems: "center",
               justifyContent: "center",
             }}
           >
-            <X size={21} color={theme.muted} accessible={false} />
+            <X size={18} color={theme.muted} accessible={false} />
           </Pressable>
         )}
       </View>

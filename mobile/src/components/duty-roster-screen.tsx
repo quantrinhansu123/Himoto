@@ -1,15 +1,16 @@
 import {FilteredListExport} from '@/components/filtered-list-export';
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { FlatList, RefreshControl, ScrollView, Text, View } from "react-native";
+import { FlatList, Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
 import { router } from "expo-router";
+import { ChevronLeft, ChevronRight, Plus, SlidersHorizontal } from "lucide-react-native";
 import { dutyAddDays, dutyToday, dutyWeekStart, localDutyTime, type MobileDutyInput, type MobileDutySchedule } from "../../../shared/mobile-duty-roster";
 import { useSession } from "@/providers/session";
 import { useWorkspace } from "@/hooks/use-workspace";
 import { useDutyWrite } from "@/hooks/use-duty-write";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useTheme } from "@/theme";
-import { Button, InlineError, StateView } from "./ui";
+import { Button, Card, Chip, InlineError, SkeletonList, StateView } from "./ui";
 import { ChoiceField, FormField } from "./form-fields";
 import { DateField } from "./date-field";
 import { TimeField } from "./time-field";
@@ -69,6 +70,7 @@ export function DutyRosterScreen({initialStore}:{initialStore?:string}={}) {
   const { api, session } = useSession(), theme = useTheme(), workspace = useWorkspace(), writer = useDutyWrite();
   const [week, setWeek] = useState(() => dutyWeekStart(dutyToday()));
   const [showShifts,setShowShifts]=useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [store, setStore] = useState(initialStore || "all");
   const [staffFilter, setStaffFilter] = useState("all");
   const [day, setDay] = useState("all"), [editor, setEditor] = useState<{ row: MobileDutySchedule | null } | null>(null), [deleting, setDeleting] = useState<MobileDutySchedule | null>(null);
@@ -84,28 +86,64 @@ export function DutyRosterScreen({initialStore}:{initialStore?:string}={}) {
     return Date.parse(row.starts_at) < Date.parse(`${dutyAddDays(day, 1)}T00:00:00+07:00`) && Date.parse(row.ends_at) > Date.parse(`${day}T00:00:00+07:00`);
   });
   const stores = (workspace.data?.stores || []);
+  const filterCount = Number(store !== (initialStore || "all")) + Number(staffFilter !== "all");
   function moveWeek(value: string) { setWeek(dutyWeekStart(value)); setDay("all"); }
+  const shortDay = (d: string, i: number) => `${["T2", "T3", "T4", "T5", "T6", "T7", "CN"][i]} ${d.slice(8, 10)}/${d.slice(5, 7)}`;
   return <>
-    <FlatList data={visible} keyExtractor={row => String(row.id)} contentContainerStyle={{ padding: 20, gap: 14, maxWidth: 760, width: "100%", alignSelf: "center" }}
+    <FlatList data={visible} keyExtractor={row => String(row.id)} contentContainerStyle={{ padding: 16, paddingBottom: 36, gap: 11, maxWidth: 760, width: "100%", alignSelf: "center" }}
       refreshControl={<RefreshControl refreshing={roster.isRefetching} onRefresh={() => { void roster.refetch(); }} tintColor={theme.primary} />}
-      ListHeaderComponent={<View style={{ gap: 14 }}>
-        <Button secondary label="Đăng ký ca làm việc" onPress={()=>router.push("/shift-registrations")}/>
-        <Button secondary label={showShifts?'Ẩn danh mục 7 mã ca':'Xem danh mục 7 mã ca'} onPress={()=>setShowShifts(value=>!value)}/>
-        {showShifts&&<View style={{gap:10}}>{ATTENDANCE_SHIFTS.map(shift=><Text key={shift.code} style={{color:theme.text,lineHeight:23}}>{shift.code} · {shift.name}{shift.start?` · ${shift.start}–${shift.end}`:''} · {shiftCreditLabel(shift.credit)} công</Text>)}<Text style={{color:theme.muted,lineHeight:22}}>O: nghỉ, không tạo ca làm việc. Công quy định dùng để đối chiếu, chưa phải công đã duyệt.</Text></View>}
-        <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 26, fontWeight: "800" }}>Lịch trực cơ sở</Text>
-        <View style={{ flexDirection: "row", gap: 10 }}><Button equalWidth secondary label="Tuần trước" onPress={() => moveWeek(dutyAddDays(week, -7))} /><Button equalWidth secondary label="Tuần này" onPress={() => moveWeek(dutyToday())} /><Button equalWidth secondary label="Tuần sau" onPress={() => moveWeek(dutyAddDays(week, 7))} /></View>
-        <DateField label="Ngày trong tuần cần xem" value={week} onChange={moveWeek} />
-        <ChoiceField label="Cơ sở" value={store} choices={[{ value: "all", label: "Tất cả cơ sở" }, ...stores.map(item => ({ value: String(item.id), label: item.name }))]} onChange={v => { setStore(v); setStaffFilter("all"); }} searchable />
-        <ChoiceField label="Nhân viên trực" value={staffFilter} choices={[{ value: "all", label: "Tất cả nhân viên" }, ...staffOptions]} onChange={setStaffFilter} searchable />
-        <ChoiceField label="Ngày trực" value={day} choices={[{ value: "all", label: `Cả tuần: ${week} → ${days[6]}` }, ...days.map(value => ({ value, label: value.split("-").reverse().join("/") }))]} onChange={setDay} />
-<FilteredListExport kind="duties" filters={new URLSearchParams({week,day,...(store==='all'?{}:{store_id:store}),...(staffFilter==='all'?{}:{staff_id:staffFilter})}).toString()} disabled={roster.isFetching||roster.isError||!visible.length}/>
-        <Text style={{ color: theme.muted }}>{visible.length} ca trực trong phạm vi đang xem</Text>
-        {writable && <Button label="Tạo ca trực" onPress={() => setEditor({ row: null })} />}
-        {roster.isError && <><InlineError message={roster.error.message} /><Button secondary label="Tải lại lịch trực" onPress={() => { void roster.refetch(); }} /></>}
+      ListHeaderComponent={<View style={{ gap: 11 }}>
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 22, fontWeight: "800" }}>Lịch trực cơ sở</Text>
+            <Text style={{ color: theme.muted, fontSize: 12.5 }}>{visible.length} ca · {week.split("-").reverse().join("/")} → {days[6].split("-").reverse().join("/")}</Text>
+          </View>
+          {writable && <Button size="sm" icon={<Plus size={14} color={theme.primaryText} />} label="Tạo ca" onPress={() => setEditor({ row: null })} />}
+        </View>
+        {/* Compact Week Stepper Bar */}
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.border, borderRadius: 11, padding: 6 }}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Tuần trước" onPress={() => moveWeek(dutyAddDays(week, -7))} style={{ minWidth: 38, minHeight: 36, borderRadius: 8, backgroundColor: theme.background, borderWidth: 1, borderColor: theme.border, alignItems: "center", justifyContent: "center" }}>
+            <ChevronLeft size={18} color={theme.text} />
+          </Pressable>
+          <Pressable accessibilityRole="button" onPress={() => moveWeek(dutyToday())} style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 4 }}>
+            <Text style={{ color: theme.text, fontSize: 13.5, fontWeight: "700" }}>{week.split("-").reverse().join("/")} – {days[6].split("-").reverse().join("/")}</Text>
+            <Text style={{ color: theme.primary, fontSize: 11.5, fontWeight: "600" }}>Chạm để về tuần này</Text>
+          </Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Tuần sau" onPress={() => moveWeek(dutyAddDays(week, 7))} style={{ minWidth: 38, minHeight: 36, borderRadius: 8, backgroundColor: theme.background, borderWidth: 1, borderColor: theme.border, alignItems: "center", justifyContent: "center" }}>
+            <ChevronRight size={18} color={theme.text} />
+          </Pressable>
+        </View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 7 }}>
+          <Chip label={filterCount ? `Bộ lọc (${filterCount})` : "Bộ lọc"} selected={filtersOpen || filterCount > 0} icon={<SlidersHorizontal size={14} color={filtersOpen || filterCount > 0 ? theme.primary : theme.text} />} onPress={() => setFiltersOpen(v => !v)} />
+          <Chip label="Bảng đăng ký ca" onPress={() => router.push("/shift-registrations")} />
+          <Chip label={showShifts ? "Ẩn 7 mã ca" : "7 mã ca"} selected={showShifts} onPress={() => setShowShifts(value => !value)} />
+        </ScrollView>
+        {showShifts && (
+          <Card style={{ gap: 6, padding: 12 }}>
+            {ATTENDANCE_SHIFTS.map(shift => <Text key={shift.code} style={{ color: theme.text, fontSize: 13, lineHeight: 19 }}>{shift.code} · {shift.name}{shift.start ? ` · ${shift.start}–${shift.end}` : ''} · {shiftCreditLabel(shift.credit)} công</Text>)}
+            <Text style={{ color: theme.muted, fontSize: 12, lineHeight: 17 }}>O: nghỉ, không tạo ca làm việc. Công quy định dùng để đối chiếu, chưa phải công đã duyệt.</Text>
+          </Card>
+        )}
+        {filtersOpen && (
+          <Card style={{ gap: 10 }}>
+            <DateField label="Chọn ngày trong tuần" value={week} onChange={moveWeek} />
+            <ChoiceField label="Cơ sở" value={store} choices={[{ value: "all", label: "Tất cả cơ sở" }, ...stores.map(item => ({ value: String(item.id), label: item.name }))]} onChange={v => { setStore(v); setStaffFilter("all"); }} searchable />
+            <ChoiceField label="Nhân viên trực" value={staffFilter} choices={[{ value: "all", label: "Tất cả nhân viên" }, ...staffOptions]} onChange={setStaffFilter} searchable />
+            <FilteredListExport kind="duties" filters={new URLSearchParams({week,day,...(store==='all'?{}:{store_id:store}),...(staffFilter==='all'?{}:{staff_id:staffFilter})}).toString()} disabled={roster.isFetching||roster.isError||!visible.length}/>
+          </Card>
+        )}
+        {/* Horizontal Day Filter Chips */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+          <Chip label="Cả tuần" selected={day === "all"} onPress={() => setDay("all")} />
+          {days.map((value, idx) => (
+            <Chip key={value} label={shortDay(value, idx)} selected={day === value} onPress={() => setDay(value)} />
+          ))}
+        </ScrollView>
+        {roster.isError && <><InlineError message={roster.error.message} /><Button size="sm" secondary label="Tải lại lịch trực" onPress={() => { void roster.refetch(); }} /></>}
         {!!writer.error && <InlineError message={writer.error} />}
       </View>}
-      renderItem={({ item }) => <DutyScheduleCard row={item}>{writable && <View style={{ flexDirection: "row", gap: 10 }}><Button equalWidth secondary label={`Sửa ca #${item.id}`} disabled={writer.busy} onPress={() => setEditor({ row: item })} /><Button equalWidth secondary label={`Xóa ca #${item.id}`} disabled={writer.busy} onPress={() => setDeleting(item)} /></View>}</DutyScheduleCard>}
-      ListEmptyComponent={roster.isPending ? <StateView title="Đang tải lịch trực" loading /> : !roster.isError ? <StateView title="Chưa có ca trực" message="Chọn tuần hoặc cơ sở khác để xem lịch." /> : undefined}
+      renderItem={({ item }) => <DutyScheduleCard row={item}>{writable && <View style={{ flexDirection: "row", gap: 8, paddingTop: 2 }}><Button size="sm" equalWidth secondary label="Sửa ca" disabled={writer.busy} onPress={() => setEditor({ row: item })} /><Button size="sm" equalWidth danger label="Xóa ca" disabled={writer.busy} onPress={() => setDeleting(item)} /></View>}</DutyScheduleCard>}
+      ListEmptyComponent={roster.isPending ? <SkeletonList count={4} lines={3} /> : !roster.isError ? <StateView title="Chưa có ca trực" message="Chọn tuần hoặc cơ sở khác để xem lịch." /> : undefined}
     />
     {editor && <DutyEditor row={editor.row} date={day === "all" ? week : day} store={store} onClose={() => setEditor(null)} />}
     {deleting && <ConfirmEdit title="Xóa ca trực?" message={`${deleting.staff_name} · ${deleting.shift_name}\n${deleting.store_name}\nCa được xóa mềm theo phiên bản đã xem; lịch sử người thực hiện vẫn được giữ.`} confirmLabel="Xác nhận xóa ca" busy={writer.busy} onCancel={() => { if (!writer.busy) setDeleting(null); }} onConfirm={() => { const row = deleting; setDeleting(null); void writer.save(row.id, { revision: row.revision }, true); }} />}

@@ -9,7 +9,7 @@ import {
   type ViewStyle,
 } from "react-native";
 import { Image } from "expo-image";
-import { AlertCircle, Check, Info } from "lucide-react-native";
+import { AlertCircle, Check, ChevronLeft, ChevronRight, Info } from "lucide-react-native";
 import type { PropsWithChildren, ReactNode } from "react";
 import { cardShadow, statuses, useTheme } from "@/theme";
 
@@ -409,6 +409,196 @@ export function SkeletonCard({ lines = 3 }: { lines?: number }) {
   );
 }
 
+export function SkeletonList({
+  count = 4,
+  lines = 3,
+}: {
+  count?: number;
+  lines?: number;
+}) {
+  return (
+    <View style={{ gap: 10, paddingVertical: 4 }} accessibilityLabel="Đang tải dữ liệu">
+      {Array.from({ length: count }).map((_, index) => (
+        <SkeletonCard key={index} lines={lines} />
+      ))}
+    </View>
+  );
+}
+
+export function PaginationBar({
+  page,
+  pages,
+  total,
+  unit = "kết quả",
+  summary,
+  disabled = false,
+  hasNext,
+  onChange,
+}: {
+  page: number;
+  pages?: number;
+  total?: number;
+  unit?: string;
+  summary?: string;
+  disabled?: boolean;
+  hasNext?: boolean;
+  onChange: (nextPage: number) => void;
+}) {
+  const theme = useTheme();
+  const canPrev = page > 1 && !disabled;
+  const canNext =
+    (hasNext !== undefined ? hasNext : pages !== undefined ? page < pages : false) &&
+    !disabled;
+  if (page <= 1 && !canNext && (pages === undefined || pages <= 1)) {
+    return summary ? (
+      <Text
+        style={{
+          color: theme.muted,
+          fontSize: 12.5,
+          textAlign: "center",
+          paddingVertical: 8,
+        }}
+      >
+        {summary}
+      </Text>
+    ) : null;
+  }
+  const label =
+    summary ||
+    `Trang ${page}${pages ? `/${pages}` : ""}${
+      total !== undefined ? ` · ${total.toLocaleString("vi-VN")} ${unit}` : ""
+    }`;
+  return (
+    <View
+      style={[
+        styles.paginationBar,
+        { backgroundColor: theme.surface, borderColor: theme.border },
+      ]}
+    >
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Trang trước"
+        disabled={!canPrev}
+        onPress={() => onChange(page - 1)}
+        style={({ pressed }) => [
+          styles.pageBtn,
+          {
+            borderColor: theme.border,
+            backgroundColor: theme.background,
+            opacity: !canPrev ? 0.4 : pressed ? 0.72 : 1,
+          },
+        ]}
+      >
+        <ChevronLeft size={16} color={theme.text} accessible={false} />
+        <Text style={{ color: theme.text, fontSize: 13, fontWeight: "700" }}>
+          Trước
+        </Text>
+      </Pressable>
+      <Text
+        numberOfLines={2}
+        style={{
+          color: theme.muted,
+          fontSize: 12.5,
+          fontWeight: "600",
+          flex: 1,
+          textAlign: "center",
+        }}
+      >
+        {label}
+      </Text>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Trang sau"
+        disabled={!canNext}
+        onPress={() => onChange(page + 1)}
+        style={({ pressed }) => [
+          styles.pageBtn,
+          {
+            borderColor: theme.border,
+            backgroundColor: theme.background,
+            opacity: !canNext ? 0.4 : pressed ? 0.72 : 1,
+          },
+        ]}
+      >
+        <Text style={{ color: theme.text, fontSize: 13, fontWeight: "700" }}>
+          Sau
+        </Text>
+        <ChevronRight size={16} color={theme.text} accessible={false} />
+      </Pressable>
+    </View>
+  );
+}
+
+export function ListActionRow({
+  title,
+  subtitle,
+  icon,
+  iconBg,
+  rightText,
+  loading = false,
+  disabled = false,
+  divider = true,
+  onPress,
+}: {
+  title: string;
+  subtitle?: string;
+  icon?: ReactNode;
+  iconBg?: string;
+  rightText?: string;
+  loading?: boolean;
+  disabled?: boolean;
+  divider?: boolean;
+  onPress: () => void;
+}) {
+  const theme = useTheme();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={title}
+      disabled={disabled || loading}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.actionRow,
+        divider && { borderBottomWidth: 1, borderBottomColor: theme.border },
+        { opacity: disabled ? 0.5 : pressed ? 0.72 : 1 },
+      ]}
+    >
+      {icon ? (
+        <View
+          style={[
+            styles.actionRowIcon,
+            { backgroundColor: iconBg || theme.tint },
+          ]}
+        >
+          {icon}
+        </View>
+      ) : null}
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text style={{ color: theme.text, fontSize: 15, fontWeight: "600" }}>
+          {title}
+        </Text>
+        {!!subtitle && (
+          <Text style={{ color: theme.muted, fontSize: 12.5, lineHeight: 17 }}>
+            {subtitle}
+          </Text>
+        )}
+      </View>
+      {loading ? (
+        <ActivityIndicator size="small" color={theme.primary} />
+      ) : (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          {!!rightText && (
+            <Text style={{ color: theme.muted, fontSize: 12.5, fontWeight: "600" }}>
+              {rightText}
+            </Text>
+          )}
+          <ChevronRight size={17} color={theme.muted} accessible={false} />
+        </View>
+      )}
+    </Pressable>
+  );
+}
+
 export function InlineError({ message }: { message: string }) {
   const theme = useTheme();
   return (
@@ -487,12 +677,32 @@ export function StatusBadge({
   label?: string;
 }) {
   const theme = useTheme();
-  const danger = ["overdue", "bad_debt", "blacklist", "broken", "cancelled"].includes(
-    status,
-  );
-  const success = ["ready", "active", "completed", "opening", "matched", "confirmed"].includes(
-    status,
-  );
+  const danger = [
+    "overdue",
+    "bad_debt",
+    "blacklist",
+    "broken",
+    "cancelled",
+    "offline",
+    "long_stopped",
+    "failed",
+    "expense",
+    "rejected",
+  ].includes(status);
+  const success = [
+    "ready",
+    "active",
+    "completed",
+    "opening",
+    "matched",
+    "confirmed",
+    "online",
+    "approved",
+    "income",
+    "accepted",
+    "sent",
+    "answered",
+  ].includes(status);
   const warning = [
     "pending",
     "in_transit",
@@ -501,8 +711,11 @@ export function StatusBadge({
     "deposit_contract",
     "repairing",
     "cancel_pending_settlement",
+    "stale",
+    "unapproved",
+    "missing",
   ].includes(status);
-  const info = ["renting", "using", "reserved"].includes(status);
+  const info = ["renting", "using", "reserved", "stopped"].includes(status);
 
   const color = danger
     ? theme.danger
@@ -650,5 +863,36 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
+  },
+  paginationBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    padding: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  pageBtn: {
+    minHeight: 38,
+    paddingHorizontal: 11,
+    borderRadius: 9,
+    borderWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  actionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 12,
+    minHeight: 54,
+  },
+  actionRowIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
   },
 });

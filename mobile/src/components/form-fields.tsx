@@ -37,8 +37,8 @@ export function FormField({
   const scrollIntoView = useContext(KeyboardScrollContext);
 
   return (
-    <View style={{ gap: 8 }}>
-      <Text style={{ color: theme.text, fontSize: 14, fontWeight: "600" }}>
+    <View style={{ gap: 5 }}>
+      <Text style={{ color: theme.text, fontSize: 13.5, fontWeight: "600" }}>
         {label}
       </Text>
       <TextInput
@@ -58,13 +58,13 @@ export function FormField({
             backgroundColor: theme.surface,
             borderColor: error ? theme.danger : theme.controlBorder,
             borderWidth: 1,
-            borderRadius: 12,
-            paddingHorizontal: 14,
-            paddingVertical: 14,
-            minHeight: 56,
-            fontSize: 16,
+            borderRadius: 10,
+            paddingHorizontal: 12,
+            paddingVertical: 10,
+            minHeight: 46,
+            fontSize: 15,
           },
-          props.multiline && { minHeight: 96, textAlignVertical: "top" },
+          props.multiline && { minHeight: 84, textAlignVertical: "top" },
           props.style,
         ]}
       />
@@ -74,8 +74,8 @@ export function FormField({
           accessibilityRole={error ? "alert" : undefined}
           style={{
             color: error ? theme.danger : theme.muted,
-            fontSize: 13,
-            lineHeight: 20,
+            fontSize: 12.5,
+            lineHeight: 18,
           }}
         >
           {error || hint}
@@ -92,6 +92,7 @@ export function ChoiceField({
   disabled,
   error,
   searchable = false,
+  mode = "auto",
   placeholder = 'Chọn một mục',
 }: {
   label: string;
@@ -101,12 +102,20 @@ export function ChoiceField({
   disabled?: boolean;
   error?: string;
   searchable?: boolean;
+  mode?: "auto" | "chips" | "modal";
   placeholder?: string;
 }) {
   const theme = useTheme(),
     reducedMotion = useReducedMotion();
   const [open, setOpen] = useState(false),
     [search, setSearch] = useState("");
+  const useInlineChips =
+    mode === "chips" ||
+    (mode === "auto" &&
+      !searchable &&
+      choices.length >= 2 &&
+      choices.length <= 3 &&
+      choices.every((item) => item.label.length <= 24));
   const selected =
     choices.find((item) => item.value === value)?.label || placeholder;
   const normalize = (text: string) =>
@@ -118,9 +127,75 @@ export function ChoiceField({
   const filtered = choices.filter((item) =>
     normalize(item.label).includes(normalize(search.trim())),
   );
+  if (useInlineChips) {
+    return (
+      <View style={{ gap: 6 }}>
+        <Text style={{ color: theme.text, fontSize: 13.5, fontWeight: "600" }}>
+          {label}
+        </Text>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 7 }}>
+          {choices.map((item) => {
+            const active = item.value === value;
+            return (
+              <Pressable
+                key={item.value}
+                accessibilityRole="button"
+                accessibilityLabel={`${label}: ${item.label}`}
+                accessibilityState={{ selected: active, disabled: !!disabled }}
+                aria-selected={active}
+                disabled={disabled}
+                onPress={() => {
+                  Keyboard.dismiss();
+                  onChange(item.value);
+                }}
+                style={({ pressed }) => ({
+                  flexGrow: 1,
+                  minHeight: 42,
+                  paddingHorizontal: 12,
+                  paddingVertical: 8,
+                  borderRadius: 10,
+                  borderWidth: 1,
+                  borderColor: active ? theme.primary : theme.controlBorder,
+                  backgroundColor: active ? theme.tint : theme.surface,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 6,
+                  opacity: disabled ? 0.55 : pressed ? 0.76 : 1,
+                })}
+              >
+                {active && (
+                  <Check size={15} color={theme.primary} accessible={false} />
+                )}
+                <Text
+                  numberOfLines={1}
+                  style={{
+                    color: active ? theme.primary : theme.text,
+                    fontSize: 13.5,
+                    fontWeight: active ? "700" : "600",
+                    textAlign: "center",
+                  }}
+                >
+                  {item.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        {!!error && (
+          <Text
+            accessibilityRole="alert"
+            style={{ color: theme.danger, fontSize: 12.5 }}
+          >
+            {error}
+          </Text>
+        )}
+      </View>
+    );
+  }
   return (
-    <View style={{ gap: 8 }}>
-      <Text style={{ color: theme.text, fontSize: 14, fontWeight: "600" }}>
+    <View style={{ gap: 5 }}>
+      <Text style={{ color: theme.text, fontSize: 13.5, fontWeight: "600" }}>
         {label}
       </Text>
       <Pressable
@@ -136,23 +211,23 @@ export function ChoiceField({
           setOpen(true);
         }}
         style={{
-          minHeight: 56,
-          borderRadius: 12,
+          minHeight: 46,
+          borderRadius: 10,
           borderWidth: 1,
           borderColor: error ? theme.danger : theme.controlBorder,
-          paddingHorizontal: 14,
-          paddingVertical: 14,
+          paddingHorizontal: 12,
+          paddingVertical: 10,
           flexDirection: "row",
           alignItems: "center",
-          gap: 10,
+          gap: 8,
           backgroundColor: theme.surface,
           opacity: disabled ? 0.6 : 1,
         }}
       >
-        <Text style={{ color: theme.text, fontSize: 16, flex: 1 }}>
+        <Text numberOfLines={1} style={{ color: theme.text, fontSize: 15, flex: 1 }}>
           {selected}
         </Text>
-        <ChevronDown size={20} color={theme.muted} accessible={false} />
+        <ChevronDown size={18} color={theme.muted} accessible={false} />
       </Pressable>
       {!!error && (
         <Text

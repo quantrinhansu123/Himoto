@@ -9,7 +9,7 @@ const workspaces = loadDomain(path.join(root, 'shared/mobile-contract-workspaces
 const checks = [], pushed = [], requests = [];
 let user, pathname, params, hookIndex, hookValues, infiniteOptions, statisticsOptions, listPage, statisticsPage, infiniteState, nextCalls;
 const theme = new Proxy({}, { get: (_o, key) => key });
-const components = Object.fromEntries(['Button','Card','InlineError','StateView','StatusBadge','Brand'].map(name => [name, name]));
+const components = Object.fromEntries(['Button','Card','Chip','InlineError','KeyValueRow','ListActionRow','PaginationBar','SegmentedBar','SkeletonCard','SkeletonList','StateView','StatusBadge','Brand'].map(name => [name, name]));
 const native = Object.fromEntries(['Modal','Pressable','ScrollView','Text','View','FlatList','ActivityIndicator','RefreshControl','TextInput'].map(name => [name, name]));
 Object.assign(native, { StyleSheet: { create: value => value }, Platform: { OS: 'android' }, Keyboard: { dismiss() {} }, useWindowDimensions: () => ({ width: 375, height: 812 }) });
 const hooks = { ...React, useMemo: fn => fn(), useCallback: fn => fn, useEffect() {}, useRef: value => ({ current: value }),
