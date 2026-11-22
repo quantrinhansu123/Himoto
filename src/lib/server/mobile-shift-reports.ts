@@ -50,7 +50,15 @@ export async function saveMobileShift(user:SessionUser,request:NextRequest){
   return {key,operation,receipt,deliveryKey:raw.status==="submitted"?`shift:${receipt.id}`:null};
 }
 export function readMobileShiftSnapshot(user:SessionUser,id:string){mobileShiftId(id);return transaction(user,true,client=>readShiftAuditSnapshot(client,id),true);}
-export function readMobileShiftTelegram(user:SessionUser,id:string,stage='pgd'){mobileShiftId(id);return transaction(user,true,client=>readShiftTelegram(client,id,stage));}
+export function readMobileShiftTelegram(user:SessionUser,id:string,stage='pgd'){
+  mobileShiftId(id);
+  return transaction(user,true,async client=>{
+    const delivery=await readShiftTelegram(client,id,stage);
+    if(!delivery)return null;
+    const messageId=delivery.message_id===null?null:Number(delivery.message_id);
+    return {...delivery,message_id:Number.isSafeInteger(messageId)?messageId:null};
+  });
+}
 export function readMobileShiftReopen(user:SessionUser,rawId:string){
   const id=mobileShiftId(rawId);
   return transaction(user,true,client=>readShiftReopen(client,{

@@ -184,7 +184,9 @@ async function main(){
     assert.equal(await api.queueMobileShiftReopen(actor,reportId,{...reopenInput,request_id:randomUUID()}),reopenInput.request_id);
     const reopenStatus=await api.readMobileShiftReopen(actor,reopenId);
     assert(dto.isShiftReopenState(reopenStatus));assert.equal(reopenStatus.request.state,'pending');
-    assert.equal((await api.readMobileShiftTelegram(actor,reopenId)).suppressed,true);
+    await query("UPDATE himoto.management_report_deliveries SET message_id=$2 WHERE delivery_key=$1",[`shift:${reopenId}`,12345]);
+    const delivery=await api.readMobileShiftTelegram(actor,reopenId);
+    assert.equal(delivery.suppressed,true);assert.equal(delivery.message_id,12345);
     checks.push('Mobile reopen binds branch and write permissions, reserves manual retraction for finance, reuses a queued request and suppresses Telegram delivery');
     const out=process.argv.indexOf('--fixture-output');if(out>=0){const file=path.resolve(process.argv[out+1]);assert(file.startsWith(path.resolve('.backups')+path.sep)&&!fs.existsSync(file));const seeded=await save({payload:{...base,date:'2026-11-01'},status:'draft'});const record=await api.readMobileShift(actor,String(seeded.receipt.id));const options=await api.readMobileShiftOptions(actor);options.canReview=false;fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,JSON.stringify({fixtureOnly:true,source:'Actual shared SQL report domain with deterministic analytics source; no operational data or messaging',options,record,auditReport:confirmedReport,exported,snapshot:snapshot(),stock:{record:{...record,payload:currentPayload},inventory:initialStock}},null,2));}
     console.log(JSON.stringify({passed:checks.length,checks,operationalWrites:0,realMessagesSent:0,snapshotSource:'Deterministic QA adapter; real analytics/RLS/multi-session acceptance remains separate'},null,2));
