@@ -11,16 +11,17 @@ function load(filename) {
 }
 async function main() {
   const { parseBlacklistChange, changeCustomerBlacklist } = load(path.join(root, 'lib/server/customer-blacklist'));
-  const { updateCustomerBlacklist } = load(path.join(root, 'lib/management/customer-blacklist'));
+  const { customerBlacklistBlockReason, updateCustomerBlacklist } = load(path.join(root, 'lib/management/customer-blacklist'));
   const checks = [];
   for (const input of [null, [], {}, { blacklisted: 'false', revision: '1' }, { blacklisted: false, revision: '' }, { blacklisted: true, revision: 1 }, { blacklisted: true, revision: '1', name: 'overwrite' }]) assert.throws(() => parseBlacklistChange(input));
   assert.deepEqual(parseBlacklistChange({ blacklisted: false, revision: '123' }), { blacklisted: false, revision: '123' });
   checks.push('typed explicit state and revision required; profile fields cannot be submitted');
-  let revision = '123', exists = true;
+  let revision = '123', exists = true, writable = true;
   const queries = [];
   const client = { query: async (sql, params) => {
     queries.push({ sql, params });
-    if (sql.startsWith('SELECT')) return { rowCount: exists ? 1 : 0, rows: exists ? [{ id: '7', customer_revision: revision }] : [] };
+    if (sql.endsWith('FOR UPDATE')) return { rowCount: exists && writable ? 1 : 0, rows: exists && writable ? [{ id: '7', customer_revision: revision }] : [] };
+    if (sql.startsWith('SELECT 1')) return { rowCount: exists ? 1 : 0 };
     if (sql.startsWith('UPDATE')) return { rowCount: 1, rows: [{ id: '7', status: 'blacklist', customer_revision: '124' }] };
     return { rows: [] };
   } };
@@ -35,13 +36,25 @@ async function main() {
   queries.length = 0; revision = '125';
   await assert.rejects(changeCustomerBlacklist(client, 7, { blacklisted: false, revision: '123' }), error => error.status === 409);
   assert(!queries.some(q => q.sql.startsWith('UPDATE')));
+  writable = false;
+  await assert.rejects(changeCustomerBlacklist(client, 7, { blacklisted: false, revision: '125' }), error => error.status === 403 && /phạm vi cơ sở/.test(error.message));
+  assert(!queries.some(q => q.sql.startsWith('UPDATE')));
   exists = false;
   await assert.rejects(changeCustomerBlacklist(client, 7, { blacklisted: false, revision: '125' }), error => error.status === 404);
   await assert.rejects(changeCustomerBlacklist(client, -1, { blacklisted: false, revision: '125' }));
-  checks.push('row lock and stale revision prevent overwrites; update touches only status/timestamp; absent customer rejected');
+  checks.push('row lock and stale revision prevent overwrites; update touches only status/timestamp; visible out-of-scope customer returns 403 and missing customer returns 404');
 
   const originalFetch = global.fetch;
-  const customer = { id: 7, code: 'QA-7', name: 'QA', status: 'active', customer_revision: '123' };
+  const customer = { id: 7, code: 'QA-7', name: 'QA', status: 'active', customer_revision: '123', store_id: 23 };
+  const staff = { access_role: 'branch_staff', permissions: ['customers.write'], store_id: 23 };
+  assert.equal(customerBlacklistBlockReason(staff, customer), undefined);
+  assert.match(customerBlacklistBlockReason(staff, { ...customer, customer_revision: '' }), /Làm mới/);
+  assert.match(customerBlacklistBlockReason({ ...staff, permissions: [] }, customer), /chưa có quyền/);
+  assert.match(customerBlacklistBlockReason({ ...staff, scope_all_read: true }, { ...customer, store_id: 31 }), /Ngoài cơ sở/);
+  assert.match(customerBlacklistBlockReason(staff, { ...customer, store_id: undefined }), /Ngoài cơ sở/);
+  assert.equal(customerBlacklistBlockReason({ access_role: 'admin' }, { ...customer, store_id: undefined }), undefined);
+  assert.equal(customerBlacklistBlockReason({ ...staff, scope_all: true }, { ...customer, store_id: 31 }), undefined);
+  checks.push('row menu explains missing write permission, out-of-store scope or missing revision and enables authorized writers');
   try {
     const calls = [];
     global.fetch = async (url, options) => { calls.push({ url, options }); return { ok: true, json: async () => ({ status: 'success', data: { id: '7', status: 'blacklist', customer_revision: '124' } }) }; };

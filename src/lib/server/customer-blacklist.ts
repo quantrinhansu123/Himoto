@@ -21,7 +21,13 @@ export async function changeCustomerBlacklist(client: Pick<PoolClient, 'query'>,
   // writers' lock order without serializing changes to unrelated customers.
   await client.query('LOCK TABLE himoto.customers IN ROW EXCLUSIVE MODE');
   const result = await client.query('SELECT id, xmin::text AS customer_revision FROM himoto.customers WHERE id=$1 FOR UPDATE', [id]);
-  if (!result.rowCount) throw new CustomerBlacklistError('Không tìm thấy khách hàng.', 404);
+  if (!result.rowCount) {
+    // Customer directory reads are global. A row visible only without the lock
+    // is outside this account's write scope.
+    const visible = await client.query('SELECT 1 FROM himoto.customers WHERE id=$1', [id]);
+    if (visible.rowCount) throw new CustomerBlacklistError('Hồ sơ ngoài phạm vi cơ sở phụ trách. Liên hệ cơ sở quản lý hồ sơ hoặc quản trị viên.', 403);
+    throw new CustomerBlacklistError('Không tìm thấy khách hàng.', 404);
+  }
   if (result.rows[0].customer_revision !== input.revision) throw new CustomerBlacklistError('Hồ sơ đã được người khác thay đổi. Nhấn Làm mới trước khi đổi Blacklist.', 409);
   const updated = await client.query(`UPDATE himoto.customers SET status = CASE WHEN $2::boolean THEN 2
       WHEN customer_type='foreign' AND NULLIF(BTRIM(name),'') IS NOT NULL AND NULLIF(BTRIM(id_card),'') IS NOT NULL
