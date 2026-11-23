@@ -10,7 +10,7 @@ import { locateAttendanceSilent } from '@/lib/attendance-capture';
 import { selectRecordVideo, type RecordVideo } from '@/lib/record-video';
 import type { AttendanceLocation } from '../../../shared/mobile-support';
 import { useTheme } from '@/theme';
-import { Button, Card, InlineError, StateView } from './ui';
+import { Button, Card, InlineError, KeyValueRow, SegmentedBar, StateView } from './ui';
 import { ChoiceField } from './form-fields';
 import { ConfirmEdit } from './editor-sheet';
 import { RecordVideoPlayer } from './record-video-player';
@@ -56,12 +56,12 @@ function VideoForm({ id, initialStage, initialCategory }: { id: string; initialS
   const text = { color: theme.muted, fontSize: 16, lineHeight: 25 };
   return <SafeAreaView edges={['left', 'right', 'bottom']} style={{ flex: 1, backgroundColor: theme.background }}>
     <ScrollView contentContainerStyle={{ padding: 20, gap: 18, maxWidth: 760, width: '100%', alignSelf: 'center' }}>
-      <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 25, fontWeight: '800' }}>Thêm video minh chứng ca</Text>
+      <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 20, fontWeight: '800' }}>Thêm video minh chứng ca</Text>
       {!!(error || write.error) && <InlineError message={error || write.error} />}
       {!!write.notice && <Text accessibilityLiveRegion="polite" style={text}>{write.notice}</Text>}
       {!!write.stage && <Text accessibilityLiveRegion="polite" style={text}>{write.stage}</Text>}
       {write.key ? <Card style={{ gap: 14 }}>
-        <Text style={{ color: theme.text, fontSize: 20, fontWeight: '700' }}>Video đang chờ đối chiếu</Text>
+        <Text style={{ color: theme.text, fontSize: 18, fontWeight: '700' }}>Video đang chờ đối chiếu</Text>
         <Text style={text}>Giữ mã lần gửi đến khi đọc được xác nhận gốc hoặc máy chủ xác nhận chưa lưu. Video đã chọn vẫn được giữ khi ở màn hình này.</Text>
         <Button label="Đối chiếu lưu video ca" loading={write.busy} onPress={() => setResolving(true)} />
         <Button label="Mở xác nhận lưu video ca" secondary disabled={write.busy} onPress={write.openResult} />
@@ -69,24 +69,24 @@ function VideoForm({ id, initialStage, initialCategory }: { id: string; initialS
         {query.isFetching && <Text style={text}>Đang đọc báo cáo ca…</Text>}
         {query.isError && <InlineError message={query.error.message} />}
         {report && <>
-          <Card style={{ gap: 8 }}>
-            <Text style={{ color: theme.text, fontSize: 20, fontWeight: '700' }}>{report.store_name}</Text>
-            <Text style={text}>Ngày ca: {report.payload.date} · {report.status === 'draft' ? 'PGD chưa chốt' : 'PGD đã chốt'}</Text>
-            <Text style={text}>{stageLabel} · {count}/3 video đã lưu</Text>
+          <Card style={{ gap: 6 }}>
+            <Text style={{ color: theme.text, fontSize: 18, fontWeight: '800' }}>{report.store_name}</Text>
+            <KeyValueRow label="Ngày ca & trạng thái" value={`${report.payload.date} · ${report.status === 'draft' ? 'PGD chưa chốt' : 'PGD đã chốt'}`} />
+            <KeyValueRow label="Video đã lưu" value={`${stageLabel} · ${count}/3 video`} emphasize />
           </Card>
-          <ChoiceField label="Phần video ca" value={stage} choices={[{ value: 'pgd', label: 'PGD kiểm kê' }, { value: 'audit', label: 'KTNB đối soát' }]} disabled={locked || !!video} onChange={v => setStage(v as 'pgd' | 'audit')} />
+          <SegmentedBar value={stage} options={[{ value: 'pgd', label: 'PGD kiểm kê' }, { value: 'audit', label: 'KTNB đối soát' }]} disabled={locked || !!video} onChange={v => setStage(v)} />
           <ChoiceField label="Mục video minh chứng ca" value={category} choices={SHIFT_PHOTOS.map(([value, label]) => ({ value, label }))} disabled={locked || !!video} onChange={setCategory} />
           {!writable && <InlineError message="Phần này đang khóa theo trạng thái báo cáo hoặc quyền hiện tại. Tải lại báo cáo để kiểm tra." />}
           {count >= 3 && <InlineError message="Phần này đã đủ 3 video. Quay lại hồ sơ để kiểm tra hoặc xóa video trước khi thêm." />}
-          <Card style={{ gap: 14 }}>
-            <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 20, fontWeight: '700' }}>Video chờ lưu</Text>
+          <Card style={{ gap: 12 }}>
+            <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 18, fontWeight: '700' }}>Video chờ lưu</Text>
             <Text style={text}>Tối đa 3 phút và 45 MB mỗi video. Chỉ hỗ trợ quay video trực tiếp bằng camera, không chọn từ thư viện.</Text>
             {picking && <Text accessibilityLiveRegion="polite" style={text}>{cancelling ? 'Đang hủy chuẩn bị video…' : preparationProgress === null ? 'Đang mở camera quay video…' : `Đang chuẩn bị video · ${preparationProgress}%`}</Text>}
             {picking && Platform.OS === 'android' && <Button label="Hủy chuẩn bị video ca" secondary loading={cancelling} onPress={() => { setCancelling(true); picker.current?.abort(); }} />}
             {video && <><RecordVideoPlayer key={video.uri} source={{ uri: video.uri, useCaching: false }} label="Video ca đang chọn" onReady={onReady} /><Text style={text}>{(video.size / 1024 / 1024).toFixed(1)} MB · {duration > 0 ? `${Math.ceil(duration)} giây` : 'Đang đọc thời lượng'}</Text></>}
             {video && ready && !valid && <InlineError message="Video ca cần có thời lượng trên 0 đến 180 giây. Quay lại video." />}
             <Button label="Quay video trực tiếp" secondary loading={picking} disabled={locked || !writable || count >= 3 || Platform.OS === 'web'} onPress={() => void pick(true)} />
-            {video && <Button label="Bỏ video ca chưa lưu" secondary disabled={locked} onPress={() => { local.current?.dispose(); local.current = null; setVideo(null); setVideoGps(null); setReady(false); setDuration(0); setError(''); }} />}
+            {video && <Button size="sm" danger label="Bỏ video ca chưa lưu" secondary disabled={locked} onPress={() => { local.current?.dispose(); local.current = null; setVideo(null); setVideoGps(null); setReady(false); setDuration(0); setError(''); }} />}
           </Card>
           <Button label="Rà soát và lưu video ca" disabled={locked || !video || !valid || !writable || count >= 3 || query.isFetching || query.isError} onPress={() => setReview({ revision: report.revision, stage, category })} />
         </>}

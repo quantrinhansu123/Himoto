@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Platform, ScrollView, Text } from 'react-native';
+import { Platform, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
@@ -36,25 +36,28 @@ function VideoForm({target,slot}:{target:MobileMediaIdentity;slot:string}) {
   const text={color:theme.muted,fontSize:16,lineHeight:25};
   return <SafeAreaView edges={['left','right','bottom']} style={{flex:1,backgroundColor:theme.background}}>
     <ScrollView contentContainerStyle={{padding:20,gap:18,maxWidth:760,width:'100%',alignSelf:'center'}}>
-      <Text accessibilityRole="header" style={{color:theme.text,fontSize:25,fontWeight:'800'}}>{data?.label||'Video hồ sơ'}</Text>
+      <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'800'}}>{data?.label||'Video hồ sơ'}</Text>
       {!!(error||write.error)&&<InlineError message={error||write.error}/>}{!!write.notice&&<Text accessibilityLiveRegion="polite" style={text}>{write.notice}</Text>}
       {write.stage&&<Text accessibilityLiveRegion="polite" style={text}>{write.stage}</Text>}
-      {write.key?<Card style={{gap:14}}><Text style={{color:theme.text,fontSize:19,fontWeight:'700'}}>Video đang chờ đối chiếu</Text><Text style={text}>Giữ mã lần gửi đến khi đọc được phiếu gốc hoặc máy chủ xác nhận chưa lưu.</Text>
+      {write.key?<Card style={{gap:14}}><Text style={{color:theme.text,fontSize:18,fontWeight:'700'}}>Video đang chờ đối chiếu</Text><Text style={text}>Giữ mã lần gửi đến khi đọc được phiếu gốc hoặc máy chủ xác nhận chưa lưu.</Text>
         <Button label="Đối chiếu lưu video" loading={write.busy} onPress={()=>setResolving(true)}/><Button label="Mở phiếu lưu video" secondary disabled={write.busy} onPress={write.openReceipt}/></Card>:<>
         {info.isError&&<InlineError message={info.error.message}/>}
         {data&&<>
-          <Text style={{color:theme.text,fontSize:18,fontWeight:'700'}}>{data.target.label}</Text>
-          <Card style={{gap:14}}><Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'700'}}>Video hiện tại</Text>
+          <Text style={{color:theme.text,fontSize:17,fontWeight:'700'}}>{data.target.label}</Text>
+          <Card style={{gap:12}}><Text accessibilityRole="header" style={{color:theme.text,fontSize:18,fontWeight:'700'}}>Video hiện tại</Text>
             {data.photo&&<Text style={text}>{dateTime(data.photo.updatedAt)} · {data.photo.bytes?`${(data.photo.bytes/1024/1024).toFixed(1)} MB`:data.photo.mimeType}</Text>}
             {data.photo?.readable&&data.photo.kind==='video'?<RecordVideoPlayer key={data.photo.revision+':'+epoch} source={api!.recordVideoSource(data.target,data.photo)} label="Video hồ sơ hiện tại"/>:<Text style={text}>{data.photo?.blockedReason||'Mục này chưa có video.'}</Text>}
           </Card>
-          {data.photo&&<Button label="Xóa tệp khỏi hồ sơ" secondary disabled={locked||!!video||info.isFetching||info.isError} onPress={()=>router.push({pathname:'/media-delete/[entity]/[id]',params:{entity:'contracts',id:String(target.id),kind:target.kind,referenceId:String(target.referenceId),slot}})}/>}
-          <Card style={{gap:14}}><Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'700'}}>Video sẽ lưu</Text><Text style={text}>Tối đa 45 MB và 60 giây. Hỗ trợ MP4, MOV, M4V và WebM.</Text>
+          {data.photo&&<Button label="Xóa tệp khỏi hồ sơ" secondary danger disabled={locked||!!video||info.isFetching||info.isError} onPress={()=>router.push({pathname:'/media-delete/[entity]/[id]',params:{entity:'contracts',id:String(target.id),kind:target.kind,referenceId:String(target.referenceId),slot}})}/>}
+          <Card style={{gap:12}}><Text accessibilityRole="header" style={{color:theme.text,fontSize:18,fontWeight:'700'}}>Video sẽ lưu</Text><Text style={text}>Tối đa 45 MB và 60 giây. Hỗ trợ MP4, MOV, M4V và WebM.</Text>
             {picking&&<Text accessibilityLiveRegion="polite" style={text}>{cancelling?'Đang hủy chuẩn bị video…':preparationProgress===null?'Đang mở video…':`Đang chuẩn bị video · ${preparationProgress}%`}</Text>}
             {picking&&Platform.OS==='android'&&<Button label="Hủy chuẩn bị video" secondary loading={cancelling} onPress={()=>{setCancelling(true);picker.current?.abort();}}/>}
             {video&&<><RecordVideoPlayer key={video.uri} source={{uri:video.uri,useCaching:false}} label="Video đang chọn" onReady={onReady}/><Text style={text}>{(video.size/1024/1024).toFixed(1)} MB · {duration>0?`${Math.ceil(duration)} giây`:'Đang đọc thời lượng'}</Text></>}
             {video&&ready&&!valid&&<InlineError message="Video hợp đồng cần có thời lượng từ trên 0 đến 60 giây. Chọn tệp khác."/>}
-            <Button label="Chọn video" secondary loading={picking} disabled={locked} onPress={()=>void pick(false)}/><Button label="Quay video" secondary disabled={locked||Platform.OS==='web'} onPress={()=>void pick(true)}/>
+            <View style={{flexDirection:'row',gap:10}}>
+              <Button size="sm" equalWidth label="Chọn video" secondary loading={picking} disabled={locked} onPress={()=>void pick(false)}/>
+              <Button size="sm" equalWidth label="Quay video" secondary disabled={locked||Platform.OS==='web'} onPress={()=>void pick(true)}/>
+            </View>
           </Card>
           <Text style={text}>{data.photo?'Video đã chọn sẽ thay tệp hiện tại tại đúng mục này.':'Video được gắn vào đúng lượt ghi nhận đang mở.'}</Text>
           <Button label={data.photo?'Rà soát và thay video':'Rà soát và lưu video'} disabled={locked||!video||!valid||info.isFetching||info.isError} onPress={()=>setConfirm(true)}/>

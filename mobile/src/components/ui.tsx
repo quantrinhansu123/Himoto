@@ -682,52 +682,65 @@ export function StateView({
 }
 
 export function StatusBadge({
-  status,
+  status = "",
   label,
+  tone,
 }: {
-  status: string;
+  status?: string;
   label?: string;
+  tone?: "success" | "warning" | "danger" | "info" | "neutral";
 }) {
   const theme = useTheme();
-  const danger = [
-    "overdue",
-    "bad_debt",
-    "blacklist",
-    "broken",
-    "cancelled",
-    "offline",
-    "long_stopped",
-    "failed",
-    "expense",
-    "rejected",
-  ].includes(status);
-  const success = [
-    "ready",
-    "active",
-    "completed",
-    "opening",
-    "matched",
-    "confirmed",
-    "online",
-    "approved",
-    "income",
-    "accepted",
-    "sent",
-    "answered",
-  ].includes(status);
-  const warning = [
-    "pending",
-    "in_transit",
-    "wait_payment",
-    "warning",
-    "deposit_contract",
-    "repairing",
-    "cancel_pending_settlement",
-    "stale",
-    "unapproved",
-    "missing",
-  ].includes(status);
-  const info = ["renting", "using", "reserved", "stopped"].includes(status);
+  const danger =
+    tone === "danger" ||
+    (!tone &&
+      [
+        "overdue",
+        "bad_debt",
+        "blacklist",
+        "broken",
+        "cancelled",
+        "offline",
+        "long_stopped",
+        "failed",
+        "expense",
+        "rejected",
+      ].includes(status));
+  const success =
+    tone === "success" ||
+    (!tone &&
+      [
+        "ready",
+        "active",
+        "completed",
+        "opening",
+        "matched",
+        "confirmed",
+        "online",
+        "approved",
+        "income",
+        "accepted",
+        "sent",
+        "answered",
+      ].includes(status));
+  const warning =
+    tone === "warning" ||
+    (!tone &&
+      [
+        "pending",
+        "in_transit",
+        "wait_payment",
+        "warning",
+        "deposit_contract",
+        "repairing",
+        "cancel_pending_settlement",
+        "stale",
+        "unapproved",
+        "missing",
+      ].includes(status));
+  const info =
+    tone === "info" ||
+    (!tone && ["renting", "using", "reserved", "stopped"].includes(status));
 
   const color = danger
     ? theme.danger

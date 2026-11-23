@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { ScrollView, Text } from 'react-native';
+import { ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
@@ -7,7 +7,7 @@ import { videoOperation, type MobileVideoReceipt } from '../../../shared/mobile-
 import { useSession } from '@/providers/session';
 import { pendingWrites } from '@/lib/pending-writes';
 import { dateTime, useTheme } from '@/theme';
-import { Button, Card, InlineError, StateView } from './ui';
+import { Button, Card, InfoBanner, InlineError, KeyValueRow, StateView, StatusBadge } from './ui';
 import { ConfirmEdit } from './editor-sheet';
 import { RecordVideoPlayer } from './record-video-player';
 
@@ -41,17 +41,24 @@ function Receipt({id}:{id:number}) {
     try{verify(receipt);await pendingWrites.complete(scope,operation,key);if(!alive.current)return;void cache.invalidateQueries({queryKey:['record-media']});router.dismissTo({pathname:'/record-media/[entity]/[id]',params:{entity:'contracts',id:String(id)}});}
     catch(cause){if(alive.current)setError((cause as Error).message);}finally{running.current=false;if(alive.current)setBusy(false);}
   }
-  const text={color:theme.muted,fontSize:16,lineHeight:25};
-  return <SafeAreaView edges={['left','right','bottom']} style={{flex:1,backgroundColor:theme.background}}><ScrollView contentContainerStyle={{padding:20,gap:18,maxWidth:760,width:'100%',alignSelf:'center'}}>
-    <Text accessibilityRole="header" style={{color:theme.text,fontSize:25,fontWeight:'800'}}>Phiếu lưu video</Text>
-    {!!error&&<InlineError message={error}/>}{!!notice&&<Text accessibilityLiveRegion="polite" style={text}>{notice}</Text>}
+  const text={color:theme.muted,fontSize:14,lineHeight:21};
+  return <SafeAreaView edges={['left','right','bottom']} style={{flex:1,backgroundColor:theme.background}}><ScrollView contentContainerStyle={{padding:16,paddingBottom:36,gap:12,maxWidth:760,width:'100%',alignSelf:'center'}}>
+    <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8}}>
+      <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'800'}}>Phiếu lưu video</Text>
+      {receipt&&<StatusBadge label={`${(receipt.bytes/1024/1024).toFixed(1)} MB · ${Math.ceil(receipt.duration)}s`} tone="success"/>}
+    </View>
+    {!!error&&<InlineError message={error}/>}{!!notice&&<InfoBanner tone="info" message={notice}/>}
     {receipt?<>
-      <Card style={{gap:14}}><Text style={{color:theme.text,fontSize:19,fontWeight:'700'}}>{receipt.target.label}</Text><Text style={{color:theme.text,fontSize:17}}>{receipt.label}</Text><Text style={text}>{receipt.actorName} · {dateTime(receipt.recordedAt)}</Text><Text style={text}>{(receipt.bytes/1024/1024).toFixed(1)} MB · {Math.ceil(receipt.duration)} giây</Text>
-        <Text selectable style={{...text,fontSize:13}}>Mã lần lưu: {receipt.requestId}</Text>
+      <Card style={{gap:10}}>
+        <KeyValueRow label="Hồ sơ" value={receipt.target.label} emphasize/>
+        <KeyValueRow label="Vị trí video" value={receipt.label}/>
+        <KeyValueRow label="Ghi nhận bởi" value={`${receipt.actorName} · ${dateTime(receipt.recordedAt)}`}/>
+        <Text selectable style={{color:theme.muted,fontSize:12}}>Mã lần lưu: {receipt.requestId}</Text>
         {!receipt.current&&<InlineError message="Hồ sơ, lượt ghi nhận hoặc video đã thay đổi sau lần lưu. Đây là phiếu gốc; tải lại hồ sơ để xem trạng thái hiện tại."/>}
         {receipt.current&&<RecordVideoPlayer key={receipt.photoRevision+':'+epoch} source={api!.recordVideoSource(receipt.target,{slot:receipt.slot,label:receipt.label,revision:receipt.photoRevision,mimeType:'video/mp4',bytes:receipt.bytes,updatedAt:receipt.recordedAt,kind:'video',readable:true,blockedReason:null})} label="Video đã lưu vào hồ sơ"/>}
-      </Card><Button label="Đã kiểm tra phiếu lưu video" disabled={busy} onPress={()=>void acknowledge()}/>
-    </>:<Card style={{gap:14}}><Text style={text}>{key?'Giữ mã lần gửi để đối chiếu trước khi lưu thêm video.':'Không có lần lưu video đang chờ trên thiết bị này.'}</Text>{key&&<Button label="Đối chiếu video với máy chủ" loading={busy} onPress={()=>setConfirm(true)}/>}</Card>}
+      </Card>
+      <Button label="Đã kiểm tra phiếu lưu video" disabled={busy} onPress={()=>void acknowledge()}/>
+    </>:<Card style={{gap:12}}><Text style={text}>{key?'Giữ mã lần gửi để đối chiếu trước khi lưu thêm video.':'Không có lần lưu video đang chờ trên thiết bị này.'}</Text>{key&&<Button label="Đối chiếu video với máy chủ" loading={busy} onPress={()=>setConfirm(true)}/>}</Card>}
     <Button label="Tải lại phiếu video" secondary loading={busy} onPress={()=>{setEpoch(e=>e+1);void load();}}/>
     {!key&&<Button label="Mở hồ sơ ảnh và video" secondary disabled={busy} onPress={()=>router.dismissTo({pathname:'/record-media/[entity]/[id]',params:{entity:'contracts',id:String(id)}})}/>}
   </ScrollView>{confirm&&<ConfirmEdit title="Đối chiếu lưu video?" message="Nếu đã lưu, đọc đúng phiếu gốc. Nếu chưa lưu, khóa mã cũ trước khi cho phép gửi lại." confirmLabel="Đối chiếu với máy chủ" onCancel={()=>setConfirm(false)} onConfirm={()=>void resolve()}/>}</SafeAreaView>;

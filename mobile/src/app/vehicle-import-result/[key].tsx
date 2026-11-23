@@ -2,13 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Stack, router, useLocalSearchParams, usePreventRemove } from 'expo-router';
 import { ScrollView, Text } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { isImportUuid } from '../../../../shared/mobile-customer-import';
 import { isVehicleImportOperation } from '../../../../shared/mobile-vehicle-import';
 import { useSession } from '@/providers/session';
 import { pendingWrites } from '@/lib/pending-writes';
 import { useTheme } from '@/theme';
 import { VehicleImportReceipt } from '@/components/vehicle-import-receipt';
-import { Button, Card, InlineError, StateView } from '@/components/ui';
+import { Button, Card, InfoBanner, InlineError, StateView } from '@/components/ui';
 import { ConfirmEdit } from '@/components/editor-sheet';
 export default function VehicleImportResultRoute() {
   const { key } = useLocalSearchParams<{ key: string }>(), { api, session } = useSession();
@@ -45,8 +46,20 @@ function Result({ requestKey }: { requestKey: string }) {
     catch (cause) { if (alive.current) setError((cause as Error).message); }
     finally { running.current = false; if (alive.current) setBusy(false); }
   }
-  return <><Stack.Screen options={{ title: 'Kết quả Excel xe' }} /><ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40, gap: 16, maxWidth: 760, width: '100%', alignSelf: 'center' }}>
-    {!!error && <InlineError message={error} />}{!!notice && <Text style={{ color: theme.text, lineHeight: 24 }}>{notice}</Text>}
-    {query.isPending ? <StateView title="Đang đối chiếu Excel xe" loading /> : query.isError ? <StateView title="Chưa tải được kết quả Excel xe" message={query.error.message} retry={() => void query.refetch()} /> : data?.receipt ? <><VehicleImportReceipt receipt={data.receipt} disabled={busy} /><Button label="Đã xem kết quả, về đội xe" loading={busy} onPress={() => void acknowledge()} /></> : <Card style={{ gap: 12 }}><Text selectable style={{ color: theme.muted }}>Mã lần gửi: {requestKey}</Text><Text style={{ color: theme.text, lineHeight: 24 }}>Chưa có xác nhận cho mã này. Giữ mã gốc; không tự nhập lại hoặc xóa lại danh sách.</Text>{data?.pending ? <Button label="Đối chiếu thao tác Excel xe" loading={busy} onPress={() => setConfirm(true)} /> : <Button secondary label="Tải lại kết quả Excel xe" disabled={busy} onPress={() => void query.refetch()} />}</Card>}
-  </ScrollView>{confirm && <ConfirmEdit title="Đối chiếu thao tác Excel xe?" message="Nếu đã ghi, mở kết quả và bản sao lưu của lần gửi gốc. Nếu chưa ghi, máy chủ khóa mã cũ để chặn yêu cầu đến muộn. Không hủy các thay đổi xe đã được ghi." confirmLabel="Đối chiếu mã gốc" busy={busy} onCancel={() => setConfirm(false)} onConfirm={() => void resolve()} />}</>;
+  return <SafeAreaView edges={['left', 'right', 'bottom']} style={{ flex: 1, backgroundColor: theme.background }}>
+    <Stack.Screen options={{ title: 'Kết quả Excel xe' }} />
+    <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 36, gap: 12, maxWidth: 760, width: '100%', alignSelf: 'center' }}>
+      {!!error && <InlineError message={error} />}
+      {!!notice && <InfoBanner tone="info" message={notice} />}
+      {query.isPending ? <StateView title="Đang đối chiếu Excel xe" loading /> : query.isError ? <StateView title="Chưa tải được kết quả Excel xe" message={query.error.message} retry={() => void query.refetch()} /> : data?.receipt ? <>
+        <VehicleImportReceipt receipt={data.receipt} disabled={busy} />
+        <Button label="Đã xem kết quả, về đội xe" loading={busy} onPress={() => void acknowledge()} />
+      </> : <Card style={{ gap: 10 }}>
+        <Text selectable style={{ color: theme.muted, fontSize: 12 }}>Mã lần gửi: {requestKey}</Text>
+        <Text style={{ color: theme.text, fontSize: 14, lineHeight: 21 }}>Chưa có xác nhận cho mã này. Giữ mã gốc; không tự nhập lại hoặc xóa lại danh sách.</Text>
+        {data?.pending ? <Button label="Đối chiếu thao tác Excel xe" loading={busy} onPress={() => setConfirm(true)} /> : <Button secondary label="Tải lại kết quả Excel xe" disabled={busy} onPress={() => void query.refetch()} />}
+      </Card>}
+    </ScrollView>
+    {confirm && <ConfirmEdit title="Đối chiếu thao tác Excel xe?" message="Nếu đã ghi, mở kết quả và bản sao lưu của lần gửi gốc. Nếu chưa ghi, máy chủ khóa mã cũ để chặn yêu cầu đến muộn. Không hủy các thay đổi xe đã được ghi." confirmLabel="Đối chiếu mã gốc" busy={busy} onCancel={() => setConfirm(false)} onConfirm={() => void resolve()} />}
+  </SafeAreaView>;
 }

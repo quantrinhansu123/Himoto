@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { router, useLocalSearchParams } from "expo-router";
-import { ScrollView, Text } from "react-native";
+import { ScrollView, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useSession } from "@/providers/session";
 import { pendingWrites } from "@/lib/pending-writes";
 import { useTheme } from "@/theme";
-import { Button, Card, InlineError, StateView } from "@/components/ui";
+import { Button, Card, InlineError, KeyValueRow, StateView, StatusBadge } from "@/components/ui";
 import { VehicleProfileCard } from "@/components/vehicle-profile-card";
 import {RecordPhotoBatch} from '@/components/record-photo-batch';
 import {bindStagedPhotos,completeStagedPhotos} from '@/lib/staged-photo-work';
@@ -35,18 +36,23 @@ function VehicleResult({ requestKey,savePhotos }: { requestKey: string;savePhoto
     } catch (cause) { if (alive.current) setError((cause as Error).message); }
     finally { if (alive.current) setBusy(false); }
   }
-  return <ScrollView contentContainerStyle={{ padding: 20, gap: 16, width: "100%", maxWidth: 760, alignSelf: "center" }}>
-    <Card style={{ gap: 12 }}>
-      <Text accessibilityRole="header" style={{ color: theme.success, fontSize: 22, fontWeight: "700" }}>Đã lưu xe #{result.receipt.id}</Text>
-      <Text style={{ color: theme.text }}>{result.operation === "vehicle.create" ? "Thêm xe" : "Sửa hồ sơ xe"} · phiên bản xác nhận {result.receipt.revision}</Text>
-      <Text selectable style={{ color: theme.muted, fontSize: 12 }}>Mã yêu cầu: {requestKey}</Text>
-      <Text style={{ color: theme.muted, lineHeight: 22 }}>Thông tin xe hiện tại{result.current.revision !== result.receipt.revision ? " đã thay đổi sau lần lưu này" : ""}.</Text>
-    </Card>
-    <VehicleProfileCard profile={result.current} />
-    {result.photoBatchId&&<RecordPhotoBatch target={{entity:'vehicles',id:result.receipt.id,kind:'vehicle',referenceId:result.receipt.id}} slot="registration-front" queueId={result.photoBatchId} autoSave={savePhotos} showTelegram={false} onPendingChange={setPhotosPending}/>}
-    {!!error && <InlineError message={error} />}
-    <Button label="Đã kiểm tra xác nhận lưu xe" disabled={!!result.photoBatchId&&photosPending} loading={busy} onPress={() => { void acknowledge(); }} />
-  </ScrollView>;
+  return <SafeAreaView edges={["left", "right", "bottom"]} style={{ flex: 1, backgroundColor: theme.background }}>
+    <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 36, gap: 12, width: "100%", maxWidth: 760, alignSelf: "center" }}>
+      <Card style={{ gap: 10 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+          <Text accessibilityRole="header" style={{ color: theme.success, fontSize: 20, fontWeight: "800", flexShrink: 1 }}>Đã lưu xe #{result.receipt.id}</Text>
+          <StatusBadge label={result.operation === "vehicle.create" ? "Thêm xe" : "Sửa hồ sơ xe"} tone="success" />
+        </View>
+        <KeyValueRow label="Phiên bản xác nhận" value={String(result.receipt.revision)} />
+        <Text selectable style={{ color: theme.muted, fontSize: 12 }}>Mã yêu cầu: {requestKey}</Text>
+        <Text style={{ color: theme.muted, fontSize: 13 }}>Thông tin xe hiện tại{result.current.revision !== result.receipt.revision ? " đã thay đổi sau lần lưu này" : ""}.</Text>
+      </Card>
+      <VehicleProfileCard profile={result.current} />
+      {result.photoBatchId&&<RecordPhotoBatch target={{entity:'vehicles',id:result.receipt.id,kind:'vehicle',referenceId:result.receipt.id}} slot="registration-front" queueId={result.photoBatchId} autoSave={savePhotos} showTelegram={false} onPendingChange={setPhotosPending}/>}
+      {!!error && <InlineError message={error} />}
+      <Button label="Đã kiểm tra xác nhận lưu xe" disabled={!!result.photoBatchId&&photosPending} loading={busy} onPress={() => { void acknowledge(); }} />
+    </ScrollView>
+  </SafeAreaView>;
 }
 export default function VehicleResultRoute() {
   const { key,savePhotos } = useLocalSearchParams<{ key: string;savePhotos?:string }>(), { api, session } = useSession();

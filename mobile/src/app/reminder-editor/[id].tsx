@@ -2,13 +2,15 @@ import { useEffect,useRef,useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { router,useLocalSearchParams } from "expo-router";
 import { uuid } from "expo";
-import { ScrollView,Text } from "react-native";
+import { Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { reminderOperation } from "../../../../shared/mobile-debt-reminders";
 import { useSession } from "@/providers/session";
 import { pendingWrites } from "@/lib/pending-writes";
 import { money,useTheme } from "@/theme";
 import { FormField } from "@/components/form-fields";
-import { Button,Card,InlineError,StateView } from "@/components/ui";
+import { KeyboardFormScrollView } from "@/components/keyboard-form-scroll-view";
+import { Button,Card,InlineError,KeyValueRow,StateView } from "@/components/ui";
 import { ConfirmEdit } from "@/components/editor-sheet";
 function Editor({id}:{id:string}) {
   const {api,session}=useSession(),theme=useTheme(),[message,setMessage]=useState<string|null>(null),[busy,setBusy]=useState(false),[attempted,setAttempted]=useState(false),[error,setError]=useState(""),[confirm,setConfirm]=useState(false);
@@ -29,17 +31,17 @@ function Editor({id}:{id:string}) {
       router.replace({pathname:"/reminder-result/[key]",params:{key:intent.key}});
     }catch(cause){if(alive.current)setError((cause as Error).message);}finally{running.current=false;if(alive.current)setBusy(false);}
   }
-  return <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{padding:20,paddingBottom:40,gap:18,maxWidth:760,width:"100%",alignSelf:"center"}}>
-    <Text accessibilityRole="header" style={{color:theme.text,fontSize:26,fontWeight:"800"}}>Soạn nhắc nợ qua Zalo</Text>
-    <Card style={{gap:12}}><Text style={{color:theme.text,fontSize:21,fontWeight:"800"}}>{context.code} · {context.customer_name}</Text><Text style={{color:theme.muted}}>{context.store_name}</Text><Text style={{color:theme.text,fontSize:25,fontWeight:"800"}}>{money(context.amount)}</Text><Text selectable style={{color:theme.text}}>Số Zalo: {context.phone}</Text><Text style={{color:theme.muted,lineHeight:23}}>Số điện thoại lấy từ hồ sơ khách của hợp đồng. Cập nhật hồ sơ khách nếu cần đổi số. Hợp đồng thuê sở hữu chỉ nhắc khoản đã đến hạn.</Text></Card>
+  return <SafeAreaView edges={["left","right","bottom"]} style={{flex:1,backgroundColor:theme.background}}><KeyboardFormScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{padding:16,paddingBottom:40,gap:14,maxWidth:760,width:"100%",alignSelf:"center"}}>
+    <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:"800"}}>Soạn nhắc nợ qua Zalo</Text>
+    <Card style={{gap:10}}><Text style={{color:theme.text,fontSize:18,fontWeight:"800"}}>{context.code} · {context.customer_name}</Text><View style={{gap:2}}><KeyValueRow label="Cơ sở" value={context.store_name} /><KeyValueRow label="Công nợ nhắc" value={money(context.amount)} emphasize valueColor={theme.danger} /><KeyValueRow label="Số Zalo" value={context.phone} selectable emphasize /></View><Text style={{color:theme.muted,fontSize:13.5,lineHeight:20}}>Số điện thoại lấy từ hồ sơ khách của hợp đồng. Cập nhật hồ sơ khách nếu cần đổi số. Hợp đồng thuê sở hữu chỉ nhắc khoản đã đến hạn.</Text></Card>
     <FormField label="Nội dung nhắc nợ Zalo" value={content} onChangeText={setMessage} multiline maxLength={4000} editable={!busy&&!attempted} />
-    {!attempted&&<Button secondary label="Dùng nội dung nhắc nợ mẫu" onPress={()=>setMessage(context.message)} />}
-    <Text style={{color:theme.muted,lineHeight:23}}>Bấm gửi sẽ chuyển nội dung tới hệ thống gửi Zalo. “Webhook đã tiếp nhận” chưa xác nhận khách đã nhận hoặc đọc tin.</Text>
+    {!attempted&&<Button size="sm" secondary label="Dùng nội dung nhắc nợ mẫu" onPress={()=>setMessage(context.message)} />}
+    <Text style={{color:theme.muted,fontSize:13.5,lineHeight:20}}>Bấm gửi sẽ chuyển nội dung tới hệ thống gửi Zalo. “Webhook đã tiếp nhận” chưa xác nhận khách đã nhận hoặc đọc tin.</Text>
     {!!error&&<InlineError message={error} />}
     {!attempted&&<Button label="Rà soát và gửi Zalo" loading={busy} disabled={!content.trim()||content.trim().length>4000} onPress={()=>setConfirm(true)} />}
     {attempted&&!busy&&<Button label="Mở Tài khoản để đối chiếu nhắc nợ" onPress={()=>router.push("/(tabs)/account")} />}
     {confirm&&<ConfirmEdit title="Gửi nhắc nợ qua Zalo?" message={`${context.code} · ${context.phone} · ${money(context.amount)}\n\n${content}`} confirmLabel="Xác nhận gửi Zalo" onCancel={()=>setConfirm(false)} onConfirm={()=>{void send();}} />}
-  </ScrollView>;
+  </KeyboardFormScrollView></SafeAreaView>;
 }
 export default function Route() {
   const {id}=useLocalSearchParams<{id:string}>(),{api,session}=useSession();if(!api||!session||!/^[1-9]\d{0,14}$/.test(id))return <StateView title="Không mở được hợp đồng nhắc nợ" />;

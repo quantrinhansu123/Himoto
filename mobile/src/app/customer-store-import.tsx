@@ -11,7 +11,7 @@ import { pendingWrites } from '@/lib/pending-writes';
 import { pickWorkbook, type PickedWorkbook } from '@/lib/pick-workbook';
 import { useCsvExport } from '@/hooks/use-csv-export';
 import { dateTime, useTheme } from '@/theme';
-import { Button, Card, InlineError, StateView } from '@/components/ui';
+import { Button, Card, InlineError, KeyValueRow, PaginationBar, StateView, StatusBadge } from '@/components/ui';
 import { ChoiceField } from '@/components/form-fields';
 import { FileExportButton } from '@/components/file-export-button';
 import { ConfirmEdit } from '@/components/editor-sheet';
@@ -104,7 +104,7 @@ function Importer() {
     } catch (cause) { if (alive.current) setError((cause as Error).message); }
     finally { running.current = false; if (alive.current) setStage(''); }
   }
-  return <SafeAreaView edges={['bottom']} style={{ flex: 1, backgroundColor: theme.background }}><Stack.Screen options={{ title: 'Khớp cơ sở từ Excel' }} /><FlatList<CustomerStoreRow> ref={list} data={intent ? [] : visible.slice((current - 1) * 25, current * 25)} keyExtractor={r => String(r.rowNumber)} contentContainerStyle={{ padding: 16, gap: 12 }}
+  return <SafeAreaView edges={['left', 'right', 'bottom']} style={{ flex: 1, backgroundColor: theme.background }}><Stack.Screen options={{ title: 'Khớp cơ sở từ Excel' }} /><FlatList<CustomerStoreRow> ref={list} data={intent ? [] : visible.slice((current - 1) * 25, current * 25)} keyExtractor={r => String(r.rowNumber)} contentContainerStyle={{ padding: 16, gap: 12, maxWidth: 760, width: '100%', alignSelf: 'center' }}
     ListHeaderComponent={<View style={{ gap: 14, marginBottom: 8 }}>
       {!!error && <InlineError message={error} />}{!!progress && <Text accessibilityLiveRegion="polite" style={muted}>{progress}</Text>}{busy && <StateView title={stage} loading />}
       {confirmed > 0 && <Card><Text style={text}>Đã xác nhận cập nhật {confirmed} khách trong lượt thao tác này. Các phần đã ghi được giữ lại khi phần sau bị gián đoạn.</Text></Card>}
@@ -143,9 +143,9 @@ function Importer() {
         <Text style={muted}>{visible.length} kết quả · Trang {current}/{pages}</Text></>}
       </>}
     </View>}
-    renderItem={({ item }) => <Card style={{ gap: 8 }}><Text accessibilityRole="header" style={{ ...text, fontSize: 18, fontWeight: '700' }}>Dòng {item.rowNumber} · {item.state === 'ready' ? 'Sẽ cập nhật' : item.state === 'unchanged' ? 'Đã đúng cơ sở' : 'Lỗi'}</Text><Text selectable style={text}>{item.customer_name || 'Chưa khớp khách'}{item.customer_id ? ` · #${item.customer_id}` : ''}</Text><Text selectable style={muted}>Căn cước: {item.values.id_card || 'Chưa có'}</Text><Text style={text}>Hiện tại: {item.previous_store_name || 'Chưa có cơ sở'}</Text><Text style={text}>Cơ sở sẽ lưu: {item.store_name || 'Chưa khớp'}</Text><Text selectable style={muted}>Trong Excel: {item.values.store || 'Chưa có'}</Text>{item.errors.map((e, i) => <Text key={i} style={text}>{e}</Text>)}</Card>}
-    ListFooterComponent={!intent && pages > 1 ? <View style={{ flexDirection: 'row', gap: 12 }}><Button equalWidth secondary label="Trang trước" disabled={busy || current <= 1} onPress={() => setPage(current - 1)} /><Button equalWidth secondary label="Trang sau" disabled={busy || current >= pages} onPress={() => setPage(current + 1)} /></View> : undefined}
-  />{!!batches.length && !intent && <View style={{ padding: 16, borderTopWidth: 1, borderTopColor: theme.border }}><Button label={`Kiểm tra và cập nhật cơ sở cho ${ready} khách`} loading={busy} disabled={disabled || needsReview || !ready || download.busy} onPress={() => setConfirm(true)} /></View>}
+    renderItem={({ item }) => <Card style={{ gap: 8 }}><View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}><Text accessibilityRole="header" style={{ ...text, fontSize: 16, fontWeight: '800', flex: 1 }}>Dòng {item.rowNumber} · {item.customer_name || 'Chưa khớp khách'}</Text><StatusBadge status={item.state === 'ready' ? 'completed' : item.state === 'unchanged' ? 'pending' : 'cancelled'} label={item.state === 'ready' ? 'Sẽ cập nhật' : item.state === 'unchanged' ? 'Đã đúng' : 'Lỗi'} /></View><View style={{ gap: 2 }}><KeyValueRow label="Căn cước" value={item.values.id_card || 'Chưa có'} selectable /><KeyValueRow label="Cơ sở hiện tại" value={item.previous_store_name || 'Chưa có cơ sở'} /><KeyValueRow label="Cơ sở sẽ lưu" value={item.store_name || 'Chưa khớp'} emphasize /><KeyValueRow label="Trong Excel" value={item.values.store || 'Chưa có'} selectable /></View>{item.errors.map((e, i) => <Text key={i} style={{ color: theme.danger, fontSize: 13.5 }}>{e}</Text>)}</Card>}
+    ListFooterComponent={!intent && pages > 1 ? <PaginationBar page={current} pages={pages} total={visible.length} unit="dòng" disabled={busy} onChange={setPage} /> : undefined}
+  />{!!batches.length && !intent && <View style={{ padding: 16, borderTopWidth: 1, borderTopColor: theme.border, backgroundColor: theme.surface }}><Button label={`Kiểm tra và cập nhật cơ sở cho ${ready} khách`} loading={busy} disabled={disabled || needsReview || !ready || download.busy} onPress={() => setConfirm(true)} /></View>}
   {confirm && <ConfirmEdit title="Cập nhật cơ sở khách hàng từ Excel?" message={`${file?.name}\nCập nhật ${ready} khách theo ${batches.length} phần. Giữ nguyên ${unchanged} dòng đã đúng, bỏ qua ${invalid} dòng lỗi.\n\nMỗi phần được kiểm tra lại trước khi ghi. Nếu bị gián đoạn, phần đã ghi được giữ; đối chiếu mã rồi kiểm tra lại file để tiếp tục phần còn lại.`} confirmLabel={`Xác nhận cập nhật ${ready} khách`} busy={busy} onCancel={() => setConfirm(false)} onConfirm={() => void save()} />}
   {exit && <ConfirmEdit title="Rời màn khớp cơ sở?" message="Nội dung kiểm tra trên màn sẽ mất. File gốc và các phần đã cập nhật vẫn được giữ. Có thể chọn lại file, kiểm tra để xác định phần còn lại." confirmLabel="Rời màn khớp cơ sở" busy={busy} onCancel={() => setExit(null)} onConfirm={() => { if (!busy) exit(); }} />}
   </SafeAreaView>;

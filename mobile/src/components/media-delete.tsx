@@ -72,7 +72,7 @@ function DeleteForm({entity,id,initial,slot}:{entity:MobileMediaEntity;id:number
   const canDelete=checked&&!busy&&!key&&!!photo&&info?.target.canWrite!==false&&(metadataReview?metadataConfirmed:imageReady);
   return <SafeAreaView edges={['left','right','bottom']} style={{flex:1,backgroundColor:theme.background}}>
     <ScrollView contentContainerStyle={{padding:20,gap:18,maxWidth:760,width:'100%',alignSelf:'center'}}>
-      <Text accessibilityRole="header" style={{color:theme.text,fontSize:24,fontWeight:'800'}}>{receipt?'Phiếu xóa ảnh đã ghi':'Rà soát tệp trước khi xóa'}</Text>
+      <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'800'}}>{receipt?'Phiếu xóa ảnh đã ghi':'Rà soát tệp trước khi xóa'}</Text>
       {!!error&&<InlineError message={error}/>}{!!notice&&<Text accessibilityLiveRegion="polite" style={{color:theme.text,fontSize:15,lineHeight:24}}>{notice}</Text>}
       {receipt?<>
         <Card style={{gap:12}}><Text style={{color:theme.text,fontSize:19,fontWeight:'700'}}>{receipt.target.label}</Text><Text style={{color:theme.text,fontSize:17}}>{receipt.photo.label}</Text>
@@ -96,7 +96,7 @@ function DeleteForm({entity,id,initial,slot}:{entity:MobileMediaEntity;id:number
             <Text style={{color:theme.muted,fontSize:15,lineHeight:24}}>Tệp được gỡ khỏi đúng mục đã chọn. Thông tin hợp đồng và các tệp khác được giữ.</Text></>:<Text style={{color:theme.muted,fontSize:16}}>Mục này hiện không có tệp để xóa.</Text>}
         </Card>
         {info.target.canWrite===false&&<InlineError message="Hồ sơ này chỉ được xem trong phạm vi hiện tại."/>}
-        {photo&&<Button label="Xóa tệp đã rà soát" disabled={!canDelete} onPress={()=>setConfirm(info)}/>}
+        {photo&&<Button danger label="Xóa tệp đã rà soát" disabled={!canDelete} onPress={()=>setConfirm(info)}/>}
       </>:<Text style={{color:theme.muted,fontSize:16,lineHeight:24}}>{busy?'Đang tải thông tin tệp…':'Mở ảnh hồ sơ hoặc tải lại để chọn đúng tệp cần xóa.'}</Text>}
       <Button label="Tải lại kết quả xóa ảnh" secondary loading={busy} onPress={()=>void load()}/>
       {!key&&<Button label="Mở ảnh hồ sơ" secondary disabled={busy} onPress={openPhotos}/>}

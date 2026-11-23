@@ -1,5 +1,5 @@
 import {useCallback,useEffect,useMemo,useRef,useState} from 'react';
-import {ScrollView,Text} from 'react-native';
+import {ScrollView,Text,View} from 'react-native';
 import {router,useFocusEffect} from 'expo-router';
 import {useQueryClient} from '@tanstack/react-query';
 import {SafeAreaView} from 'react-native-safe-area-context';
@@ -7,7 +7,7 @@ import type {MobileVehicleStatusReceipt} from '../../../shared/mobile-vehicle-st
 import {useSession} from '@/providers/session';
 import {pendingWrites} from '@/lib/pending-writes';
 import {dateTime,statuses,useTheme} from '@/theme';
-import {Button,Card,InlineError,StateView} from './ui';
+import {Button,Card,InfoBanner,InlineError,KeyValueRow,StateView,StatusBadge} from './ui';
 import {ConfirmEdit} from './editor-sheet';
 
 export function VehicleStatusRecovery({requestKey}:{requestKey:string}) {
@@ -60,25 +60,28 @@ function Recovery({requestKey}:{requestKey:string}) {
     finally{running.current=false;if(alive.current)setBusy(false);}
   }
   return <SafeAreaView edges={['left','right','bottom']} style={{flex:1,backgroundColor:theme.background}}>
-    <ScrollView contentContainerStyle={{padding:20,gap:18,maxWidth:760,width:'100%',alignSelf:'center'}}>
-      {!!error&&<InlineError message={error}/>}{!!notice&&<Text accessibilityLiveRegion="polite" style={{color:theme.text,fontSize:16,lineHeight:25}}>{notice}</Text>}
+    <ScrollView contentContainerStyle={{padding:16,paddingBottom:36,gap:12,maxWidth:760,width:'100%',alignSelf:'center'}}>
+      {!!error&&<InlineError message={error}/>}{!!notice&&<InfoBanner tone="info" message={notice}/>}
       {receipt?<>
-        <Card style={{gap:14}}>
-          <Text accessibilityRole="header" style={{color:theme.text,fontSize:25,fontWeight:'800'}}>{receipt.review.effect==='inventory'?`Đã đổi trạng thái: ${statuses[receipt.review.input.status]||receipt.review.input.status}`:receipt.draft?'Đã tạo hợp đồng nháp':'Đã ghi nhận Lưu kho'}</Text>
-          <Text style={{color:theme.text,fontSize:20,fontWeight:'700'}}>{receipt.review.vehicle.license||receipt.review.vehicle.name}</Text>
-          {receipt.draft&&<Text selectable style={{color:theme.text,fontSize:19,fontWeight:'700'}}>Hợp đồng {receipt.draft.code} · #{receipt.draft.id}</Text>}
-          {receipt.customer&&<Text style={{color:theme.text,fontSize:16,lineHeight:25}}>Khách: {receipt.customer.name} · #{receipt.customer.id} · {receipt.customer.created?'hồ sơ mới':`khớp ${receipt.customer.matched_by}`}</Text>}
-          <Text style={{color:theme.text,fontSize:16,lineHeight:25}}>Cơ sở sử dụng: {receipt.review.store.name}</Text>
-          <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>Sau ghi: xe {receipt.review.effect==='inventory'?(statuses[receipt.review.input.status]||receipt.review.input.status):'Lưu kho'} tại {receipt.review.vehicle.storeName}. Không phát sinh thu tiền hoặc phiếu thu/hoàn.</Text>
-          <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>{receipt.actorName} · {dateTime(receipt.recordedAt)} · Lịch sử #{receipt.eventId}</Text>
-          <Text selectable style={{color:theme.muted,fontSize:14,lineHeight:23}}>Mã đối chiếu: {receipt.requestId}</Text>
+        <Card style={{gap:10}}>
+          <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8,flexWrap:'wrap'}}>
+            <Text accessibilityRole="header" style={{color:theme.success,fontSize:20,fontWeight:'800',flexShrink:1}}>{receipt.review.effect==='inventory'?`Đã đổi trạng thái: ${statuses[receipt.review.input.status]||receipt.review.input.status}`:receipt.draft?'Đã tạo hợp đồng nháp':'Đã ghi nhận Lưu kho'}</Text>
+            <StatusBadge label={receipt.review.effect==='inventory'?(statuses[receipt.review.input.status]||receipt.review.input.status):'Lưu kho'} tone="success"/>
+          </View>
+          <KeyValueRow label="Xe" value={receipt.review.vehicle.license||receipt.review.vehicle.name} emphasize/>
+          {receipt.draft&&<KeyValueRow label="Hợp đồng nháp" value={`${receipt.draft.code} · #${receipt.draft.id}`}/>}
+          {receipt.customer&&<KeyValueRow label="Khách hàng" value={`${receipt.customer.name} · #${receipt.customer.id} (${receipt.customer.created?'hồ sơ mới':`khớp ${receipt.customer.matched_by}`})`}/>}
+          <KeyValueRow label="Cơ sở sử dụng" value={receipt.review.store.name}/>
+          <KeyValueRow label="Ghi nhận bởi" value={`${receipt.actorName} · ${dateTime(receipt.recordedAt)} · #${receipt.eventId}`}/>
+          <InfoBanner tone="info" message={`Sau ghi: xe ${receipt.review.effect==='inventory'?(statuses[receipt.review.input.status]||receipt.review.input.status):'Lưu kho'} tại ${receipt.review.vehicle.storeName}. Không phát sinh thu tiền hoặc phiếu thu/hoàn.`}/>
+          <Text selectable style={{color:theme.muted,fontSize:12}}>Mã đối chiếu: {receipt.requestId}</Text>
           {!receipt.current&&<InlineError message="Xe, hợp đồng hoặc lịch sử đã được xử lý tiếp. Đây là kết quả gốc của mã này; kiểm tra hồ sơ hiện tại trước thao tác mới."/>}
         </Card>
         {receipt.draft&&<Button label={`Đã kiểm tra · mở hợp đồng ${receipt.draft.code}`} loading={busy} onPress={()=>{void acknowledge(true);}}/>}
         <Button label="Đã kiểm tra · mở hồ sơ xe" secondary={!!receipt.draft} loading={busy} onPress={()=>{void acknowledge(false);}}/>
-      </>:<Card style={{gap:16}}>
-        <Text accessibilityRole="header" style={{color:theme.text,fontSize:24,fontWeight:'700'}}>{operation?'Đổi trạng thái đang chờ đối chiếu':'Không có mã chờ đối chiếu'}</Text>
-        <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>Giữ mã đến khi đọc được kết quả gốc hoặc máy chủ xác nhận chưa ghi.</Text>
+      </>:<Card style={{gap:12}}>
+        <Text accessibilityRole="header" style={{color:theme.text,fontSize:19,fontWeight:'700'}}>{operation?'Đổi trạng thái đang chờ đối chiếu':'Không có mã chờ đối chiếu'}</Text>
+        <Text style={{color:theme.muted,fontSize:14,lineHeight:21}}>Giữ mã đến khi đọc được kết quả gốc hoặc máy chủ xác nhận chưa ghi.</Text>
         {operation&&<Button label="Đối chiếu đổi trạng thái với máy chủ" loading={busy} onPress={()=>setConfirm(true)}/>}
         {!operation&&<Button label="Về Tài khoản" secondary disabled={busy} onPress={()=>router.replace('/(tabs)/account')}/>}
       </Card>}

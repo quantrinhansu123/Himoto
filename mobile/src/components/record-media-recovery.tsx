@@ -1,5 +1,5 @@
 import {useCallback,useEffect,useMemo,useRef,useState} from 'react';
-import {ScrollView,Text} from 'react-native';
+import {ScrollView,Text,View} from 'react-native';
 import {router,useFocusEffect} from 'expo-router';
 import {useQueryClient} from '@tanstack/react-query';
 import {SafeAreaView} from 'react-native-safe-area-context';
@@ -7,7 +7,7 @@ import {mediaOperation,type MobileMediaEntity,type MobileMediaReceipt} from '../
 import {useSession} from '@/providers/session';
 import {pendingWrites} from '@/lib/pending-writes';
 import {dateTime,useTheme} from '@/theme';
-import {Button,Card,InlineError,StateView} from './ui';
+import {Button,Card,InfoBanner,InlineError,KeyValueRow,StateView,StatusBadge} from './ui';
 import {ConfirmEdit} from './editor-sheet';
 import {BillPhoto} from './bill-photo';
 
@@ -67,28 +67,31 @@ function Recovery({entity,id}:{entity:MobileMediaEntity;id:string}) {
     finally{running.current=false;if(alive.current&&epoch.current===current)setBusy(false);}
   }
   return <SafeAreaView edges={['left','right','bottom']} style={{flex:1,backgroundColor:theme.background}}>
-    <ScrollView contentContainerStyle={{padding:20,gap:18,maxWidth:760,width:'100%',alignSelf:'center'}}>
+    <ScrollView contentContainerStyle={{padding:16,paddingBottom:36,gap:12,maxWidth:760,width:'100%',alignSelf:'center'}}>
       {!!error&&<InlineError message={error}/>}
-      {!!notice&&<Text accessibilityLiveRegion="polite" style={{color:theme.text,fontSize:16,lineHeight:25}}>{notice}</Text>}
-      {!receipt?<Card style={{gap:16}}>
-        <Text accessibilityRole="header" style={{color:theme.text,fontSize:25,fontWeight:'800'}}>{key?'Ảnh đang chờ đối chiếu':'Đối chiếu lưu ảnh'}</Text>
-        <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>{key?'Giữ mã đến khi đã kiểm tra phiếu gốc hoặc máy chủ xác nhận chưa lưu ảnh.':'Không có yêu cầu lưu ảnh đang chờ cho hồ sơ này.'}</Text>
+      {!!notice&&<InfoBanner tone="info" message={notice}/>}
+      {!receipt?<Card style={{gap:12}}>
+        <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'800'}}>{key?'Ảnh đang chờ đối chiếu':'Đối chiếu lưu ảnh'}</Text>
+        <Text style={{color:theme.muted,fontSize:14,lineHeight:21}}>{key?'Giữ mã đến khi đã kiểm tra phiếu gốc hoặc máy chủ xác nhận chưa lưu ảnh.':'Không có yêu cầu lưu ảnh đang chờ cho hồ sơ này.'}</Text>
         {key&&<Button label="Đối chiếu lưu ảnh với máy chủ" loading={busy} onPress={()=>setConfirm(true)}/>}
         <Button label="Tải lại phiếu lưu ảnh" secondary loading={busy} onPress={()=>{void load();}}/>
         {!key&&<Button label="Mở hồ sơ" secondary disabled={busy} onPress={openRecord}/>}
       </Card>:<>
-        <Card style={{gap:14}}>
-          <Text accessibilityRole="header" style={{color:theme.text,fontSize:25,fontWeight:'800'}}>Ảnh đã được lưu vào hồ sơ</Text>
-          <Text style={{color:theme.text,fontSize:19,fontWeight:'700'}}>{receipt.target.label}</Text>
-          <Text style={{color:theme.text,fontSize:17,lineHeight:27}}>{receipt.label}</Text>
-          <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>{receipt.actorName||'Nhân viên'} · {dateTime(receipt.recordedAt)} · {Math.ceil(receipt.bytes/1024)} KB</Text>
-          <Text selectable style={{color:theme.muted,fontSize:15,lineHeight:24}}>Mã {receipt.requestId}</Text>
+        <Card style={{gap:10}}>
+          <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8,flexWrap:'wrap'}}>
+            <Text accessibilityRole="header" style={{color:theme.success,fontSize:20,fontWeight:'800',flexShrink:1}}>Ảnh đã được lưu vào hồ sơ</Text>
+            <StatusBadge label={`${Math.ceil(receipt.bytes/1024)} KB`} tone="success"/>
+          </View>
+          <KeyValueRow label="Hồ sơ" value={receipt.target.label} emphasize/>
+          <KeyValueRow label="Vị trí ảnh" value={receipt.label}/>
+          <KeyValueRow label="Ghi nhận bởi" value={`${receipt.actorName||'Nhân viên'} · ${dateTime(receipt.recordedAt)}`}/>
+          <Text selectable style={{color:theme.muted,fontSize:12}}>Mã {receipt.requestId}</Text>
           {receipt.current&&<BillPhoto key={receipt.requestId+':'+imageEpoch} context="hồ sơ" label="Ảnh đã lưu trong hồ sơ" onReady={setImageReady}
             source={api!.recordMediaImageSource(receipt.target,{slot:receipt.slot,label:receipt.label,revision:receipt.photoRevision,mimeType:'image/jpeg',bytes:receipt.bytes,updatedAt:receipt.recordedAt,kind:'image',readable:true,blockedReason:null})}/>}
           {!receipt.current&&<InlineError message="Hồ sơ, lượt ghi nhận hoặc ảnh đã thay đổi. Đây là thông tin của lần lưu gốc."/>}
-          {!receipt.parentCurrent&&<Text style={{color:theme.warning,fontSize:16,lineHeight:25}}>Hồ sơ đã thay đổi sau khi lưu ảnh.</Text>}
-          {!receipt.referenceCurrent&&<Text style={{color:theme.warning,fontSize:16,lineHeight:25}}>Dòng xe hoặc lượt ghi nhận đã thay đổi sau khi lưu ảnh.</Text>}
-          {!receipt.photoCurrent&&<Text style={{color:theme.warning,fontSize:16,lineHeight:25}}>Ảnh trong ô này đã được thay hoặc gỡ. Phiếu vẫn giữ thông tin ảnh lúc lưu.</Text>}
+          {!receipt.parentCurrent&&<InfoBanner tone="warning" message="Hồ sơ đã thay đổi sau khi lưu ảnh."/>}
+          {!receipt.referenceCurrent&&<InfoBanner tone="warning" message="Dòng xe hoặc lượt ghi nhận đã thay đổi sau khi lưu ảnh."/>}
+          {!receipt.photoCurrent&&<InfoBanner tone="warning" message="Ảnh trong ô này đã được thay hoặc gỡ. Phiếu vẫn giữ thông tin ảnh lúc lưu."/>}
         </Card>
         {receipt.current&&<Button secondary label="Tải lại ảnh đã lưu" disabled={busy} onPress={()=>{setImageReady(false);setImageEpoch(e=>e+1);}}/>}
         <Button label="Xác nhận đã kiểm tra phiếu lưu ảnh" loading={busy} disabled={receipt.current&&!imageReady} onPress={()=>{void acknowledge();}}/>

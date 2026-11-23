@@ -1,10 +1,11 @@
 import {useState} from 'react';
-import {ScrollView,Text} from 'react-native';
+import {ScrollView,Text,View} from 'react-native';
+import {SafeAreaView} from 'react-native-safe-area-context';
 import {useQuery} from '@tanstack/react-query';
 import {router,useLocalSearchParams} from 'expo-router';
 import {useSession} from '@/providers/session';
 import {dateTime,useTheme} from '@/theme';
-import {Button,Card,StateView,StatusBadge} from '@/components/ui';
+import {Button,Card,KeyValueRow,PaginationBar,StateView,StatusBadge} from '@/components/ui';
 function Contracts({id}:{id:string}) {
   const {api,session}=useSession(),theme=useTheme(),[page,setPage]=useState(1);
   const allowed=session!.user.permissions.includes('vehicles.read')&&session!.user.permissions.includes('contracts.read')&&/^[1-9]\d{0,14}$/.test(id);
@@ -13,14 +14,12 @@ function Contracts({id}:{id:string}) {
   if(query.isPending)return <StateView title="Đang đọc hợp đồng của xe" loading/>;
   if(query.isError)return <StateView title="Chưa đọc được hợp đồng của xe" message={query.error.message} retry={()=>void query.refetch()}/>;
   const data=query.data;
-  return <ScrollView contentContainerStyle={{padding:20,gap:18,paddingBottom:40,maxWidth:760,width:'100%',alignSelf:'center'}}>
-    <Text accessibilityRole="header" style={{color:theme.text,fontSize:25,fontWeight:'800'}}>Hợp đồng liên quan · {data.total}</Text>
-    <Text style={{color:theme.muted,lineHeight:24}}>Hợp đồng đang mở và nháp giữ xe trong phạm vi được xem. Khoản cọc và nháp giữ chỗ được hiển thị để kiểm tra lịch xe.</Text>
-    {data.rows.map(row=><Card key={row.id} style={{gap:12}}><Text style={{color:theme.text,fontSize:20,fontWeight:'700'}}>{row.code}</Text><Text style={{color:theme.text,fontSize:16}}>{row.customer||'Chưa có tên khách'}</Text><StatusBadge status={row.status}/><Text style={{color:theme.muted,lineHeight:24}}>{row.startsAt?dateTime(row.startsAt):'Chưa có ngày thuê'} → {row.endsAt?dateTime(row.endsAt):'Chưa có ngày trả'}</Text><Button secondary label={`Mở hợp đồng ${row.code}`} onPress={()=>router.push({pathname:'/record/[kind]/[id]',params:{kind:'contracts',id:String(row.id)}})}/></Card>)}
-    {!data.rows.length&&<Text style={{color:theme.muted}}>Xe chưa có hợp đồng liên quan đang mở trong phạm vi hiện tại.</Text>}
-    <Text style={{color:theme.muted}}>Trang {data.page}/{data.pages}</Text>
-    <Button label="Trang hợp đồng trước" secondary disabled={query.isFetching||data.page<=1} onPress={()=>setPage(data.page-1)}/><Button label="Trang hợp đồng tiếp" secondary disabled={query.isFetching||data.page>=data.pages} onPress={()=>setPage(data.page+1)}/>
-    <Button label="Tải lại hợp đồng của xe" secondary loading={query.isFetching} onPress={()=>void query.refetch()}/>
-  </ScrollView>;
+  return <SafeAreaView edges={['left','right','bottom']} style={{flex:1,backgroundColor:theme.background}}><ScrollView contentContainerStyle={{padding:16,gap:14,paddingBottom:40,maxWidth:760,width:'100%',alignSelf:'center'}}>
+    <View style={{gap:4}}><Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'800'}}>Hợp đồng liên quan · {data.total}</Text><Text style={{color:theme.muted,fontSize:13.5,lineHeight:20}}>Hợp đồng đang mở và nháp giữ xe trong phạm vi được xem. Khoản cọc và nháp giữ chỗ được hiển thị để kiểm tra lịch xe.</Text></View>
+    {data.rows.map(row=><Card key={row.id} style={{gap:10}}><View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center',gap:8}}><Text style={{color:theme.text,fontSize:17,fontWeight:'800',flex:1}}>{row.code}</Text><StatusBadge status={row.status}/></View><View style={{gap:2}}><KeyValueRow label="Khách thuê" value={row.customer||'Chưa có tên khách'} emphasize/><KeyValueRow label="Thời gian thuê" value={`${row.startsAt?dateTime(row.startsAt):'Chưa có'} → ${row.endsAt?dateTime(row.endsAt):'Chưa có'}`}/></View><Button size="sm" secondary label={`Mở hợp đồng ${row.code}`} onPress={()=>router.push({pathname:'/record/[kind]/[id]',params:{kind:'contracts',id:String(row.id)}})}/></Card>)}
+    {!data.rows.length&&<StateView title="Chưa có hợp đồng mở" message="Xe chưa có hợp đồng liên quan đang mở trong phạm vi hiện tại."/>}
+    {data.pages>1&&<PaginationBar page={data.page} pages={data.pages} total={data.total} unit="hợp đồng" disabled={query.isFetching} onChange={setPage}/>}
+    <Button size="sm" label="Tải lại hợp đồng của xe" secondary loading={query.isFetching} onPress={()=>void query.refetch()}/>
+  </ScrollView></SafeAreaView>;
 }
 export default function Screen(){const{id}=useLocalSearchParams<{id:string}>(),{api,session}=useSession();if(!api||!session||typeof id!=='string')return <StateView title="Không mở được hợp đồng xe"/>;return <Contracts key={[api.origin,session.token,session.user.storeId,session.user.allStores,id].join('|')} id={id}/>;}

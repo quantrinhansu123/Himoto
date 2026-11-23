@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState} from 'react';
-import {FlatList,Platform,Pressable,ScrollView,Text,type ScrollViewInstance} from 'react-native';
+import {FlatList,Platform,Pressable,ScrollView,Text,View,type ScrollViewInstance} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {router} from 'expo-router';
 import * as Linking from 'expo-linking';
@@ -86,90 +86,100 @@ function MediaForm({entity,id,initial}:{entity:MobileMediaEntity;id:string;initi
   const frame=(children:React.ReactNode)=><SafeAreaView edges={['left','right','bottom']} style={{flex:1,backgroundColor:theme.background}}>
     <ScrollView ref={scroll} contentContainerStyle={{padding:20,gap:18,maxWidth:760,width:'100%',alignSelf:'center'}}>{children}</ScrollView>{overlays}
   </SafeAreaView>;
-  if(write.key)return frame(<Card style={{gap:16}}>
-    <Text accessibilityRole="header" style={{color:theme.text,fontSize:25,fontWeight:'800'}}>Ảnh đang chờ đối chiếu</Text>
-    <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>Có yêu cầu lưu ảnh trên hồ sơ này. Đối chiếu phiếu gốc trước khi gửi thêm ảnh ở bất kỳ lượt ghi nhận nào.</Text>
+  if(write.key)return frame(<Card style={{gap:14}}>
+    <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'800'}}>Ảnh đang chờ đối chiếu</Text>
+    <Text style={{color:theme.muted,fontSize:14,lineHeight:21}}>Có yêu cầu lưu ảnh trên hồ sơ này. Đối chiếu phiếu gốc trước khi gửi thêm ảnh ở bất kỳ lượt ghi nhận nào.</Text>
     {!!write.error&&<InlineError message={write.error}/>}
     <Button label="Đối chiếu lưu ảnh với máy chủ" loading={write.busy} onPress={()=>setResolving(true)}/>
     <Button label="Mở phiếu lưu ảnh" secondary disabled={write.busy} onPress={write.openReceipt}/>
   </Card>);
-  if(!write.checked)return frame(<Card style={{gap:16}}><Text accessibilityRole="header" style={{color:theme.text,fontSize:23,fontWeight:'700'}}>Kiểm tra ảnh trên thiết bị</Text>
+  if(!write.checked)return frame(<Card style={{gap:14}}><Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'700'}}>Kiểm tra ảnh trên thiết bị</Text>
     {!!write.error&&<InlineError message={write.error}/>}<Button label="Đọc lại mã lưu ảnh" loading={write.busy} onPress={()=>{void write.check();}}/></Card>);
   const messages=<>
     {!!(error||write.error)&&<InlineError message={error||write.error}/>}
-    {!!write.notice&&<Text accessibilityLiveRegion="polite" style={{color:theme.text,fontSize:16,lineHeight:25}}>{write.notice}</Text>}
+    {!!write.notice&&<Text accessibilityLiveRegion="polite" style={{color:theme.text,fontSize:14,lineHeight:21}}>{write.notice}</Text>}
   </>;
   if(!target)return frame(<>
-    <Text accessibilityRole="header" style={{color:theme.text,fontSize:25,fontWeight:'800'}}>Ảnh và hồ sơ nghiệp vụ</Text>{messages}
-    <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>{entity==='customers'?'Mở hồ sơ khách để xem giấy tờ; quyền bổ sung ảnh theo cơ sở quản lý.':'Chọn ảnh lập/giao hợp đồng, biển số từng xe hoặc đúng lượt trả/đổi/chuyển/nhận để xem và bổ sung ảnh.'}</Text>
+    <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'800'}}>Ảnh và hồ sơ nghiệp vụ</Text>{messages}
+    <Text style={{color:theme.muted,fontSize:13.5,lineHeight:20}}>{entity==='customers'?'Mở hồ sơ khách để xem giấy tờ; quyền bổ sung ảnh theo cơ sở quản lý.':'Chọn ảnh lập/giao hợp đồng, biển số từng xe hoặc đúng lượt trả/đổi/chuyển/nhận để xem và bổ sung ảnh.'}</Text>
     {targets.isPending&&<Text style={{color:theme.muted}}>Đang tải hồ sơ ảnh…</Text>}
     {targets.isError&&<InlineError message={targets.error.message}/>}
     {entity==='contracts'&&<><Button secondary label={historyTargets?'Ảnh lập, giao, trả và đổi xe':'Ảnh/video gia hạn, phiếu và đổi pin'} disabled={locked} onPress={()=>{setHistoryTargets(v=>!v);setTargetPage(1);setPreviousTargets(undefined);top();}}/>
       {!historyTargets&&<Button secondary label="Lấy giấy tờ từ hồ sơ khách" disabled={locked} onPress={()=>router.push({pathname:'/customer-photo-copy/[id]',params:{id}})}/>}</>}
     {targetsData?.rows.map(row=><Card key={row.kind+row.referenceId} style={{gap:10}}><Button label={['renewal','renewal_receipt','battery_swap'].includes(row.kind)?row.label:row.label+' · #'+row.referenceId} secondary disabled={locked||targets.isFetching||targets.isError} onPress={()=>{setTarget(row);setPage(1);top();}}/></Card>)}
-    {targetsData&&!targetsData.rows.length&&<Text style={{color:theme.muted,fontSize:16}}>Chưa có dòng xe hoặc lượt ghi nhận phù hợp.</Text>}
-    {targetsData&&targetsData.page!==targetPage&&<Text style={{color:theme.muted,fontSize:15}}>Đang giữ trang {targetsData.page} trong khi tải trang {targetPage}.</Text>}
-    <Text style={{color:theme.muted,fontSize:15}}>Trang hồ sơ {targetPage}</Text>
-    <Button label="Trang hồ sơ ảnh trước" secondary disabled={locked||targets.isFetching||targetPage===1} onPress={()=>{setTargetPage(p=>p-1);top();}}/>
-    <Button label="Trang hồ sơ ảnh tiếp" secondary disabled={locked||targets.isFetching||targets.isError||!targets.data?.hasMore} onPress={()=>{setTargetPage(p=>p+1);top();}}/>
-    <Button label="Tải lại hồ sơ ảnh" secondary loading={targets.isFetching} onPress={()=>{void targets.refetch();}}/>
+    {targetsData&&!targetsData.rows.length&&<Text style={{color:theme.muted,fontSize:14}}>Chưa có dòng xe hoặc lượt ghi nhận phù hợp.</Text>}
+    {targetsData&&targetsData.page!==targetPage&&<Text style={{color:theme.muted,fontSize:13.5}}>Đang giữ trang {targetsData.page} trong khi tải trang {targetPage}.</Text>}
+    <Text style={{color:theme.muted,fontSize:13.5}}>Trang hồ sơ {targetPage}</Text>
+    <View style={{flexDirection:'row',gap:10}}>
+      <Button size="sm" equalWidth label="Trang hồ sơ ảnh trước" secondary disabled={locked||targets.isFetching||targetPage===1} onPress={()=>{setTargetPage(p=>p-1);top();}}/>
+      <Button size="sm" equalWidth label="Trang hồ sơ ảnh tiếp" secondary disabled={locked||targets.isFetching||targets.isError||!targets.data?.hasMore} onPress={()=>{setTargetPage(p=>p+1);top();}}/>
+    </View>
+    <Button size="sm" label="Tải lại hồ sơ ảnh" secondary loading={targets.isFetching} onPress={()=>{void targets.refetch();}}/>
   </>);
   if(!slot)return frame(<>
-    <Text accessibilityRole="header" style={{color:theme.text,fontSize:25,fontWeight:'800'}}>{galleryData?.target.label||'Ảnh của lượt ghi nhận'}</Text>{messages}
+    <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'800'}}>{galleryData?.target.label||'Ảnh của lượt ghi nhận'}</Text>{messages}
     {gallery.isPending&&<Text style={{color:theme.muted}}>Đang tải ảnh đã lưu…</Text>}
     {gallery.isError&&<InlineError message={gallery.error.message}/>}
     <Button label="Chọn mục ảnh hoặc video" disabled={locked||!canUpload||!gallery.data||gallery.isFetching||gallery.isError} onPress={()=>setSheet(true)}/>
     {galleryData?.rows.map(row=><Card key={row.slot} style={{gap:10}}>
-      <Text style={{color:theme.text,fontSize:18,fontWeight:'700'}}>{row.label}</Text>
-      <Text style={{color:theme.muted,fontSize:15,lineHeight:24}}>{dateTime(row.updatedAt)} · {row.kind==='video'?'Video':row.bytes?Math.ceil(row.bytes/1024)+' KB':'Ảnh đã lưu'}</Text>
-      {!!row.blockedReason&&<Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>{row.blockedReason}</Text>}
+      <Text style={{color:theme.text,fontSize:17,fontWeight:'700'}}>{row.label}</Text>
+      <Text style={{color:theme.muted,fontSize:13.5,lineHeight:20}}>{dateTime(row.updatedAt)} · {row.kind==='video'?'Video':row.bytes?Math.ceil(row.bytes/1024)+' KB':'Ảnh đã lưu'}</Text>
+      {!!row.blockedReason&&<Text style={{color:theme.muted,fontSize:14,lineHeight:21}}>{row.blockedReason}</Text>}
       {row.readable&&row.kind==='image'&&<BillPhoto context="hồ sơ" previewSource={api!.recordMediaImageSource(galleryData.target,row,true)} source={api!.recordMediaImageSource(galleryData.target,row)} label={row.label}/>}
-      <Button secondary label={'Mở mục '+row.label} disabled={locked||gallery.isFetching||gallery.isError} onPress={()=>choose(row.slot)}/>
+      <Button size="sm" secondary label={'Mở mục '+row.label} disabled={locked||gallery.isFetching||gallery.isError} onPress={()=>choose(row.slot)}/>
     </Card>)}
-    {galleryData&&!galleryData.rows.length&&<Text style={{color:theme.muted,fontSize:16}}>Chưa có ảnh cho lượt ghi nhận này.</Text>}
-    {galleryData&&galleryData.page!==page&&<Text style={{color:theme.muted,fontSize:15}}>Đang giữ trang {galleryData.page} trong khi tải trang {page}.</Text>}
-    <Text style={{color:theme.muted,fontSize:15}}>Trang ảnh {page}</Text>
-    <Button label="Trang ảnh trước" secondary disabled={locked||gallery.isFetching||page===1} onPress={()=>{setPage(p=>p-1);top();}}/>
-    <Button label="Trang ảnh tiếp" secondary disabled={locked||gallery.isFetching||gallery.isError||!gallery.data?.hasMore} onPress={()=>{setPage(p=>p+1);top();}}/>
-    <Button label="Tải lại danh sách ảnh" secondary loading={gallery.isFetching} onPress={()=>{void gallery.refetch();}}/>
-    <Button label="Chọn lượt ghi nhận khác" secondary disabled={locked} onPress={()=>{setTarget(null);top();}}/>
+    {galleryData&&!galleryData.rows.length&&<Text style={{color:theme.muted,fontSize:14}}>Chưa có ảnh cho lượt ghi nhận này.</Text>}
+    {galleryData&&galleryData.page!==page&&<Text style={{color:theme.muted,fontSize:13.5}}>Đang giữ trang {galleryData.page} trong khi tải trang {page}.</Text>}
+    <Text style={{color:theme.muted,fontSize:13.5}}>Trang ảnh {page}</Text>
+    <View style={{flexDirection:'row',gap:10}}>
+      <Button size="sm" equalWidth label="Trang ảnh trước" secondary disabled={locked||gallery.isFetching||page===1} onPress={()=>{setPage(p=>p-1);top();}}/>
+      <Button size="sm" equalWidth label="Trang ảnh tiếp" secondary disabled={locked||gallery.isFetching||gallery.isError||!gallery.data?.hasMore} onPress={()=>{setPage(p=>p+1);top();}}/>
+    </View>
+    <View style={{flexDirection:'row',gap:10}}>
+      <Button size="sm" equalWidth label="Tải lại danh sách ảnh" secondary loading={gallery.isFetching} onPress={()=>{void gallery.refetch();}}/>
+      <Button size="sm" equalWidth label="Chọn lượt ghi nhận khác" secondary disabled={locked} onPress={()=>{setTarget(null);top();}}/>
+    </View>
   </>);
-  if(!data)return frame(<>{messages}<Text accessibilityRole="header" style={{color:theme.text,fontSize:24,fontWeight:'700'}}>Đọc ô ảnh đã chọn</Text>
+  if(!data)return frame(<>{messages}<Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'700'}}>Đọc ô ảnh đã chọn</Text>
     {info.isError&&<InlineError message={info.error.message}/>}<Button label="Tải lại ô ảnh" loading={info.isFetching} onPress={()=>{void info.refetch();}}/>
     <Button label="Chọn mục ảnh khác" secondary onPress={changeSlot}/></>);
-  if(batch&&canUpload)return frame(<><Text accessibilityRole="header" style={{color:theme.text,fontSize:24,fontWeight:'800'}}>{data.target.label} · {data.label}</Text><RecordPhotoBatch key={JSON.stringify([target,slot])} target={target} slot={slot}/><Button secondary label="Xem hoặc xóa ảnh đã lưu tại mục này" onPress={()=>setBatch(false)}/><Button secondary label="Chọn mục ảnh khác" onPress={changeSlot}/></>);
+  if(batch&&canUpload)return frame(<><Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'800'}}>{data.target.label} · {data.label}</Text><RecordPhotoBatch key={JSON.stringify([target,slot])} target={target} slot={slot}/><Button secondary label="Xem hoặc xóa ảnh đã lưu tại mục này" onPress={()=>setBatch(false)}/><Button secondary label="Chọn mục ảnh khác" onPress={changeSlot}/></>);
   if(review)return frame(<>
-    <Card style={{gap:14}}>
-      <Text accessibilityRole="header" style={{color:theme.text,fontSize:24,fontWeight:'800'}}>Rà soát ảnh trước khi lưu</Text>
-      <Text style={{color:theme.text,fontSize:19,fontWeight:'700'}}>{review.target.label}</Text>
-      <Text style={{color:theme.text,fontSize:17,lineHeight:26}}>{review.label}</Text>
+    <Card style={{gap:12}}>
+      <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'800'}}>Rà soát ảnh trước khi lưu</Text>
+      <Text style={{color:theme.text,fontSize:18,fontWeight:'700'}}>{review.target.label}</Text>
+      <Text style={{color:theme.text,fontSize:16,lineHeight:23}}>{review.label}</Text>
       {photo&&<BillPhoto key={photo.uri} context="hồ sơ" source={{uri:photo.uri}} label="Ảnh hồ sơ sẽ lưu" onReady={setSelectedReady}/>}
-      <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>{review.photo?'Ảnh mới sẽ thay ảnh đang lưu trong mục này.':'Bổ sung ảnh mới vào mục đã chọn.'} Không ghi nhận trả xe, đổi xe, điều chuyển hoặc khoản thu/hoàn.</Text>
+      <Text style={{color:theme.muted,fontSize:14,lineHeight:21}}>{review.photo?'Ảnh mới sẽ thay ảnh đang lưu trong mục này.':'Bổ sung ảnh mới vào mục đã chọn.'} Không ghi nhận trả xe, đổi xe, điều chuyển hoặc khoản thu/hoàn.</Text>
     </Card>{messages}
     <Button label="Lưu ảnh hồ sơ" disabled={locked||!canUpload||!photo||!selectedReady} loading={write.busy} onPress={()=>setConfirm(true)}/>
     <Button label="Sửa ảnh đã chọn" secondary disabled={locked} onPress={()=>{setReview(null);top();}}/>
   </>);
   return frame(<>
-    <Text accessibilityRole="header" style={{color:theme.text,fontSize:24,fontWeight:'800'}}>{data.target.label}</Text>{messages}
-    <Text style={{color:theme.text,fontSize:19,fontWeight:'700'}}>{data.label}</Text>
+    <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'800'}}>{data.target.label}</Text>{messages}
+    <Text style={{color:theme.text,fontSize:17,fontWeight:'700'}}>{data.label}</Text>
     {info.isError&&<InlineError message="Chưa cập nhật được ô ảnh. Ảnh đang chọn được giữ; tải lại trước khi lưu."/>}
-    <Card style={{gap:14}}>
-      <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'700'}}>Ảnh hiện tại</Text>
+    <Card style={{gap:12}}>
+      <Text accessibilityRole="header" style={{color:theme.text,fontSize:18,fontWeight:'700'}}>Ảnh hiện tại</Text>
       {data.photo?.readable&&data.photo.kind==='image'?<BillPhoto key={data.photo.revision+':'+imageEpoch} context="hồ sơ" source={api!.recordMediaImageSource(data.target,data.photo)} label="Ảnh hồ sơ hiện tại" onReady={ready=>setCurrentReady(ready?data.photo!.revision:null)}/>:
-        <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>{data.photo?.blockedReason||'Ô này chưa có ảnh.'}</Text>}
+        <Text style={{color:theme.muted,fontSize:14,lineHeight:21}}>{data.photo?.blockedReason||'Ô này chưa có ảnh.'}</Text>}
       {data.photo&&data.nextSlot&&<Button secondary label="Thêm ảnh cùng mục, giữ ảnh hiện tại" disabled={locked||!canUpload||info.isFetching||info.isError} onPress={()=>choose(data.nextSlot!)}/>}
     </Card>
-    {data.photo&&canMutate&&<Button secondary label="Xóa tệp khỏi hồ sơ" disabled={locked||!!photo||info.isFetching||info.isError} onPress={()=>router.push({pathname:'/media-delete/[entity]/[id]',params:{entity,id,kind:data.target.kind,referenceId:String(data.target.referenceId),slot:data.slot}})}/>}
-    {!canUpload&&<Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>{canMutate?'Video chưa hỗ trợ tải trong ứng dụng. Có thể rà soát thông tin để xóa tệp đã có.':'Anh/chị chỉ được xem giấy tờ của hồ sơ này.'}</Text>}
-    {canUpload&&<Card style={{gap:14}}>
-      <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'700'}}>Ảnh sẽ lưu</Text>
-      {photo&&<><BillPhoto key={photo.uri} context="hồ sơ" source={{uri:photo.uri}} label="Ảnh hồ sơ đang chọn" onReady={setSelectedReady}/><Text style={{color:theme.muted,fontSize:15}}>{photo.width} × {photo.height} · {Math.ceil(photo.size/1024)} KB</Text></>}
-      <Button label="Chọn nhiều ảnh hồ sơ" secondary loading={picking} disabled={locked} onPress={()=>setBatch(true)}/>
-      <Button label="Chụp ảnh hồ sơ" secondary disabled={locked||Platform.OS==='web'} onPress={()=>{void pick(true);}}/>
-      {!!error&&Platform.OS!=='web'&&<Button label="Mở cài đặt quyền camera" secondary disabled={locked} onPress={()=>{void Linking.openSettings().catch(()=>{if(alive.current)setError('Mở Cài đặt điện thoại để kiểm tra quyền Camera của Himoto.');});}}/>}
+    {data.photo&&canMutate&&<Button secondary danger label="Xóa tệp khỏi hồ sơ" disabled={locked||!!photo||info.isFetching||info.isError} onPress={()=>router.push({pathname:'/media-delete/[entity]/[id]',params:{entity,id,kind:data.target.kind,referenceId:String(data.target.referenceId),slot:data.slot}})}/>}
+    {!canUpload&&<Text style={{color:theme.muted,fontSize:14,lineHeight:21}}>{canMutate?'Video chưa hỗ trợ tải trong ứng dụng. Có thể rà soát thông tin để xóa tệp đã có.':'Anh/chị chỉ được xem giấy tờ của hồ sơ này.'}</Text>}
+    {canUpload&&<Card style={{gap:12}}>
+      <Text accessibilityRole="header" style={{color:theme.text,fontSize:18,fontWeight:'700'}}>Ảnh sẽ lưu</Text>
+      {photo&&<><BillPhoto key={photo.uri} context="hồ sơ" source={{uri:photo.uri}} label="Ảnh hồ sơ đang chọn" onReady={setSelectedReady}/><Text style={{color:theme.muted,fontSize:13.5}}>{photo.width} × {photo.height} · {Math.ceil(photo.size/1024)} KB</Text></>}
+      <View style={{flexDirection:'row',gap:10}}>
+        <Button size="sm" equalWidth label="Chọn nhiều ảnh hồ sơ" secondary loading={picking} disabled={locked} onPress={()=>setBatch(true)}/>
+        <Button size="sm" equalWidth label="Chụp ảnh hồ sơ" secondary disabled={locked||Platform.OS==='web'} onPress={()=>{void pick(true);}}/>
+      </View>
+      {!!error&&Platform.OS!=='web'&&<Button size="sm" label="Mở cài đặt quyền camera" secondary disabled={locked} onPress={()=>{void Linking.openSettings().catch(()=>{if(alive.current)setError('Mở Cài đặt điện thoại để kiểm tra quyền Camera của Himoto.');});}}/>}
     </Card>}
     {canUpload&&<Button label="Rà soát ảnh hồ sơ" disabled={locked||!photo||!selectedReady||info.isFetching||info.isError||!!data.photo&&(!data.photo.readable||currentReady!==data.photo.revision)} onPress={()=>{setSelectedReady(false);setReview(data);top();}}/>}
-    <Button label="Tải lại ô ảnh, giữ ảnh đang chọn" secondary loading={info.isFetching} disabled={locked} onPress={()=>{setReview(null);setCurrentReady(null);setImageEpoch(e=>e+1);void info.refetch();}}/>
-    <Button label="Chọn mục ảnh khác" secondary disabled={locked} onPress={changeSlot}/>
+    <View style={{flexDirection:'row',gap:10}}>
+      <Button size="sm" equalWidth label="Tải lại ô ảnh" secondary loading={info.isFetching} disabled={locked} onPress={()=>{setReview(null);setCurrentReady(null);setImageEpoch(e=>e+1);void info.refetch();}}/>
+      <Button size="sm" equalWidth label="Chọn mục ảnh khác" secondary disabled={locked} onPress={changeSlot}/>
+    </View>
   </>);
 }

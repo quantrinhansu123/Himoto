@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Pressable, ScrollView, Text, View, RefreshControl } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, ChevronRight } from 'lucide-react-native';
@@ -24,7 +25,7 @@ export default function NotificationList() {
     if (kind === 'transfer') router.push({pathname:'/vehicle-transfer/[id]',params:{id:row.id}});
     else router.push({pathname:'/record/[kind]/[id]',params:{kind:'contracts',id:row.id}});
   };
-  return <ScrollView contentContainerStyle={{padding:16,paddingBottom:32,gap:12,maxWidth:760,width:'100%',alignSelf:'center'}} refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={()=>{void query.refetch();}} tintColor={theme.primary}/> }>
+  return <SafeAreaView edges={['left','right','bottom']} style={{flex:1,backgroundColor:theme.background}}><ScrollView contentContainerStyle={{padding:16,paddingBottom:32,gap:12,maxWidth:760,width:'100%',alignSelf:'center'}} refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={()=>{void query.refetch();}} tintColor={theme.primary}/> }>
     <View style={{gap:4}}>
       <Text accessibilityRole="header" style={{color:theme.text,fontSize:22,fontWeight:'800'}}>{NOTIFICATION_LABELS[kind]}</Text>
       {isGps && <Text style={{color:theme.muted,fontSize:13}}>Cảnh báo ngầm chỉ hiển thị cho quản trị viên (phạm vi chuẩn ≤ 200 m trong 7 ngày gần nhất).</Text>}
@@ -49,5 +50,5 @@ export default function NotificationList() {
       {!query.data.rows.length && <StateView title={isGps ? 'Không có cảnh báo GPS' : 'Không còn công việc cần xử lý'} message={isGps ? 'Tất cả lượt chấm công và kiểm kê ca 7 ngày qua đều trong phạm vi cơ sở.' : 'Danh sách sẽ cập nhật theo nghiệp vụ đã lưu.'}/>}
       {query.data.pages > 1 && <PaginationBar page={query.data.page} pages={query.data.pages} total={query.data.total} unit={isGps ? 'cảnh báo' : 'mục'} disabled={query.isFetching} onChange={setPage} />}
     </>}
-  </ScrollView>;
+  </ScrollView></SafeAreaView>;
 }

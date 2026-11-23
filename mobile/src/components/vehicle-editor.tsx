@@ -3,7 +3,7 @@ import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
 import { Text, type ScrollViewInstance, type TextInputInstance } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import type { MobileVehicleInput, MobileVehicleOptions, MobileVehicleProfile } from "../../../shared/mobile-vehicles";
 import { useSession } from "@/providers/session";
 import { useVehicleProfileWrite } from "@/hooks/use-vehicle-profile-write";
@@ -62,8 +62,8 @@ function VehicleForm({ profile, options, store }: { profile: MobileVehicleProfil
       hint={amount && form[key] ? money(Number(form[key])) : undefined}
       inputRef={value => { inputs.current[key] = value; }} />;
   }
-  return <><KeyboardFormScrollView ref={scroll} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 20, paddingBottom: 24 + insets.bottom, gap: 18, width: "100%", maxWidth: 760, alignSelf: "center" }}>
-      <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 26, fontWeight: "800" }}>{profile ? `Sửa xe ${profile.values.license}` : "Thêm xe"}</Text>
+  return <SafeAreaView edges={["left", "right", "bottom"]} style={{ flex: 1, backgroundColor: theme.background }}><KeyboardFormScrollView ref={scroll} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, paddingBottom: 24 + insets.bottom, gap: 14, width: "100%", maxWidth: 760, alignSelf: "center" }}>
+      <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 20, fontWeight: "800" }}>{profile ? `Sửa xe ${profile.values.license}` : "Thêm xe"}</Text>
       {Object.keys(errors).length > 0 && <InlineError message="Kiểm tra các trường được đánh dấu trước khi lưu xe." />}
       {write.pending && <InlineError message="Xe còn thao tác chưa rõ kết quả. Mở Tài khoản → Thao tác cần đối chiếu trước khi lưu tiếp." />}
       {!!write.error && <InlineError message={write.error} />}
@@ -89,7 +89,7 @@ function VehicleForm({ profile, options, store }: { profile: MobileVehicleProfil
     </KeyboardFormScrollView>
     {confirm && <ConfirmEdit title={profile ? "Lưu thay đổi xe?" : "Thêm xe vào kho?"} message={`${form.name}\n${form.license.trim().toUpperCase()} · ${form.year}\n${stores.find(row => row.value === form.store_id)?.label}\n${options.statuses.find(row => row.value === form.status)?.label}\nLưu hồ sơ xe và ghi nhận thay đổi vào lịch sử.`} onCancel={() => setConfirm(false)} onConfirm={() => { setConfirm(false); void write.save(input()); }} />}
     {write.exit && <ConfirmEdit title="Rời biểu mẫu xe?" message="Thông tin chưa gửi trong biểu mẫu sẽ mất. Yêu cầu đã gửi vẫn giữ mã để đối chiếu trong Tài khoản." confirmLabel="Rời biểu mẫu" busy={write.busy} onCancel={write.cancelExit} onConfirm={write.leave} />}
-  </>;
+  </SafeAreaView>;
 }
 export function VehicleEditor({ id, store = "all" }: { id: string | null; store?: string }) {
   const { api, session } = useSession(), allowed = !!api && session?.user.permissions.includes("vehicles.write");

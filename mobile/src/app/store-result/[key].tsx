@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { router, useLocalSearchParams } from "expo-router";
-import { ScrollView, Text } from "react-native";
+import { ScrollView, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useSession } from "@/providers/session";
 import { pendingWrites } from "@/lib/pending-writes";
 import { useTheme } from "@/theme";
-import { Button, Card, InlineError, StateView } from "@/components/ui";
+import { Button, Card, InfoBanner, InlineError, KeyValueRow, StateView, StatusBadge } from "@/components/ui";
 import { StoreProfileCard } from "@/components/store-profile-card";
 function StoreResult({ requestKey }: { requestKey: string }) {
   const { api, session } = useSession(), theme = useTheme(), cache = useQueryClient(), alive = useRef(true);
@@ -17,6 +18,7 @@ function StoreResult({ requestKey }: { requestKey: string }) {
   if (query.isPending) return <StateView title="Đang đối chiếu cơ sở" loading />;
   if (query.isError) return <StateView title="Chưa tải được xác nhận cơ sở" message={query.error.message} retry={() => { void query.refetch(); }} />;
   const result = query.data;
+  const actionLabel = result.operation === "store.create" ? "Tạo cơ sở" : result.operation.startsWith("store.delete:") ? "Xóa cơ sở" : "Sửa cơ sở";
   async function acknowledge() {
     if (!api || !session || busy) return;
     setBusy(true); setError("");
@@ -32,18 +34,23 @@ function StoreResult({ requestKey }: { requestKey: string }) {
     } catch (cause) { if (alive.current) setError((cause as Error).message); }
     finally { if (alive.current) setBusy(false); }
   }
-  return <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40, gap: 16, maxWidth: 760, width: "100%", alignSelf: "center" }}>
-    <Card style={{ gap: 12 }}>
-      <Text accessibilityRole="header" style={{ color: theme.success, fontSize: 22, fontWeight: "700" }}>Đã ghi nhận cơ sở #{result.receipt.id}</Text>
-      <Text style={{ color: theme.text }}>{result.operation === "store.create" ? "Tạo cơ sở" : result.operation.startsWith("store.delete:") ? "Xóa cơ sở" : "Sửa cơ sở"} · phiên bản xác nhận {result.receipt.revision}</Text>
-      <Text selectable style={{ color: theme.muted, fontSize: 12 }}>Mã yêu cầu: {requestKey}</Text>
-      {result.deleted && <Text style={{ color: theme.text }}>Cơ sở đã được xóa. Xác nhận yêu cầu gốc vẫn được giữ.</Text>}
-      {result.current && <Text style={{ color: theme.muted, lineHeight: 22 }}>Thông tin cơ sở hiện tại{result.current.rowRevision !== result.receipt.revision ? " đã thay đổi sau lần ghi này" : ""}.</Text>}
-    </Card>
-    {!!error && <InlineError message={error} />}
-    <Button label="Đã kiểm tra xác nhận cơ sở" loading={busy} onPress={() => { void acknowledge(); }} />
-    {result.current && <StoreProfileCard row={result.current} />}
-  </ScrollView>;
+  return <SafeAreaView edges={["left", "right", "bottom"]} style={{ flex: 1, backgroundColor: theme.background }}>
+    <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 36, gap: 12, maxWidth: 760, width: "100%", alignSelf: "center" }}>
+      <Card style={{ gap: 10 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+          <Text accessibilityRole="header" style={{ color: theme.success, fontSize: 20, fontWeight: "800", flexShrink: 1 }}>Đã ghi nhận cơ sở #{result.receipt.id}</Text>
+          <StatusBadge label={actionLabel} tone={result.deleted ? "warning" : "success"} />
+        </View>
+        <KeyValueRow label="Phiên bản xác nhận" value={String(result.receipt.revision)} />
+        <Text selectable style={{ color: theme.muted, fontSize: 12 }}>Mã yêu cầu: {requestKey}</Text>
+        {result.deleted && <InfoBanner tone="warning" message="Cơ sở đã được xóa. Xác nhận yêu cầu gốc vẫn được giữ." />}
+        {result.current && <Text style={{ color: theme.muted, fontSize: 13 }}>Thông tin cơ sở hiện tại{result.current.rowRevision !== result.receipt.revision ? " đã thay đổi sau lần ghi này" : ""}.</Text>}
+      </Card>
+      {!!error && <InlineError message={error} />}
+      <Button label="Đã kiểm tra xác nhận cơ sở" loading={busy} onPress={() => { void acknowledge(); }} />
+      {result.current && <StoreProfileCard row={result.current} />}
+    </ScrollView>
+  </SafeAreaView>;
 }
 export default function StoreResultRoute() {
   const { key } = useLocalSearchParams<{ key: string }>(), { api, session } = useSession();

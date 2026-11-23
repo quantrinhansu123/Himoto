@@ -23,7 +23,7 @@ export function AttendanceEdit({row,onClose,onReload}:{row:AttendanceEntry;onClo
   <Text style={{color:theme.text,fontWeight:'700'}}>{row.staff_name} · #{row.id}</Text>
   <RentalDateTime label="vào ca" value={start} onChange={setStart} disabled={busy||uncertain}/><RentalDateTime label="ra ca" value={end} onChange={setEnd} disabled={busy||uncertain}/>
   <Text style={{color:theme.muted,lineHeight:22}}>Chỉ sửa giờ vào/ra; ảnh và GPS được giữ nguyên. Thời gian được hiển thị theo giờ Việt Nam.</Text>
-  {!!error&&<InlineError message={error}/>}<Button label="Lưu thay đổi" disabled={busy||uncertain} onPress={()=>setConfirm('PATCH')}/><Button secondary label="Xóa lượt chấm công" disabled={busy||uncertain} onPress={()=>setConfirm('DELETE')}/>
+  {!!error&&<InlineError message={error}/>}<Button label="Lưu thay đổi" disabled={busy||uncertain} onPress={()=>setConfirm('PATCH')}/><Button secondary danger label="Xóa lượt chấm công" disabled={busy||uncertain} onPress={()=>setConfirm('DELETE')}/>
   {uncertain&&<Button secondary label="Tải lại để đối chiếu" disabled={busy} onPress={onReload}/>}
   {confirm&&<ConfirmEdit title={confirm==='DELETE'?'Xóa lượt chấm công?':'Lưu thay đổi chấm công?'} message={confirm==='DELETE'?`Xóa lượt #${row.id} của ${row.staff_name}, gồm ảnh/GPS đính kèm.`:`${row.staff_name} · Vào: ${start} · Ra: ${end||'Chưa chấm công ra'}`} confirmLabel={confirm==='DELETE'?'Xóa lượt chấm công':'Lưu thay đổi'} onCancel={()=>setConfirm(null)} onConfirm={()=>void save(confirm)}/>}
  </KeyboardFormScrollView></EditorSheet>;

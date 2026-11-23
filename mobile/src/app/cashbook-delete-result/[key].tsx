@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { router, useLocalSearchParams } from "expo-router";
-import { ScrollView, Text } from "react-native";
+import { ScrollView, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { CASHBOOK_DELETE_OPERATION } from "../../../../shared/mobile-cashbook-delete";
 import { useSession } from "@/providers/session";
 import { pendingWrites } from "@/lib/pending-writes";
 import { useTheme } from "@/theme";
-import { Button, Card, InlineError, StateView } from "@/components/ui";
+import { Button, Card, InfoBanner, InlineError, KeyValueRow, StateView, StatusBadge } from "@/components/ui";
 function Result({ requestKey }: { requestKey: string }) {
   const { api, session } = useSession(), theme = useTheme(), cache = useQueryClient();
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
@@ -30,14 +31,21 @@ function Result({ requestKey }: { requestKey: string }) {
     } catch (cause) { if (alive.current) setError((cause as Error).message); }
     finally { if (alive.current) setBusy(false); }
   }
-  return <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40, gap: 16, width: "100%", maxWidth: 760, alignSelf: "center" }}>
-    <Card style={{ gap: 12 }}><Text accessibilityRole="header" style={{ color: theme.success, fontSize: 24, fontWeight: "800" }}>Đã xác nhận xóa {query.data.deletedCount} phiếu</Text>
-      <Text style={{ color: theme.text, lineHeight: 23 }}>Đây là kết quả đợt xóa gốc của tài khoản hiện tại. Tiền và chứng từ liên quan đã được cập nhật trong cùng giao dịch.</Text>
-      <Text style={{ color: theme.muted, lineHeight: 23 }}>Nếu danh sách lớn có nhiều đợt, xác nhận này chỉ áp dụng cho đợt có mã bên dưới. Tải lại sổ quỹ để rà các phiếu còn lại.</Text>
-      <Text selectable style={{ color: theme.muted }}>Mã yêu cầu: {requestKey}</Text>
-    </Card>
-    {!!error && <InlineError message={error} />}<Button label="Đã kiểm tra xác nhận xóa phiếu" loading={busy} onPress={() => { void acknowledge(); }} />
-  </ScrollView>;
+  return <SafeAreaView edges={["left", "right", "bottom"]} style={{ flex: 1, backgroundColor: theme.background }}>
+    <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 36, gap: 12, width: "100%", maxWidth: 760, alignSelf: "center" }}>
+      <Card style={{ gap: 10 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+          <Text accessibilityRole="header" style={{ color: theme.success, fontSize: 20, fontWeight: "800", flexShrink: 1 }}>Đã xác nhận xóa {query.data.deletedCount} phiếu</Text>
+          <StatusBadge label="Hoàn tất" tone="success" />
+        </View>
+        <KeyValueRow label="Số phiếu đã xóa" value={String(query.data.deletedCount)} emphasize />
+        <InfoBanner tone="info" message="Đây là kết quả đợt xóa gốc của tài khoản hiện tại. Tiền và chứng từ liên quan đã được cập nhật trong cùng giao dịch. Nếu danh sách lớn có nhiều đợt, hãy tải lại sổ quỹ để rà các phiếu còn lại." />
+        <Text selectable style={{ color: theme.muted, fontSize: 12 }}>Mã yêu cầu: {requestKey}</Text>
+      </Card>
+      {!!error && <InlineError message={error} />}
+      <Button label="Đã kiểm tra xác nhận xóa phiếu" loading={busy} onPress={() => { void acknowledge(); }} />
+    </ScrollView>
+  </SafeAreaView>;
 }
 export default function ResultRoute() {
   const { key } = useLocalSearchParams<{ key: string }>(), { api, session } = useSession();
