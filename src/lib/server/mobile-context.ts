@@ -1,6 +1,7 @@
 import "server-only";
 import type { SessionUser } from "./management-session";
-import { dataAccess } from "./access-context";
+import { dataAccess, withCrossStoreOperation } from "./access-context";
+import type { CrossStoreOperation } from "@/lib/management/permissions";
 
 export function canMobileCrossStoreRead(user: SessionUser) {
   return user.scope_all === true || user.scope_all_read === true;
@@ -10,6 +11,7 @@ export function withMobileData<T>(
   user: SessionUser,
   operation: string,
   task: () => Promise<T>,
+  crossStoreOperation?: CrossStoreOperation,
 ) {
   return dataAccess.run(
     {
@@ -18,7 +20,7 @@ export function withMobileData<T>(
       scope_all: user.scope_all === true,
       operation,
     },
-    task,
+    () => withCrossStoreOperation(crossStoreOperation, task),
   );
 }
 

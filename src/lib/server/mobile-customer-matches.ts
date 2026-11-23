@@ -1,6 +1,6 @@
 import "server-only";
 import type { NextRequest } from "next/server";
-import { hasPermission, isAdminAccount } from "@/lib/management/permissions";
+import { canOperateAcrossStores, hasPermission, isAdminAccount } from "@/lib/management/permissions";
 import { customerDetails, relativesFromRow } from "@/lib/management/contract-document";
 import { mapApiRow } from "@/lib/management/repository";
 import { customerMatchIdentity, type MobileCustomerMatches } from "../../../shared/mobile-customer-matches";
@@ -42,7 +42,7 @@ export async function readMobileCustomerMatches(user: SessionUser, request: Next
               storeName: String(row.store_name || ""), status: row.status,
               details: customerDetails(row), relatives: relativesFromRow(row),
             },
-            canEdit: isAdminAccount(user) || user.scope_all === true || row.store_id != null && Number(row.store_id) === user.store_id,
+            canEdit: isAdminAccount(user) || user.scope_all === true || canOperateAcrossStores(user, "customers.write") || row.store_id != null && Number(row.store_id) === user.store_id,
           };
         }),
       };

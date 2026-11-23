@@ -41,6 +41,20 @@ async function main() {
   assert.equal(shared.canAddExtraReceipt('completed'), true); assert.equal(shared.canAddExtraReceipt('draft'), false); assert.equal(shared.canAddExtraReceipt('cancelled'), false);
   checks.push('strict positive integer money, UUID, revision, Vietnam dates and allowlisted fields; actor and totals cannot be supplied');
 
+  const { dataAccess, withCrossStoreOperation } = load(path.join(root, 'lib/server/access-context'));
+  const collector = { id: 7, access_role: 'ownership_staff', store_id: 23, scope_all: false,
+    scope_all_operations: true, permissions: ['finance.write'], operation: '' };
+  const reachedDomain = new Error('QA stopped before any payment query');
+  const blockedDatabase = { query: async () => { throw reachedDomain; } };
+  await dataAccess.run(collector, async () => {
+    await assert.rejects(withCrossStoreOperation('finance.write', () => server.recordContractPayment(blockedDatabase, 1, 7, base)), error => error === reachedDomain);
+    await assert.rejects(server.recordContractPayment(blockedDatabase, 1, 7, base, undefined, {contractSettlement:true}), error => error.status === 403);
+    await assert.rejects(server.recordContractPayment(blockedDatabase, 1, 8, base), error => error.status === 403);
+  });
+  await dataAccess.run({...collector, scope_all_operations:false}, () =>
+    assert.rejects(server.recordContractPayment(blockedDatabase, 1, 7, base), error => error.status === 403));
+  checks.push('Explicit cross-store collection grant authorizes ordinary debt receipts without changing settlement or actor checks');
+
   const context = { id: 1, code: 'QA', revision: '123', status: 'renting', store_id: 23, total_amount: 1000, paid_amount: 300, remaining: 700, company_paid_amount: 0, company_payment_count: 0, history: [],items:[],end_date:null, accounts: [
     { id: 1, kind: 'cash', store_id: 23, owner_type: '' }, { id: 2, kind: 'cash', store_id: 31, owner_type: '' },
     { id: 1, kind: 'bank', store_id: 23, owner_type: 'unknown' }, { id: 2, kind: 'bank', store_id: 31, owner_type: 'personal' }, { id: 3, kind: 'bank', store_id: 31, owner_type: 'company' },

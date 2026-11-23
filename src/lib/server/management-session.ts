@@ -12,8 +12,8 @@ import { failureResponse } from './public-failure';
 
 export const SESSION_COOKIE = 'himoto_management_session';
 export const SESSION_SECONDS = 8 * 60 * 60;
-export type SessionUser = { id: number; name: string; email: string; role: string; role_slug: string; access_role?:string; permissions?:string[]; store_id?:number|null; store_kind?:string|null; scope_all?:boolean;scope_all_read?:boolean;password_version?:number };
-type Account = { id: string | number; name: string; email: string; password?: string; status: string; role: string; role_id: string | number; role_slug: string | null; access_role?:string; permissions?:string[]; access_store_id?:string|number|null; store_kind?:string|null; ownership_store_id?:string|number|null; scope_all?:boolean; scope_all_read?:boolean; access_enabled?:boolean;management_password_version?:number };
+export type SessionUser = { id: number; name: string; email: string; role: string; role_slug: string; access_role?:string; permissions?:string[]; store_id?:number|null; store_kind?:string|null; scope_all?:boolean;scope_all_read?:boolean;scope_all_operations?:boolean;password_version?:number };
+type Account = { id: string | number; name: string; email: string; password?: string; status: string; role: string; role_id: string | number; role_slug: string | null; access_role?:string; permissions?:string[]; access_store_id?:string|number|null; store_kind?:string|null; ownership_store_id?:string|number|null; scope_all?:boolean; scope_all_read?:boolean; scope_all_operations?:boolean; access_enabled?:boolean;management_password_version?:number };
 type Database = Pick<typeof himotoPool, 'query'>;
 export { canRecordContractPayment, isAdminAccount };
 
@@ -67,9 +67,10 @@ function safeUser(account: Account): SessionUser {
     store_kind:ownershipManager?'lease_to_own':account.store_kind??null,
     scope_all:ownershipManager?false:admin||(!account.access_role)||['headquarters_sales','headquarters_debt'].includes(account.access_role)||account.scope_all===true,
     ...(account.scope_all_read===true?{scope_all_read:true}:{}),
+    ...(account.scope_all_operations===true?{scope_all_operations:true}:{}),
     ...(account.management_password_version?{password_version:Number(account.management_password_version)}:{}) };
 }
-const accountFields = `u.id, u.name, u.email, u.status, u.role, u.role_id, u.management_password_version, r.slug AS role_slug,a.access_role,a.permissions,a.store_id AS access_store_id,a.scope_all,(to_jsonb(a)->'scope_all_read')='true'::jsonb AS scope_all_read,a.enabled AS access_enabled,s.kind AS store_kind,
+const accountFields = `u.id, u.name, u.email, u.status, u.role, u.role_id, u.management_password_version, r.slug AS role_slug,a.access_role,a.permissions,a.store_id AS access_store_id,a.scope_all,(to_jsonb(a)->'scope_all_read')='true'::jsonb AS scope_all_read,(to_jsonb(a)->'scope_all_operations')='true'::jsonb AS scope_all_operations,a.enabled AS access_enabled,s.kind AS store_kind,
   CASE WHEN s.kind='lease_to_own' THEN s.id WHEN COALESCE(a.store_id,u.store_id) IS NULL THEN
     (SELECT min(os.id) FROM himoto.stores os WHERE os.kind='lease_to_own' HAVING count(*)=1) END AS ownership_store_id`;
 const accountJoin='LEFT JOIN himoto.roles r ON r.id=u.role_id LEFT JOIN himoto.management_account_access a ON a.user_id=u.id LEFT JOIN himoto.stores s ON s.id=COALESCE(a.store_id,u.store_id)';

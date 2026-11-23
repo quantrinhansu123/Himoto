@@ -85,5 +85,5 @@ export async function readMobileRenewalPreparation(user: SessionUser, value: str
       if (error instanceof ContractPaymentError || error instanceof ContractReturnError) throw new MobileError(error.message,error.status,error.status===404?"NOT_FOUND":"RENEWAL_CONFLICT");
       throw error;
     } finally { client.release(); }
-  });
+  }, "contracts.renew");
 }

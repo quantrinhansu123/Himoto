@@ -42,7 +42,7 @@ async function transaction<T>(user: SessionUser, write: boolean, task: (client: 
       if(error instanceof RenewalCollectionPeriodError)throw new MobileError(error.message,409,"BILL_CONFLICT");
       throw error;
     } finally { client.release(); }
-  });
+  }, audience === "collection" ? "finance.write" : "contracts.renew");
 }
 async function readBytes(request: NextRequest) {
   if (request.headers.get("content-type") !== "image/jpeg") throw new MobileError("Bill cần là ảnh JPEG đã chuẩn bị.",400,"INVALID_BILL");

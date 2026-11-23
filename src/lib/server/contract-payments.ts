@@ -1,5 +1,5 @@
 import 'server-only';
-import { canSettleContract, hasPermission } from '@/lib/management/permissions';
+import { canCollectContractDebt, canSettleContract, hasPermission } from '@/lib/management/permissions';
 import { BATTERY_SWAP_FEE } from '../../../shared/mobile-contract-operations';
 import { dataAccess } from './access-context';
 import { renewalDurationUnits,renewalFeeWarning } from '@/lib/management/contract-renewals';
@@ -168,7 +168,8 @@ export async function recordContractPayment(client: Database, id: number, actorI
   const batterySwap=validation.batterySwap===true;
   if(batterySwap&&(Number(input.amount)!==BATTERY_SWAP_FEE||input.purpose||input.renewal_version!==undefined))throw new ContractPaymentError('Phiếu thu phí đổi pin không hợp lệ.');
   if(batterySwap&&actor&&(actor.id!==actorId||!hasPermission(actor,'contracts.renew')))throw new ContractPaymentError('Tài khoản chưa có quyền thu phí đổi pin.',403);
-  if(!batterySwap&&!renewal&&!extra&&!deposit&&!refund&&input.renewal_version===undefined&&actor&&((!validation.vehicleReturn&&!canSettleContract(actor))||actor.id!==actorId))throw new ContractPaymentError('Chỉ tài khoản được chỉ định và Quản lý Thuê sở hữu được thanh toán công nợ hợp đồng.',403);
+  const mayCollectDebt = validation.contractSettlement ? canSettleContract(actor) : canCollectContractDebt(actor);
+  if(!batterySwap&&!renewal&&!extra&&!deposit&&!refund&&input.renewal_version===undefined&&actor&&((!validation.vehicleReturn&&!mayCollectDebt)||actor.id!==actorId))throw new ContractPaymentError('Tài khoản chưa được cấp quyền thu công nợ hợp đồng.',403);
   const fingerprint = createHash('sha256').update(JSON.stringify({ id, actorId, amount: input.amount, method: input.method, account_id: input.account_id, paid_at: input.paid_at, note: input.note,
     ...(input.renewal_version !== undefined ? { renewal_version: input.renewal_version } : {}),
     ...(renewal ? { purpose: input.purpose, ...(input.items ? { items: input.items.map(item => [item.item_id, item.return_at, item.amount]) } : { item_id: input.item_id, return_at: input.return_at }) }
@@ -294,6 +295,6 @@ export async function recordContractPayment(client: Database, id: number, actorI
       AND EXISTS(SELECT 1 FROM himoto.order_vehicle_details d WHERE d.order_id=o.id AND d.deleted_at IS NULL AND d.completed_at IS NOT NULL)
       AND NOT EXISTS(SELECT 1 FROM himoto.order_vehicle_details d WHERE d.order_id=o.id AND d.deleted_at IS NULL AND d.completed_at IS NULL)`,[id]);
   }
-  if(composer?.lifecycle?.settlement)await closeResolvedBadDebt(client,id,actorId);
+  if(composer?.lifecycle?.settlement&&(!actor?.cross_store_operation||actor.store_id===context.store_id))await closeResolvedBadDebt(client,id,actorId);
   return { context: await readPaymentContext(client, id, options), transaction_id: transactionId, replayed: false, company_transfer: company };
 }

@@ -10,6 +10,7 @@ export type PermissionAccount = {
   store_id?: number | null;
   store_kind?: string | null;
   scope_all?: boolean;
+  scope_all_operations?: boolean;
 };
 
 export const ACCESS_PERMISSIONS = ['contracts.read','contracts.draft','contracts.finalize','contracts.renew','contracts.return','contracts.delete','contracts.settle','customers.read','customers.write','vehicles.read','vehicles.transfer','vehicles.receive','vehicles.write','hr.read','hr.write','finance.read','finance.write','shift.review','settings.write','accounts.manage'] as const;
@@ -82,6 +83,16 @@ export function isAdminAccount(account: PermissionAccount | null | undefined) {
 export function canRecordContractPayment(account: PermissionAccount | null | undefined) {
   if (!account) return false;
   return hasPermission(account,'finance.write');
+}
+
+export type CrossStoreOperation = 'customers.write' | 'contracts.renew' | 'finance.write';
+
+export function canOperateAcrossStores(account: PermissionAccount | null | undefined, permission: CrossStoreOperation) {
+  return account?.scope_all_operations === true && hasPermission(account, permission);
+}
+
+export function canCollectContractDebt(account: PermissionAccount | null | undefined) {
+  return canSettleContract(account) || canOperateAcrossStores(account, 'finance.write');
 }
 
 export function canSendDebtReminder(account:PermissionAccount|null|undefined) {

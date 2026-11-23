@@ -27,7 +27,7 @@ async function transaction<T>(user: SessionUser, write: boolean, task: (client: 
       if (error instanceof RenewalCollectionPeriodError) throw new MobileError(error.message, 409, "RENEWAL_COLLECTION_REVIEW_REQUIRED");
       throw error;
     } finally { client.release(); }
-  });
+  }, "finance.write");
 }
 const iso = (value: unknown) => value instanceof Date ? value.toISOString() : new Date(String(value)).toISOString();
 const nullableIso = (value: unknown) => value == null ? null : iso(value);

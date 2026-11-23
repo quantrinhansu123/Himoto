@@ -1,12 +1,18 @@
 import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
 import { hasPermission, canSettleContract, type AccessPermission } from '@/lib/management/permissions';
-import { dataAccess } from './access-context';
+import { dataAccess, withCrossStoreOperation } from './access-context';
 import { SESSION_COOKIE, sameOrigin, userFromSession, readSessionUser, type SessionUser } from './management-session';
 import { failureResponse } from './public-failure';
 import { isSupplementalPhotoSlot,photoBaseSlot } from '@/lib/management/photo-slot-groups';
 
 const crossStoreReadPath = /^\/api\/auth\/(?:stores|order\/car-rental|battery-contracts|customers|vehicles|vehicle\/vehicles|gps|shift-reports|dashboard|rental-revenue|staff-sales|cashbook|hr\/staff|contract-staff|debt-reminders)(?:\/|$)/;
+
+function crossStoreOperation(path: string, method: string) {
+  if (method === 'PATCH' && /^\/api\/auth\/customers\/[1-9]\d{0,14}(?:\/blacklist)?$/.test(path)) return 'customers.write';
+  if (method === 'POST' && /^\/api\/auth\/order\/car-rental\/[1-9]\d{0,14}\/renewals$/.test(path)) return 'contracts.renew';
+  if ((method === 'GET' || method === 'PUT') && /^\/api\/auth\/record-photos\/contracts\/[1-9]\d{0,14}\/renewal-[1-9]\d{0,14}-(?:[1-9]\d{0,14}|document-[1-9]\d{0,14})(?:-extra-[1-9]\d{0,14})?$/.test(path)) return 'contracts.renew';
+}
 
 export function requestPermission(path:string,method:string,action=''):AccessPermission|null {
   if(method==='DELETE'&&(path.includes('/order/car-rental/')||path==='/api/auth/bulk-delete/contracts'))return 'contracts.delete';
@@ -112,7 +118,8 @@ export function withAccessUser<C>(handler:(request:NextRequest,context:C,user:Se
       const dutyRoster=request.nextUrl.pathname.startsWith('/api/auth/duty-roster');
       const crossStoreRead = request.method === 'GET' && user.scope_all_read === true && !user.scope_all &&
         crossStoreReadPath.test(request.nextUrl.pathname) && !/\/(?:refresh|backups|import|telegram)(?:\/|$)/.test(request.nextUrl.pathname);
-      return await dataAccess.run({...user,store_id:dutyRoster?null:user.store_id??null,scope_all:dutyRoster||user.scope_all===true||crossStoreRead,cross_store_read:crossStoreRead,operation:dutyRoster?'duty_roster':operation,transfer_vehicle_id},()=>handler(request,context,user));
+      return await dataAccess.run({...user,store_id:dutyRoster?null:user.store_id??null,scope_all:dutyRoster||user.scope_all===true||crossStoreRead,cross_store_read:crossStoreRead,operation:dutyRoster?'duty_roster':operation,transfer_vehicle_id},()=>
+        withCrossStoreOperation(crossStoreOperation(request.nextUrl.pathname,request.method),()=>handler(request,context,user)));
     } catch (error) {
       return failureResponse('Không thực hiện được thao tác.', error);
     }

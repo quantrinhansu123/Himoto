@@ -1,6 +1,6 @@
 import "server-only";
 import type { NextRequest } from "next/server";
-import { hasPermission } from "@/lib/management/permissions";
+import { canOperateAcrossStores, hasPermission } from "@/lib/management/permissions";
 import { parseCustomerRelatives } from "@/lib/management/customer-relatives";
 import type { MobileCustomerDetail, MobileCustomerPayment, MobileCustomerProfile } from "../../../shared/mobile-contract";
 import type { SessionUser } from "./management-session";
@@ -180,7 +180,8 @@ export async function writeMobileCustomer(
       400,
       "STORE_REQUIRED",
     );
-  if (!user.scope_all && Number(body.store_id) !== user.store_id)
+  const editAcrossStores = id !== null && canOperateAcrossStores(user, "customers.write");
+  if (!user.scope_all && !editAcrossStores && Number(body.store_id) !== user.store_id)
     throw new MobileError(
       "Chỉ được lưu khách hàng tại cơ sở được phân công.",
       403,
@@ -247,7 +248,7 @@ export async function writeMobileCustomer(
     } finally {
       client.release();
     }
-  });
+  }, id !== null ? "customers.write" : undefined);
 }
 
 export async function readMobileCustomerReceipt(
@@ -413,7 +414,7 @@ export async function writeMobileCustomerBlacklist(
     } finally {
       client.release();
     }
-  });
+  }, "customers.write");
 }
 
 export async function deleteMobileCustomer(

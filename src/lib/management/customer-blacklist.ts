@@ -1,9 +1,9 @@
 import type { ManagementRow } from './types';
-import { hasPermission, isAdminAccount, type PermissionAccount } from './permissions';
+import { canOperateAcrossStores, hasPermission, isAdminAccount, type PermissionAccount } from './permissions';
 
 export function customerBlacklistBlockReason(account: PermissionAccount | null | undefined, customer: ManagementRow) {
   if (!hasPermission(account, 'customers.write')) return 'Tài khoản chưa có quyền đổi Blacklist.';
-  if (!isAdminAccount(account) && account?.scope_all !== true && (!account?.store_id || Number(customer.store_id) !== account.store_id)) {
+  if (!isAdminAccount(account) && account?.scope_all !== true && !canOperateAcrossStores(account, 'customers.write') && (!account?.store_id || Number(customer.store_id) !== account.store_id)) {
     return 'Ngoài cơ sở phụ trách. Liên hệ cơ sở quản lý hồ sơ hoặc quản trị viên.';
   }
   return customer.customer_revision ? undefined : 'Nhấn Làm mới để tải phiên bản hồ sơ';

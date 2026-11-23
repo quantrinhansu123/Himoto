@@ -20,7 +20,7 @@ import { SavedRecordPhotos } from './RecordPhotoFields';
 import { contractEvidenceSlots } from '@/lib/management/contract-photos';
 import { validBackfillTime } from '@/lib/management/contract-backfill';
 import { addRentalDuration } from '@/lib/management/rental-time';
-import { canSettleContract } from '@/lib/management/permissions';
+import { canCollectContractDebt, canOperateAcrossStores, canSettleContract } from '@/lib/management/permissions';
 import { ContractSettlementDialog } from './ContractSettlementDialog';
 
 const groupAmount = (value: string) => value.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
@@ -30,12 +30,17 @@ const vietnamText = (value: string) => formatDateTime(value);
 export function ContractPaymentDialog({ id, initialPurpose = 'debt', backfill=false, onClose, onPaymentSaved }: { id: number; initialPurpose?: PaymentPurpose;backfill?:boolean; onClose: () => void; onPaymentSaved?: () => void }) {
   const {accessUser}=useManagement();
   const [other,setOther]=useState(false);
-  if(initialPurpose==='debt'&&!backfill&&canSettleContract(accessUser)&&!other)return <ContractSettlementDialog id={id} onClose={onClose} onSaved={onPaymentSaved} onOther={()=>setOther(true)}/>;
-  return <LegacyContractPaymentDialog id={id} initialPurpose={other?'extra':initialPurpose} backfill={backfill} onClose={onClose} onPaymentSaved={onPaymentSaved}/>;
+  const [settlementRequested,setSettlementRequested]=useState(false);
+  const collectionAllStores = canOperateAcrossStores(accessUser, 'finance.write');
+  const maySettle = initialPurpose==='debt' && !backfill && canSettleContract(accessUser);
+  if(maySettle&&!other&&(!collectionAllStores||settlementRequested))return <ContractSettlementDialog id={id} onClose={onClose} onSaved={onPaymentSaved} onOther={()=>setOther(true)}/>;
+  return <LegacyContractPaymentDialog id={id} initialPurpose={other?'extra':initialPurpose} backfill={backfill} onClose={onClose} onPaymentSaved={onPaymentSaved} onOpenSettlement={collectionAllStores&&maySettle?()=>{setOther(false);setSettlementRequested(true);}:undefined}/>;
 }
-function LegacyContractPaymentDialog({ id, initialPurpose = 'debt', backfill=false, onClose, onPaymentSaved }: { id: number; initialPurpose?: PaymentPurpose;backfill?:boolean; onClose: () => void; onPaymentSaved?: () => void }) {
+function LegacyContractPaymentDialog({ id, initialPurpose = 'debt', backfill=false, onClose, onPaymentSaved, onOpenSettlement }: { id: number; initialPurpose?: PaymentPurpose;backfill?:boolean; onClose: () => void; onPaymentSaved?: () => void; onOpenSettlement?: () => void }) {
   const { acceptContractPayment, notify, selectStore,accessUser } = useManagement();
   const router = useRouter();
+  const collectionAllStores = canOperateAcrossStores(accessUser, 'finance.write') && !accessUser?.scope_all;
+  const accessStoreId = accessUser?.store_id;
   const [context, setContext] = useState<PaymentContext | null>(null);
   const approvedHistory = (context?.history || []).filter(receipt => receipt.status === 'approved');
   const [loading, setLoading] = useState(true);
@@ -79,7 +84,7 @@ function LegacyContractPaymentDialog({ id, initialPurpose = 'debt', backfill=fal
       const renewableNow = !fresh.billing && RENEWABLE_STATUSES.includes(fresh.status) && fresh.items.length > 0;
       let next = initialPurpose;
       if (next === 'debt' && !payableNow && !fresh.billing&&!backfill) next = renewableNow && fresh.remaining === 0 ? 'renewal' : !fresh.hold_active&&!fresh.completed_from_hold&&canAddExtraReceipt(fresh.status) && fresh.remaining !== null ? 'extra' : next;
-      if (fresh.completed_from_hold && next!=='rental_refund' && fresh.deposit_held>0) next='deposit_refund';
+      if (fresh.completed_from_hold && next!=='rental_refund' && fresh.deposit_held>0 && (!collectionAllStores || accessStoreId===fresh.store_id)) next='deposit_refund';
       if (next === 'deposit_refund' && !(canAddExtraReceipt(fresh.status) && fresh.deposit_held > 0)) next = payableNow ? 'debt' : renewableNow ? 'renewal' : next;
       setPurpose(next); setNote(backfill?'':defaultNote(next, fresh.code));
       if (next === 'debt' && fresh.remaining !== null && fresh.remaining > 0) setAmount(String(fresh.remaining));
@@ -91,12 +96,12 @@ function LegacyContractPaymentDialog({ id, initialPurpose = 'debt', backfill=fal
       if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Không tải được thanh toán.');
     }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [id, storageKey, initialPurpose,backfill]);
+  }, [id, storageKey, initialPurpose, backfill, collectionAllStores, accessStoreId]);
 
   const accounts = context ? paymentAccounts(context, method) : [];
   const effectiveAccount = accountId || (accounts.length === 1 ? paymentAccountKey(accounts[0]) : '');
   const effectiveAccountId = Number((effectiveAccount.includes(':') ? effectiveAccount.split(':')[1] : effectiveAccount) || 0);
-  const payable = Boolean(canSettleContract(accessUser)&&context && !context.completed_from_hold && PAYABLE_STATUSES.includes(context.status) && context.remaining !== null && context.remaining > 0);
+  const payable = Boolean(canCollectContractDebt(accessUser)&&context && !context.completed_from_hold && PAYABLE_STATUSES.includes(context.status) && context.remaining !== null && context.remaining > 0);
   const renewable = Boolean(context && !context.billing && RENEWABLE_STATUSES.includes(context.status) && context.items.length && context.total_amount !== null && context.paid_amount !== null);
   const days = /^\d+$/.test(renewalDays) && Number(renewalDays) >= 1 && Number(renewalDays) <= 365 ? Number(renewalDays) : 0;
   const suggestedFor = (item: RenewalItem) => item.daily_price && days ? String(item.daily_price * days) : '';
@@ -128,9 +133,10 @@ function LegacyContractPaymentDialog({ id, initialPurpose = 'debt', backfill=fal
     }
   }, [purpose, context, picks, pending]);
   const extraAllowed = Boolean(context && !context.hold_active && !context.completed_from_hold && canAddExtraReceipt(context.status) && context.total_amount !== null && context.paid_amount !== null);
-  const refundAllowed = Boolean(context && canAddExtraReceipt(context.status) && context.deposit_held > 0);
+  const refundInScope = !collectionAllStores || accessStoreId===context?.store_id;
+  const refundAllowed = Boolean(refundInScope && context && canAddExtraReceipt(context.status) && context.deposit_held > 0);
   const rentalRefund=purpose==='rental_refund';
-  const rentalRefundAllowed=Boolean(context&&canAddExtraReceipt(context.status)&&(context.rental_refundable||0)>0);
+  const rentalRefundAllowed=Boolean(refundInScope&&context&&canAddExtraReceipt(context.status)&&(context.rental_refundable||0)>0);
   const refund = purpose === 'deposit_refund'||rentalRefund;
   const refundLimit=rentalRefund?context?.rental_refundable||0:context?.deposit_held||0;
   const depositAllowed=Boolean(context&&!context.completed_from_hold&&canAddExtraReceipt(context.status)&&(context.deposit_remaining??0)>0);
@@ -317,6 +323,7 @@ function LegacyContractPaymentDialog({ id, initialPurpose = 'debt', backfill=fal
         {!context && !loading && <button type="button" className="mg-button" onClick={() => void refresh()}>Tải lại thông tin</button>}
       </div>
       <div className="mg-dialog-footer"><button type="button" className="mg-button" disabled={saving} onClick={onClose}>Đóng</button>
+        {onOpenSettlement&&context&&context.store_id===accessStoreId&&<button type="button" className="mg-button" disabled={locked} onClick={onOpenSettlement}>Thanh toán &amp; đóng hợp đồng</button>}
         {transferReview && !pending && <button type="button" className="mg-button" disabled={saving} onClick={() => { setTransferReview(null); setTransferConfirmed(false); setError(''); }}>Quay lại</button>}
         {(canCollect || pending || transferReview) && <button type="submit" className="mg-button mg-button-primary" disabled={saving || loading || !context || (!pending && (!accounts.length || Boolean(transferReview && !transferConfirmed) || (backfill&&!backfillConfirmed)))}>{saving ? <LoaderCircle className="mg-spin" size={16} /> : <Wallet size={16} />}{saving ? 'Đang ghi nhận…' : pending ? 'Thử lại lần thu này' : backfill?'Ghi nhận giao dịch đã phát sinh':transferReview ? 'Xác nhận đã nhận tiền' : rentalRefund?'Ghi nhận đã hoàn tiền thuê':refund ? 'Ghi phiếu chi trả cọc' : method !== 'cash' ? 'Hiện mã QR chuyển khoản' : purpose === 'renewal' ? 'Thu tiền và gia hạn' : purpose === 'extra' ? 'Ghi phiếu thu vào Sổ quỹ' : 'Ghi nhận thanh toán'}</button>}
       </div>

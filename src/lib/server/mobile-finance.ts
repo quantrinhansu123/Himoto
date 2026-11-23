@@ -4,7 +4,7 @@ import type { NextRequest } from "next/server";
 import type { SessionUser } from "./management-session";
 import type { PaymentContext } from "@/lib/management/contract-payments";
 import { canAddExtraReceipt, PAYABLE_STATUSES,RENEWABLE_STATUSES, paymentAccounts } from "@/lib/management/contract-payments";
-import { hasPermission } from "@/lib/management/permissions";
+import { canOperateAcrossStores, hasPermission } from "@/lib/management/permissions";
 import { ContractPaymentError, parseContractPayment, readPaymentContext, recordContractPayment } from "./contract-payments";
 import { queueContractNotification } from "./contract-notifications";
 import { withMobileData, withMobileReadData } from "./mobile-context";
@@ -25,10 +25,10 @@ export function requireMobileFinance(user: SessionUser, writing = false) {
     : !hasPermission(user, "finance.read") && !hasPermission(user, "finance.write")))
     throw new MobileError("Tài khoản không có quyền xem hoặc ghi thu/chi hợp đồng.", 403, "FORBIDDEN");
 }
-async function transaction<T>(user: SessionUser, writing: boolean, task: (client: PoolClient) => Promise<T>, crossStore = false) {
+async function transaction<T>(user: SessionUser, writing: boolean, task: (client: PoolClient) => Promise<T>, scope?: "read_all" | "collection") {
   requireMobileFinance(user, writing);
-  const scope = !writing && crossStore ? withMobileReadData : withMobileData;
-  return scope(user, "", async () => {
+  const run = !writing && scope === "read_all" ? withMobileReadData : withMobileData;
+  return run(user, "", async () => {
     const client = await himotoPool.connect();
     try {
       await client.query(writing ? "BEGIN" : "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
@@ -43,17 +43,17 @@ async function transaction<T>(user: SessionUser, writing: boolean, task: (client
         throw new MobileError(error.message, error.status, error.status === 409 ? "PAYMENT_CONFLICT" : "INVALID_PAYMENT");
       throw error;
     } finally { client.release(); }
-  });
+  }, scope === "collection" ? "finance.write" : undefined);
 }
-function purposes(context: PaymentContext): MobilePaymentPurpose[] {
+function purposes(context: PaymentContext, refundInScope: boolean): MobilePaymentPurpose[] {
   const result: MobilePaymentPurpose[] = [], active = canAddExtraReceipt(context.status);
   const amounts = context.total_amount !== null && context.paid_amount !== null && context.remaining !== null;
   if (!context.completed_from_hold && amounts && PAYABLE_STATUSES.includes(context.status)) result.push("debt");
   if(!context.completed_from_hold&&!context.billing&&RENEWABLE_STATUSES.includes(context.status)&&context.items.length&&amounts)result.push('renewal');
   if (!context.completed_from_hold && active && (context.deposit_remaining ?? 0) > 0) result.push("deposit");
   if (!context.completed_from_hold && !context.hold_active && active && amounts) result.push("extra");
-  if (active && context.deposit_held > 0) result.push("deposit_refund");
-  if (active && (context.rental_refundable ?? 0) > 0) result.push("rental_refund");
+  if (refundInScope && active && context.deposit_held > 0) result.push("deposit_refund");
+  if (refundInScope && active && (context.rental_refundable ?? 0) > 0) result.push("rental_refund");
   return result;
 }
 function project(context: PaymentContext, user: SessionUser): MobileFinanceContext {
@@ -64,7 +64,7 @@ function project(context: PaymentContext, user: SessionUser): MobileFinanceConte
     depositPaid: context.deposit_paid, depositRefunded: context.deposit_refunded, depositHeld: context.deposit_held,
     depositRemaining: context.deposit_remaining ?? 0, rentalRefundable: context.rental_refundable ?? 0,
     holdActive: context.hold_active === true, completedFromHold: context.completed_from_hold === true,
-    purposes: purposes(context),
+    purposes: purposes(context, !canOperateAcrossStores(user, "finance.write") || user.scope_all === true || user.store_id === context.store_id),
     renewalItems:context.items.map(item=>({id:item.id,vehicleId:item.vehicle_id,name:item.name,license:item.license,revision:item.revision,returnAt:item.return_at,dailyPrice:item.daily_price,renewalAmount:item.renewal_amount})),
     accounts: (["cash", "transfer", "company_transfer"] as const).flatMap((method) =>
       paymentAccounts(context, method).map((row) => ({ id: row.id, method, label: row.label }))),
@@ -92,7 +92,7 @@ export async function readMobileFinance(user: SessionUser, value: string, reques
   const id = mobileFinanceId(value), params = request.nextUrl.searchParams;
   if ([...params.keys()].some((key) => key !== "page") || params.getAll("page").length > 1 || !/^[1-9]\d{0,5}$/.test(params.get("page") ?? "1") || Number(params.get("page") ?? 1) > 100000)
     throw new MobileError("Trang lịch sử thu/chi không hợp lệ.", 400, "INVALID_PAGE");
-  return transaction(user, false, async (client) => project(await readPaymentContext(client, id, { page: Number(params.get("page") ?? 1), size: 25 }), user), true);
+  return transaction(user, false, async (client) => project(await readPaymentContext(client, id, { page: Number(params.get("page") ?? 1), size: 25 }), user), "read_all");
 }
 async function receipt(client: PoolClient, user: SessionUser, key: string): Promise<MobilePaymentReceipt | null> {
   const row = (await client.query(
@@ -117,7 +117,7 @@ async function receipt(client: PoolClient, user: SessionUser, key: string): Prom
 export async function readMobilePaymentReceipt(user: SessionUser, key: string) {
   requireMobileFinance(user, true);
   mobileRequestKey(key);
-  return transaction(user, false, async (client) => ({ receipt: await receipt(client, user, key) }));
+  return transaction(user, false, async (client) => ({ receipt: await receipt(client, user, key) }), "collection");
 }
 export async function recordMobilePayment(user: SessionUser, value: string, request: NextRequest): Promise<MobilePaymentReceipt> {
   requireMobileFinance(user, true);
@@ -145,7 +145,7 @@ export async function recordMobilePayment(user: SessionUser, value: string, requ
         const context = await readPaymentContext(client, id, readOptions);
         if (normalized.expected_total !== context.total_amount || normalized.expected_remaining !== context.remaining)
           throw new MobileError("Số dư đã thay đổi từ lúc rà soát. Đối chiếu và tải lại số liệu trước khi ghi.", 409, "PAYMENT_CONFLICT");
-        if (!purposes(context).includes(normalized.purpose))
+        if (!purposes(context, true).includes(normalized.purpose))
           throw new MobileError("Nghiệp vụ này không còn khả dụng. Đối chiếu số liệu mới trước khi ghi.", 409, "PAYMENT_CONFLICT");
         const impact = paymentImpact({ totalAmount: context.total_amount, rentalRemaining: context.remaining }, normalized.purpose, Number(input.amount));
         if (impact.overpayment && acknowledgement !== true)
@@ -162,7 +162,7 @@ export async function recordMobilePayment(user: SessionUser, value: string, requ
       const found = await receipt(client, user, key);
       if (!found) throw new MobileError("Chưa tìm thấy phiếu thu/chi đã ghi. Giữ mã để đối chiếu.", 503, "INVALID_WRITE_RECEIPT");
       return { ...found, replayed: saved.replayed };
-    });
+    }, purpose === "deposit_refund" || purpose === "rental_refund" ? undefined : "collection");
   } catch (error) {
     if (error instanceof ContractPaymentError) throw new MobileError(error.message, error.status, "INVALID_PAYMENT");
     throw error;

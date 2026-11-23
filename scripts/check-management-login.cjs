@@ -164,6 +164,34 @@ async function run() {
       const authorized = new NextRequest('https://himoto.example/api/auth/customers', { headers: { Host: 'himoto.example', Cookie: secureLogin.headers.get('set-cookie').split(';')[0] } });
       assert.equal(await session.protectDatabaseRequest(authorized), null);
       checks.push('production HTTPS login and protected API use real account authentication and Secure cookies');
+      const {withAccessUser} = load(path.join(root, 'lib/server/access-request'));
+      const {canCollectContractDebt, canManageAccounts, canSettleContract} = load(path.join(root, 'lib/management/permissions'));
+      const inspectScope = withAccessUser((_request, _context, user) => {
+        const scope = dataAccess.getStore();
+        return Response.json({all: user.scope_all, readAll: scope.cross_store_read === true, operationAll: scope.cross_store_operation === true,
+          collectDebt: canCollectContractDebt(user), manage: canManageAccounts(user), settle: canSettleContract(user)});
+      });
+      const readScope = (method, route) => inspectScope(new NextRequest('https://himoto.example/api/auth/' + route, {
+        method, headers: {Host: 'himoto.example', Origin: 'https://himoto.example', Cookie: secureLogin.headers.get('set-cookie').split(';')[0]},
+      }), {});
+      row = {...account, access_role: 'ownership_staff', permissions: ['customers.write','contracts.read','contracts.renew','finance.write'],
+        scope_all: false, scope_all_read: true, scope_all_operations: true, access_enabled: true, access_store_id: '23', store_kind: 'lease_to_own'};
+      for (const [method, route] of [['PATCH','customers/1'],['PATCH','customers/1/blacklist'],['POST','order/car-rental/1/renewals'],['PUT','record-photos/contracts/1/renewal-2-document-1']]) {
+        const response = await readScope(method, route);
+        assert.equal(response.status, 200, route);
+        assert.deepEqual(await response.json(), {all:false, readAll:false, operationAll:true, collectDebt:true, manage:false, settle:false});
+      }
+      assert.equal((await readScope('POST','order/car-rental/1/payments/settlement')).status,403);
+      assert.equal((await readScope('PATCH','accounts')).status,403);
+      assert.equal((await (await readScope('DELETE','customers/1')).json()).operationAll,false);
+      assert.equal((await (await readScope('GET','order/car-rental')).json()).readAll,true);
+      row = {...row, scope_all_operations: false};
+      assert.equal((await (await readScope('PATCH','customers/1/blacklist')).json()).operationAll,false);
+      row = {...row, access_role:'ownership_manager', ownership_store_id:'23', scope_all_operations:true};
+      assert.deepEqual(await (await readScope('POST','order/car-rental/1/payments/settlement')).json(),
+        {all:false, readAll:false, operationAll:false, collectDebt:true, manage:true, settle:true});
+      checks.push('operations scope follows explicit stored grants and approved routes; contract closure and account management remain branch-bound');
+      row = account;
       const connectDescriptor = Object.getOwnPropertyDescriptor(pool, 'connect');
       const writes = [];
       const client = { query: async (sql, values) => {

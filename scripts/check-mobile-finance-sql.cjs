@@ -177,6 +177,28 @@ async function run() {
     checks.push('Actual PostgreSQL executes bounded/summary/default history SQL; global company/refund aggregates, cancelled renewal visibility, stable pages and colliding account IDs remain correct');
 
     const paidAt = new Date(Date.now() - 60000 + 7*3600000).toISOString().slice(0,16);
+    async function checkCrossStoreOperations() {
+      const collector = { ...user, access_role: 'ownership_staff', scope_all_read: true, scope_all_operations: true };
+      const otherStore = await read(collector, '102');
+      const crossStoreReceipt = {revision:otherStore.revision,expected_total:otherStore.totalAmount,expected_remaining:otherStore.rentalRemaining,
+        purpose:'debt',amount:'20000',method:'cash',account_id:2,paid_at:paidAt,note:'Thu công nợ khác PGD QA'};
+      const key = randomUUID();
+      const saved = await api.recordMobilePayment(collector,'102',req(crossStoreReceipt,key));
+      assert.equal((await api.readMobilePaymentReceipt(collector,key)).receipt.transactionId,saved.transactionId);
+      assert.deepEqual((await pg.query('SELECT user_id::int,store_id::int,cash_id::int,value::int FROM himoto.transactions WHERE id=$1',[saved.transactionId])).rows,
+        [{user_id:7,store_id:24,cash_id:2,value:20000}]);
+      const afterCollection = await read(collector,'102');
+      assert.equal(afterCollection.rentalRemaining, otherStore.rentalRemaining-20000);
+      const reviewed = {...crossStoreReceipt,revision:afterCollection.revision,expected_remaining:afterCollection.rentalRemaining};
+      await assert.rejects(() => api.recordMobilePayment(collector,'102',req({...reviewed,purpose:'rental_refund'},randomUUID())),error=>error.status===404);
+      await assert.rejects(() => api.recordMobilePayment({...collector,scope_all_operations:false},'102',req(reviewed,randomUUID())),error=>error.status===404);
+      checks.push('Granted cross-PGD collection writes to the contract store and replays its receipt under RLS while refund and revoked writes stay scoped');
+    }
+    if (process.argv.includes('--cross-store-operations-only')) {
+      await checkCrossStoreOperations();
+      console.log(JSON.stringify({checks, fixtureOnly:true, operationalWrites:0},null,2));
+      return;
+    }
     const input = async (purpose, amount, patch = {}) => {
       const c = await read();
       return { revision:c.revision,expected_total:c.totalAmount,expected_remaining:c.rentalRemaining,purpose,amount:String(amount),
@@ -637,6 +659,7 @@ async function run() {
       for(const kind of ['payment','renewal','return','transfer'])assert(kinds.includes(kind),'Actual writer must emit '+kind);
       checks.push('Actual payment, renewal, return and transfer writers commit their events with the business transaction while the full finance/retry/rollback suite remains unchanged');
     }
+    await checkCrossStoreOperations();
     await pg.exec('DROP TABLE himoto.management_mobile_renewals');
     assert.equal(await versionsApi.nextContractRenewalVersion(raw,101,[]),17);
     assert.equal(await versionsApi.hasContractRenewalVersion(raw,101,[],13),true);

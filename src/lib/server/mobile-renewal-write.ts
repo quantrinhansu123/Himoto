@@ -33,7 +33,7 @@ async function transaction<T>(user:SessionUser,write:boolean,task:(client:PoolCl
         throw new MobileError(error.message,error.status,error.status===409?"RENEWAL_CONFLICT":"INVALID_RENEWAL");
       throw error;
     }finally{client.release();}
-  });
+  },"contracts.renew");
 }
 const stamp=(value:unknown)=>value instanceof Date?value.toISOString():new Date(String(value)).toISOString();
 const time=(value:unknown)=>value instanceof Date?value.getTime():Date.parse(String(value));

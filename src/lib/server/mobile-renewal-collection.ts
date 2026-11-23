@@ -38,7 +38,7 @@ export async function readMobileRenewalCollection(user: SessionUser, value: stri
         throw new MobileError(error.message, 409, "RENEWAL_COLLECTION_REVIEW_REQUIRED");
       throw error;
     } finally { client.release(); }
-  });
+  }, "finance.write");
 }
 
 /** Discover actual saved versions; never infer them from nextVersion or receipts. */
@@ -89,7 +89,7 @@ export async function readMobileRenewalPeriods(user: SessionUser, value: string,
       if (error instanceof RenewalCollectionPeriodError) throw new MobileError(error.message,409,"RENEWAL_COLLECTION_REVIEW_REQUIRED");
       throw error;
     } finally { client.release(); }
-  });
+  }, "finance.write");
 }
 
 function collectionBlockedReason(context: Awaited<ReturnType<typeof readPaymentContext>>) {
