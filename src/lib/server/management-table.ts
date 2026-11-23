@@ -202,10 +202,11 @@ function customerPageClause(store:string,status:string) {
   return `${storeSql}${statusSql}`;
 }
 export function customerPageSql(scopeClause:string,source:'himoto.customers'|'page_customers'='himoto.customers') {
+  const revision=source==='page_customers'?'c.customer_revision':'c.xmin::text';
   return `SELECT c.id, c.name, c.phone, c.id_card, c.address,
     CASE WHEN c.status = 2 THEN 'bad_debt' WHEN c.status = 0 THEN 'draft'
          WHEN NULLIF(BTRIM(c.warning), '') IS NOT NULL THEN 'warning' ELSE 'active' END AS status,
-    c.warning, c.store_id, s.store_name, COALESCE(oc.contract_count,0) AS contract_count
+    c.warning, ${revision} AS customer_revision, c.store_id, s.store_name, COALESCE(oc.contract_count,0) AS contract_count
     FROM ${source} c
     LEFT JOIN ${usesScopedDatabase()?'himoto.store_directory()':'himoto.stores'} s ON s.id = c.store_id
     LEFT JOIN LATERAL (
@@ -421,7 +422,8 @@ export function customerListPageSql(input:ManagementTableInput) {
   if(input.sort==='contract_count')return `${customerPageSql(clause)}${search.sql} ORDER BY ${order} LIMIT $1 OFFSET $2`;
   const stores=usesScopedDatabase()?'himoto.store_directory()':'himoto.stores';
   return `WITH page_customers AS MATERIALIZED (
-    SELECT c.id,c.name,c.phone,c.id_card,c.address,c.status,c.warning,c.store_id FROM himoto.customers c
+    SELECT c.id,c.name,c.phone,c.id_card,c.address,c.status,c.warning,c.store_id,c.xmin::text AS customer_revision
+    FROM himoto.customers c
     ${input.sort==='store_name'?`LEFT JOIN ${stores} s ON s.id=c.store_id`:''}
     WHERE true${clause}${search.sql} ORDER BY ${order} LIMIT $1 OFFSET $2
   ) ${customerPageSql('','page_customers')} ORDER BY ${order}`;
