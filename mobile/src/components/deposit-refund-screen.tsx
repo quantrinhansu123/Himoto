@@ -217,8 +217,8 @@ export function DepositRefundScreen({ id, itemId, event }: { id: string; itemId:
           {data.vouchers.map(row => <Text key={row.id} style={text}>
             Phiếu #{row.id} · {money(row.amount)} · {row.method}{row.account ? ` · ${row.account}` : ''} · {dateTime(row.paid_at)}
           </Text>)}
-          {data.can_send_telegram && data.vouchers.length > 0 &&
-            <Button secondary label="Xem trước Telegram trả xe" disabled={busy || !!intent}
+          {data.can_send_telegram &&
+            <Button secondary label="Gửi Telegram trả xe" disabled={busy || !!intent}
               onPress={() => router.push({ pathname: '/contract-telegram/[id]', params: { id, eventKind: 'return', returnItemId: itemId, ...(event ? { event } : {}) } })} />}
         </Card>
         {data.requests.length > 0 && <>

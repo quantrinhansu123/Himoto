@@ -65,10 +65,17 @@ function ApprovalForm({ id }: { id: string }) {
     } catch (cause) { if (active(version)) setError((cause as Error).message); }
     finally { running.current = false; if (active(version)) setBusy(false); }
   }
-  async function acknowledge() {
+  async function acknowledge(telegram = false) {
     if (!scope || !key || !proof || running.current) return;
     const version = epoch.current.generation; running.current = true; setBusy(true); setError('');
-    try { await pendingWrites.complete(scope, operation, key); if (active(version)) { invalidate(); router.dismissTo({ pathname: '/record/[kind]/[id]', params: { kind: 'contracts', id } }); } }
+    try {
+      await pendingWrites.complete(scope, operation, key);
+      if (active(version)) {
+        invalidate();
+        if (telegram) router.replace({ pathname: '/contract-telegram/[id]', params: { id } });
+        else router.dismissTo({ pathname: '/record/[kind]/[id]', params: { kind: 'contracts', id } });
+      }
+    }
     catch (cause) { if (active(version)) setError((cause as Error).message); }
     finally { running.current = false; if (active(version)) setBusy(false); }
   }
@@ -84,7 +91,11 @@ function ApprovalForm({ id }: { id: string }) {
       {key && <Card style={{ gap: 12 }}>
         <Text accessibilityRole="header" style={{ ...text, fontSize: 18, fontWeight: '700' }}>{proof ? 'Yêu cầu duyệt đã được ghi nhận' : 'Cần đối chiếu lần duyệt trước'}</Text>
         <Text selectable style={muted}>Mã lần duyệt: {key}</Text>
-        {proof ? <><Text style={muted}>Trạng thái bên dưới là thông tin hợp đồng hiện tại. Nếu hợp đồng được sửa sau lần duyệt, cần kiểm tra lại trước khi tiếp tục.</Text><Button label="Đã kiểm tra kết quả duyệt" loading={busy} onPress={() => void acknowledge()} /></> : <><Text style={text}>Đối chiếu sẽ mở kết quả nếu đã ghi. Nếu chưa ghi, mã cũ được khóa trước khi cho duyệt lại.</Text><Button label="Đối chiếu lần duyệt trước" loading={busy} onPress={() => void resolve()} /></>}
+        {proof ? <>
+          <Text style={muted}>Trạng thái bên dưới là thông tin hợp đồng hiện tại. Nếu hợp đồng được sửa sau lần duyệt, cần kiểm tra lại trước khi tiếp tục.</Text>
+          <Button label="Đã kiểm tra kết quả duyệt" loading={busy} onPress={() => void acknowledge()} />
+          <Button secondary label="Gửi Telegram hợp đồng" loading={busy} onPress={() => void acknowledge(true)} />
+        </> : <><Text style={text}>Đối chiếu sẽ mở kết quả nếu đã ghi. Nếu chưa ghi, mã cũ được khóa trước khi cho duyệt lại.</Text><Button label="Đối chiếu lần duyệt trước" loading={busy} onPress={() => void resolve()} /></>}
       </Card>}
       {state && <Card style={{ gap: 12 }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
@@ -102,6 +113,7 @@ function ApprovalForm({ id }: { id: string }) {
         {!key && state.can_approve && <Button label="Duyệt hợp đồng sở hữu" disabled={busy || query.isFetching || query.isError} onPress={() => setConfirm(true)} />}
       </Card>}
       {query.isSuccess && (!key || proof) && !state && <Card><Text style={text}>Hợp đồng này hiện không thuộc nhóm thuê sở hữu hoặc cơ sở áp dụng duyệt thuê sở hữu.</Text></Card>}
+      <Button secondary label="Gửi Telegram hợp đồng" disabled={busy} onPress={() => router.push({ pathname: '/contract-telegram/[id]', params: { id } })} />
       <View style={{ flexDirection: 'row', gap: 10 }}>
         {!key && <Button size="sm" equalWidth secondary label="Tải lại hợp đồng trước khi duyệt" disabled={busy || query.isFetching} onPress={() => void query.refetch()} />}
         <Button size="sm" equalWidth secondary label="Mở hồ sơ hợp đồng" disabled={busy} onPress={() => router.push({ pathname: '/record/[kind]/[id]', params: { kind: 'contracts', id } })} />

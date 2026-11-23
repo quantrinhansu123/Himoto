@@ -53,6 +53,7 @@ function Result({requestKey,openPrint}:{requestKey:string;openPrint?:boolean}){
     {result.photoBatchId&&!metadataChecked&&<Button label="Đã kiểm tra phiếu gốc, tiếp tục ảnh" loading={busy} onPress={()=>{void confirmMetadata();}}/>}
     {result.photoBatchId&&<BatteryPhotoBatch id={String(result.receipt.id)} eventKey={result.eventKey} title="Hoàn tất bộ ảnh và Telegram của lượt pin" queueId={result.photoBatchId} allowSave={metadataChecked} onPendingChange={setPhotosPending}/>}
     {!!error&&<InlineError message={error}/>}
+    {!result.deleted&&!result.photoBatchId&&<Button secondary label="Ảnh & Gửi Telegram pin / sạc" loading={busy} onPress={()=>{void (async()=>{if(busy)return;setBusy(true);setError('');try{await checkReceipt();if(!alive.current)return;for(const key of [['batteries'],['battery'],['cashbook'],['cashbook-accounts'],['cashbook-account'],['cashbook-account-transactions']])void cache.invalidateQueries({queryKey:key});router.replace({pathname:'/battery-media/[id]/[eventKey]',params:{id:String(result.receipt.id),eventKey:result.eventKey}});}catch(e){if(alive.current)setError((e as Error).message);}finally{if(alive.current)setBusy(false);}})();}}/>}
     <Button label={openPrint?'Hoàn tất và mở mẫu in hợp đồng pin':result.photoBatchId?'Hoàn tất và về hồ sơ pin':'Đã kiểm tra xác nhận pin / sạc'} disabled={!!result.photoBatchId&&(!metadataChecked||photosPending)} loading={busy} onPress={()=>{void finish();}}/>
   </ScrollView></SafeAreaView>;
 }

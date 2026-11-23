@@ -665,6 +665,26 @@ function DraftForm({
                       if (type) change(chooseDraftType(input, type));
                     }}
                   />
+                  {(d.ownership || input.rental_type === "ownership" || input.rental_type === "ownership_cd") && (
+                    <ChoiceField
+                      label="Phân loại thuê sở hữu"
+                      value={d.ownership_term_months || "custom"}
+                      disabled={disabled}
+                      choices={[
+                        { value: "custom", label: "Chưa phân loại" },
+                        ...["6", "9", "12", "18", "24"].map((value) => ({
+                          value,
+                          label: `${value} tháng`,
+                        })),
+                      ]}
+                      onChange={(value) =>
+                        set(
+                          "ownership_term_months",
+                          value as MobileContractDraft["ownership_term_months"],
+                        )
+                      }
+                    />
+                  )}
                   {session?.user.permissions.includes("settings.write") && session.user.permissions.includes("finance.write") && <Button secondary label="Quản lý loại hợp đồng ngay khi soạn" disabled={disabled} onPress={() => setTypeManager(true)} />}
                   <ChoiceField
                     label="Liên kết nguồn khách"

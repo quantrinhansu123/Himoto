@@ -910,19 +910,6 @@ export function CatalogueScreen({
           {!!customerId && <Text style={{ color: theme.text, fontSize: 14 }}>Hợp đồng của khách: {customerName || `#${customerId}`}</Text>}
           {kind === 'contracts' && statistics.isError && <Button label="Tải lại số lượng theo trạng thái" secondary loading={statistics.isFetching} onPress={() => void statistics.refetch()} />}
 
-          {/* Contract Summary Totals & Due Reminder Banner */}
-          {kind === "contracts" && (statistics.data?.summary || query.data?.pages[0]?.summary) && (() => {
-            const sum = statistics.data?.summary || query.data?.pages[0]?.summary;
-            if (!sum || (sum.totalAmount === null && sum.receivableAmount === null)) return null;
-            return (
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 10, backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.border }}>
-                {sum.totalAmount !== null && <Text style={{ color: theme.text, fontSize: 12.5, fontWeight: "700" }}>Tổng HĐ: {money(sum.totalAmount)}</Text>}
-                {sum.receivableAmount !== null && <Text style={{ color: theme.warning, fontSize: 12.5, fontWeight: "700" }}>Còn phải thu: {money(sum.receivableAmount)}</Text>}
-                {sum.badDebtAmount !== null && sum.badDebtAmount > 0 && <Text style={{ color: theme.danger, fontSize: 12.5, fontWeight: "700" }}>Nợ xấu: {money(sum.badDebtAmount)}</Text>}
-              </View>
-            );
-          })()}
-
           {kind === "contracts" && !scope && (statistics.data?.dueCount || 0) > 0 && (
             <Pressable
               accessibilityRole="button"

@@ -12,14 +12,14 @@ import {Button,Card,InlineError,KeyValueRow,StateView,StatusBadge} from '@/compo
 import {ChoiceField,FormField} from '@/components/form-fields';
 import {ConfirmEdit} from '@/components/editor-sheet';
 import {TelegramAttachments} from '@/components/telegram-attachments';
-function Telegram({id,initialEvent,preferReturn,returnItemId,onlyEvent}:{id:string;initialEvent:string;preferReturn:boolean;returnItemId?:string;onlyEvent:boolean}){
+function Telegram({id,initialEvent,preferredKind,returnItemId,onlyEvent}:{id:string;initialEvent:string;preferredKind?:string;returnItemId?:string;onlyEvent:boolean}){
   const {api,session}=useSession(),theme=useTheme(),write=useTelegramWrite(`telegram.contract:${id}`),[selected,setSelected]=useState(initialEvent),[focused,setFocused]=useState(false),[confirm,setConfirm]=useState<{command:MobileTelegramCommand;message:string}|null>(null),[resolving,setResolving]=useState(false);
   useFocusEffect(useCallback(()=>{setFocused(true);return()=>setFocused(false);},[]));
   const query=useQuery({queryKey:['telegram','contract',api!.origin,session!.user.id,session!.user.storeId,session!.user.allStores,id],queryFn:({signal})=>api!.contractTelegram(id,signal),enabled:write.checked&&!write.key&&focused,retry:false,refetchInterval:q=>!write.busy&&q.state.data?.events.some(e=>['pending','sending','retracting'].includes(e.status||'')||e.deliveries?.some(d=>['pending','retracting','processing'].includes(d.retraction_state||'')))?2000:false,refetchIntervalInBackground:false});
   const available=query.data?.events||[];
   const events=onlyEvent?available.filter(e=>e.key===initialEvent)
     :returnItemId?available.filter(e=>e.kind==='return'&&e.phases.includes(`return-${returnItemId}`)):available;
-  const event=events.find(e=>e.key===selected)||(preferReturn?events.find(e=>e.kind==='return'):undefined)||events[0],locked=write.busy||!!write.key||!write.checked,muted={color:theme.muted,fontSize:14,lineHeight:21};
+  const event=events.find(e=>e.key===selected)||(preferredKind?events.find(e=>e.kind===preferredKind):undefined)||events[0],locked=write.busy||!!write.key||!write.checked,muted={color:theme.muted,fontSize:14,lineHeight:21};
   return <SafeAreaView edges={['left','right','bottom']} style={{flex:1,backgroundColor:theme.background}}><ScrollView contentContainerStyle={{padding:16,paddingBottom:40,gap:14,maxWidth:760,width:'100%',alignSelf:'center'}}>
     <Text style={muted}>Kiểm tra giao dịch, nội dung, nhóm nhận và toàn bộ ảnh/video đã lưu trước khi gửi.</Text>
     {!!write.error&&<InlineError message={write.error}/>}
@@ -73,5 +73,5 @@ export default function Screen(){
   const identifier=/^[1-9]\d{0,14}$/;
   if(!api||!session||typeof id!=='string'||!identifier.test(id)||returnItemId!==undefined&&(typeof returnItemId!=='string'||!identifier.test(returnItemId))||!session.user.permissions.includes('contracts.read'))return <StateView title="Không mở được Telegram hợp đồng"/>;
   return <Telegram key={[api.origin,session.token,session.user.storeId,session.user.allStores,session.user.permissions.join(','),id,event??'',eventKind??'',returnItemId??'',onlyEvent??''].join('|')}
-    id={id} initialEvent={typeof event==='string'?event:''} preferReturn={eventKind==='return'} returnItemId={returnItemId} onlyEvent={onlyEvent==='1'}/>;
+    id={id} initialEvent={typeof event==='string'?event:''} preferredKind={typeof eventKind==='string'?eventKind:undefined} returnItemId={returnItemId} onlyEvent={onlyEvent==='1'}/>;
 }

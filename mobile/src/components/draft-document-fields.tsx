@@ -1005,13 +1005,13 @@ export function DraftFees<T extends MobileContractFormInput>({ input, change, di
         title="Kỳ đóng tiền"
         initial={!!d.custom_installments?.length || !!d.ownership}
       >
-        {d.ownership && (
+        {(d.ownership || input.rental_type === "ownership" || input.rental_type === "ownership_cd") && (
           <ChoiceField
-            label="Thời hạn thuê sở hữu"
+            label="Phân loại thuê sở hữu"
             value={d.ownership_term_months || "custom"}
             disabled={disabled}
             choices={[
-              { value: "custom", label: "Tùy chọn" },
+              { value: "custom", label: "Chưa phân loại" },
               ...["6", "9", "12", "18", "24"].map((value) => ({
                 value,
                 label: `${value} tháng`,

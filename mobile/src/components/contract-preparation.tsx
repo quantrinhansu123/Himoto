@@ -272,11 +272,17 @@ function PreparationForm({ id }: { id: string }) {
         />
         <Button
           secondary
-          label="Mở Telegram hợp đồng"
+          label="Gửi Telegram hợp đồng"
           loading={action.checking}
           onPress={() => {
             void action.openReceipt(() =>
-              router.replace({ pathname: "/contract-telegram/[id]", params: { id } }),
+              router.replace({
+                pathname: "/contract-telegram/[id]",
+                params: {
+                  id,
+                  eventKind: reserving ? "reservation" : handover ? "handover" : "rental",
+                },
+              }),
             );
           }}
         />

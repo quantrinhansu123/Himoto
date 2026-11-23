@@ -10,7 +10,7 @@ import {
 import { router } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
-import { CheckCircle2, QrCode, ReceiptText, Wallet } from "lucide-react-native";
+import { CheckCircle2, MessageCircle, QrCode, ReceiptText, Wallet } from "lucide-react-native";
 import type { MobileCollectionMethod } from "@himoto/mobile-contract";
 import { validateBackfillPayment } from "../../../shared/mobile-backfill";
 import { validDraftTime } from "@himoto/mobile-draft-validation";
@@ -354,6 +354,20 @@ function PaymentForm({ id, backfill }: { id: string; backfill: boolean }) {
                 }}
               />
               <Button
+                secondary
+                loading={action.checking}
+                icon={<MessageCircle size={15} color={theme.text} />}
+                label="Gửi Telegram hợp đồng"
+                onPress={() => {
+                  void action.openReceipt(() =>
+                    router.replace({
+                      pathname: "/contract-telegram/[id]",
+                      params: { id },
+                    }),
+                  );
+                }}
+              />
+              <Button
                 size="sm"
                 secondary
                 loading={action.checking}
@@ -491,7 +505,7 @@ function PaymentForm({ id, backfill }: { id: string; backfill: boolean }) {
               valueColor={theme.info}
             />
           )}
-          <View style={{ flexDirection: "row", gap: 8, paddingTop: 6 }}>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, paddingTop: 6 }}>
             <Button
               size="sm"
               secondary
@@ -502,11 +516,20 @@ function PaymentForm({ id, backfill }: { id: string; backfill: boolean }) {
                 router.push({ pathname: "/contract-qr/[id]", params: { id } })
               }
             />
+            <Button
+              size="sm"
+              secondary
+              equalWidth
+              icon={<MessageCircle size={14} color={theme.text} />}
+              label="Gửi Telegram"
+              onPress={() =>
+                router.push({ pathname: "/contract-telegram/[id]", params: { id } })
+              }
+            />
             {session?.user.permissions.includes("contracts.settle") && (
               <Button
                 size="sm"
                 secondary
-                equalWidth
                 icon={<CheckCircle2 size={14} color={theme.text} />}
                 label="Thanh toán & Đóng HĐ"
                 onPress={() =>

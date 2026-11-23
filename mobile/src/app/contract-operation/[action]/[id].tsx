@@ -241,6 +241,8 @@ function Operation({ id, action, swapId, initialMode }: { id: string; action: Co
         <Button label={action === 'delete_reservation' ? 'Về danh sách hợp đồng' : 'Mở hợp đồng'}
           onPress={() => action === 'delete_reservation' ? router.dismissTo('/(tabs)/contracts')
             : router.dismissTo({ pathname: '/record/[kind]/[id]', params: { kind: 'contracts', id } })} />
+        {action !== 'delete_reservation' && <Button secondary label="Gửi Telegram hợp đồng"
+          onPress={() => router.push({ pathname: '/contract-telegram/[id]', params: { id, ...(action === 'payment_settlement' ? { eventKind: 'return' } : action === 'no_show' ? { eventKind: 'reservation' } : {}) } })} />}
         {action === 'payment_settlement' && <Button secondary label="Xem phiếu thu / chi"
           onPress={() => router.push({ pathname: '/contract-history/[id]', params: { id, tab: 'cashflow' } })} />}
       </Card> : <>
@@ -249,6 +251,8 @@ function Operation({ id, action, swapId, initialMode }: { id: string; action: Co
         {data?.action === 'battery_swap' && <Swap data={data} write={write} initialSwap={swapId} />}
         {data?.action === 'payment_settlement' && <Settlement data={data} write={write} initialMode={initialMode} />}
         {(data?.action === 'no_show' || data?.action === 'delete_reservation') && <Reservation data={data} write={write} />}
+        {data && action !== 'delete_reservation' && <Button secondary label="Gửi Telegram hợp đồng" disabled={write.busy}
+          onPress={() => router.push({ pathname: '/contract-telegram/[id]', params: { id, ...(action === 'payment_settlement' ? { eventKind: 'return' } : action === 'no_show' ? { eventKind: 'reservation' } : {}) } })} />}
         {data && <Button secondary label="Tải lại dữ liệu" loading={write.query.isRefetching} disabled={write.busy}
           onPress={() => { void write.query.refetch(); }} />}
       </>}

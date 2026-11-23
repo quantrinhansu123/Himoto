@@ -258,6 +258,12 @@ function ReturnForm({ id }: { id: string }) {
         <Button label="Ghi trả xe và quyết toán" disabled={locked || query.isError || review.overpayment && !review.overpaymentAcknowledged} onPress={() => setConfirm(true)} />
         <Button label="Sửa khoản thu và hoàn" secondary disabled={locked} onPress={() => { setStep(2); clearReview(); top(); }} />
       </>}
+      <Button
+        secondary
+        label="Gửi Telegram trả xe"
+        disabled={action.busy}
+        onPress={() => router.push({ pathname: '/contract-telegram/[id]', params: { id, eventKind: 'return' } })}
+      />
       <View style={{ flexDirection: 'row', gap: 10 }}>
         <Button size="sm" equalWidth label="Tải lại dữ liệu trả xe" secondary loading={query.isFetching} disabled={locked} onPress={() => { void query.refetch(); }} />
         <Button size="sm" equalWidth label="Ẩn bàn phím" secondary disabled={action.busy} onPress={() => Keyboard.dismiss()} />

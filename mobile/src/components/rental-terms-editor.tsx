@@ -27,10 +27,17 @@ export function RentalTermsEditor({ id }: { id: string }) {
       {write.query.isPending && <StateView title="Đang tải tiền / ngày thuê" loading />}
       {write.query.isError && <StateView title="Chưa tải được tiền / ngày thuê" message={(write.query.error as Error).message} retry={() => void write.query.refetch()} />}
       {write.key && <Card style={{ gap: 12 }}><Text selectable style={muted}>Mã lần sửa: {write.key}</Text>
-        {write.proof ? <><Text accessibilityRole="header" style={{ ...text, fontSize: 20, fontWeight: '700' }}>Đã ghi nhận sửa tiền / ngày thuê</Text><Text style={text}>Hồ sơ #{write.proof.receipt.id} · Phiên bản {write.proof.receipt.revision}</Text><Text style={muted}>Kết quả xác nhận lần gửi; tiền/ngày trên hồ sơ có thể đã được sửa tiếp.</Text><Button label="Đã xem kết quả, mở hồ sơ" loading={write.busy} onPress={() => void write.acknowledge(disablePrevention)} /></> : <><Text style={text}>Đối chiếu lần sửa đã gửi trước khi tiếp tục.</Text><Button label="Đối chiếu kết quả sửa tiền / ngày thuê" loading={write.busy} onPress={() => void write.resolve()} /></>}
+        {write.proof ? <>
+          <Text accessibilityRole="header" style={{ ...text, fontSize: 20, fontWeight: '700' }}>Đã ghi nhận sửa tiền / ngày thuê</Text>
+          <Text style={text}>Hồ sơ #{write.proof.receipt.id} · Phiên bản {write.proof.receipt.revision}</Text>
+          <Text style={muted}>Kết quả xác nhận lần gửi; tiền/ngày trên hồ sơ có thể đã được sửa tiếp.</Text>
+          <Button label="Đã xem kết quả, mở hồ sơ" loading={write.busy} onPress={() => void write.acknowledge(disablePrevention)} />
+          <Button secondary label="Gửi Telegram hợp đồng" loading={write.busy} onPress={() => void write.acknowledge(disablePrevention, () => router.replace({ pathname: '/contract-telegram/[id]', params: { id } }))} />
+        </> : <><Text style={text}>Đối chiếu lần sửa đã gửi trước khi tiếp tục.</Text><Button label="Đối chiếu kết quả sửa tiền / ngày thuê" loading={write.busy} onPress={() => void write.resolve()} /></>}
       </Card>}
       {profile && !write.key && <>
         <RentalTermsForm key={`${profile.revision}:${formEpoch}`} initial={profile} disabled={write.busy} onDirty={setDirty} onReview={input => { setReview(input); Keyboard.dismiss(); }} />
+        <Button secondary label="Gửi Telegram hợp đồng" disabled={write.busy} onPress={() => router.push({ pathname: '/contract-telegram/[id]', params: { id } })} />
         <Button secondary label="Tải lại tiền / ngày thuê mới nhất" disabled={write.busy || write.query.isFetching} onPress={() => setReload(true)} />
       </>}
     </KeyboardFormScrollView>

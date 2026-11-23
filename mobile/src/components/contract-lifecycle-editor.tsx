@@ -28,7 +28,7 @@ const descriptions: Record<MobileLifecycleAction, string> = {
   resume: 'Tiếp tục chính hợp đồng này. Chọn đủ xe đang rảnh và đối chiếu lịch còn lại. Giữ nợ/cọc/lịch sử cũ; dời các kỳ chưa phát sinh theo thời gian bảo lưu.',
   complete_hold: 'Hoàn thành và dừng theo dõi khoản không thu hồi. Phần còn thiếu được ghi là tổn thất công nợ, không tạo phiếu thu/chi và không cộng vào doanh thu thực thu. Tiền đã thu/hoàn và cọc giữ theo lịch sử.',
 };
-export function ContractLifecycleEditor({ id, initialAction }: { id: string; initialAction?: 'close_bad_debt' }) {
+export function ContractLifecycleEditor({ id, initialAction }: { id: string; initialAction?: 'close_bad_debt' | 'mark_bad_debt' }) {
   const write = useContractLifecycleWrite(id), theme = useTheme(), { session } = useSession(), scroll = useRef<ScrollViewInstance>(null);
   const [dirty, setDirty] = useState(false), [exit, setExit] = useState<(() => void) | null>(null), [confirm, setConfirm] = useState<MobileLifecycleInput | null>(null), [reload, setReload] = useState(false), [formVersion, setFormVersion] = useState(0), [eventCount, setEventCount] = useState(50);
   const disablePrevention = usePreventRemove(write.busy || dirty && !write.proof, ({ repeat }) => setExit(() => repeat));
@@ -47,7 +47,12 @@ export function ContractLifecycleEditor({ id, initialAction }: { id: string; ini
         {write.entry && <Card style={{ gap: 14 }}>
           <Text accessibilityRole="header" style={{ ...text, fontSize: 18, fontWeight: '700' }}>{write.proof ? 'Đã ghi nhận tình trạng hợp đồng' : 'Cần đối chiếu thao tác trước'}</Text>
           <Text selectable style={muted}>Mã thao tác: {write.entry.key}</Text>
-          {write.proof ? <><Text style={text}>Hợp đồng #{write.proof.receipt.id} · phiên bản ghi nhận {write.proof.receipt.revision}.</Text><Text style={muted}>Mở hợp đồng để xem xe, tiền và trạng thái hiện tại. Kết quả này xác nhận lần ghi gốc.</Text><Button label="Đã kiểm tra, mở hợp đồng" loading={write.busy} onPress={() => void write.acknowledge(disablePrevention)} /></> : <><Text style={text}>Mở kết quả nếu đã ghi; khóa mã chưa ghi trước khi cho thao tác tiếp.</Text><Button label="Đối chiếu thao tác tình trạng" loading={write.busy} onPress={() => void write.resolve()} /></>}
+          {write.proof ? <>
+            <Text style={text}>Hợp đồng #{write.proof.receipt.id} · phiên bản ghi nhận {write.proof.receipt.revision}.</Text>
+            <Text style={muted}>Mở hợp đồng để xem xe, tiền và trạng thái hiện tại. Kết quả này xác nhận lần ghi gốc.</Text>
+            <Button label="Đã kiểm tra, mở hợp đồng" loading={write.busy} onPress={() => void write.acknowledge(disablePrevention)} />
+            <Button secondary label="Gửi Telegram hợp đồng" loading={write.busy} onPress={() => void write.acknowledge(disablePrevention, () => router.replace({ pathname: '/contract-telegram/[id]', params: { id } }))} />
+          </> : <><Text style={text}>Mở kết quả nếu đã ghi; khóa mã chưa ghi trước khi cho thao tác tiếp.</Text><Button label="Đối chiếu thao tác tình trạng" loading={write.busy} onPress={() => void write.resolve()} /></>}
         </Card>}
         {context && <>
           <Card style={{ gap: 10 }}>
@@ -72,6 +77,7 @@ export function ContractLifecycleEditor({ id, initialAction }: { id: string; ini
           {(context.status === 'bad_debt' || Boolean(context.badDebtClosedAt)) && !context.allReturned && session?.user.permissions.includes('contracts.return') && <Button secondary label="Thu hồi xe nợ xấu" disabled={write.busy} onPress={() => router.push({ pathname: '/recovery-editor/[id]', params: { id } })} />}
           {context.status === 'bad_debt' && !context.allReturned && session?.user.permissions.includes('contracts.settle') && <Button label="Đóng hợp đồng nợ xấu (kể cả xe còn ở khách)" disabled={write.busy} onPress={() => router.push({ pathname: '/contract-operation/[action]/[id]', params: { action: 'payment_settlement', id, mode: 'close_unpaid' } })} />}
           {session?.user.permissions.some(p => p === 'finance.read' || p === 'finance.write') && <Button secondary label="Thu / chi và xử lý cọc" disabled={write.busy} onPress={() => router.push({ pathname: '/finance/[id]', params: { id } })} />}
+          <Button secondary label="Gửi Telegram hợp đồng" disabled={write.busy} onPress={() => router.push({ pathname: '/contract-telegram/[id]', params: { id } })} />
           {!write.entry && <Button secondary label="Làm mới tình trạng hợp đồng" disabled={write.busy || write.query.isFetching} onPress={() => setReload(true)} />}
           <Text accessibilityRole="header" style={{ ...text, fontSize: 18, fontWeight: '700' }}>Lịch sử trạng thái</Text>
           {context.events.length ? context.events.slice(-eventCount).reverse().map((e, i) => <Card key={`${e.recordedAt}:${i}`} style={{ gap: 6 }}>
@@ -92,7 +98,7 @@ export function ContractLifecycleEditor({ id, initialAction }: { id: string; ini
     {exit && <ConfirmEdit title={write.busy ? 'Đang ghi nhận tình trạng' : 'Rời màn tình trạng hợp đồng?'} message={write.busy ? 'Chờ máy chủ xác nhận trước khi rời.' : 'Nội dung chưa gửi sẽ mất. Mã đã gửi được giữ để đối chiếu trong Tài khoản.'} confirmLabel="Rời màn tình trạng" busy={write.busy} onCancel={() => setExit(null)} onConfirm={() => { if (!write.busy) exit(); }} />}
   </SafeAreaView>;
 }
-function LifecycleActionForm({ id, context, initialAction, disabled, onDirty, onReview }: { id: string; context: MobileLifecycleContext; initialAction?: 'close_bad_debt'; disabled: boolean; onDirty: () => void; onReview: (input: MobileLifecycleInput) => void }) {
+function LifecycleActionForm({ id, context, initialAction, disabled, onDirty, onReview }: { id: string; context: MobileLifecycleContext; initialAction?: 'close_bad_debt' | 'mark_bad_debt'; disabled: boolean; onDirty: () => void; onReview: (input: MobileLifecycleInput) => void }) {
   const { api, session } = useSession(), theme = useTheme();
   const [action, setAction] = useState<MobileLifecycleAction | ''>(() => initialAction && context.actions.some(item => item.action === initialAction) ? initialAction : ''), [at, setAt] = useState(now), [holdUntil, setHoldUntil] = useState(''), [resumeEnd, setResumeEnd] = useState(context.suggestedResumeEnd || ''), [note, setNote] = useState(''), [confirmed, setConfirmed] = useState(false), [vehicles, setVehicles] = useState<MobileDraftVehicle[]>([]), [picker, setPicker] = useState(false), [error, setError] = useState('');
   const previewInput = useDebouncedValue(JSON.stringify({ at, ...(resumeEnd ? { resume_end: resumeEnd } : {}) }));
@@ -100,6 +106,20 @@ function LifecycleActionForm({ id, context, initialAction, disabled, onDirty, on
   const inventory = useQuery({ queryKey: ['lifecycle-inventory', api?.origin, session?.user.id, id, context.revision], queryFn: ({ signal }) => api!.lifecycleInventory(id, 'page=1', signal), enabled: !!api && action === 'resume', retry: false, staleTime: 0, gcTime: 0 });
   const selectedAction = context.actions.find(a => a.action === action), text = { color: theme.text, fontSize: 16, lineHeight: 24 }, muted = { color: theme.muted, fontSize: 14, lineHeight: 22 };
   function changed(task: () => void) { if (!disabled) { task(); setError(''); onDirty(); } }
+  function selectLifecycleAction(next: MobileLifecycleAction) {
+    if (disabled) return;
+    if (action === next) {
+      setAction('');
+      setError('');
+      return;
+    }
+    changed(() => {
+      setAction(next);
+      setAt(now());
+      setConfirmed(false);
+      setHoldUntil(next === 'update_hold' ? context.holdUntil || '' : '');
+    });
+  }
   const currentPreview = preview.data?.at === at && (!resumeEnd || preview.data?.end === resumeEnd) && preview.data?.revision === context.revision;
   function review() {
     Keyboard.dismiss(); if (!selectedAction || !selectedAction.enabled || !confirmed || !validDraftTime(at)) { setError('Chọn thao tác, nhập ngày giờ thực tế và xác nhận đã đối chiếu.'); return; }
@@ -108,8 +128,31 @@ function LifecycleActionForm({ id, context, initialAction, disabled, onDirty, on
     onReview({ action: action as MobileLifecycleAction, revision: context.revision, at, note: note.trim(), confirmed: true, ...(['hold', 'update_hold'].includes(action) ? { hold_until: holdUntil } : {}), ...(action === 'resume' ? { vehicle_ids: vehicles.map(v => Number(v.id)), resume_end: preview.data!.end } : {}) });
   }
   return <Card style={{ gap: 16 }}>
-    <ChoiceField label="Thao tác tình trạng hợp đồng" value={action} disabled={disabled} choices={[{ value: '', label: 'Chọn thao tác cần thực hiện' }, ...context.actions.map(a => ({ value: a.action, label: `${a.label}${a.enabled ? '' : ' (chưa đủ điều kiện)'}` }))]} onChange={v => changed(() => { const next = v as MobileLifecycleAction; setAction(next); setAt(now()); setConfirmed(false); setHoldUntil(next === 'update_hold' ? context.holdUntil || '' : ''); })} />
-    {selectedAction && <>
+    <View style={{ gap: 10 }}>
+      <Text accessibilityRole="header" style={{ ...text, fontSize: 17, fontWeight: '800' }}>Thao tác tình trạng hợp đồng</Text>
+      <View style={{ gap: 10 }}>
+        {context.actions.map(a => {
+          const isSelected = action === a.action;
+          const isMarkBadDebt = a.action === 'mark_bad_debt';
+          const isPrimaryAction = a.action === 'close_bad_debt' || a.action === 'resume';
+          return <View key={a.action} style={{ gap: 4 }}>
+            <Button
+              label={a.label}
+              danger={isMarkBadDebt && a.enabled}
+              secondary={!isSelected && !isMarkBadDebt && !isPrimaryAction}
+              disabled={disabled || !a.enabled}
+              onPress={() => selectLifecycleAction(a.action)}
+            />
+            {!a.enabled && !!a.reason && <Text style={{ color: theme.muted, fontSize: 12.5, lineHeight: 18 }}>{a.reason}</Text>}
+          </View>;
+        })}
+      </View>
+    </View>
+    {selectedAction && <View style={{ gap: 14, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 14 }}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+        <Text accessibilityRole="header" style={{ ...text, fontSize: 17, fontWeight: '800', flex: 1 }}>{selectedAction.label}</Text>
+        <Button size="sm" secondary label="Đóng" disabled={disabled} onPress={() => { setAction(''); setError(''); }} />
+      </View>
       <Text style={text}>{descriptions[selectedAction.action]}</Text>
       {!selectedAction.enabled && <InlineError message={selectedAction.reason || 'Chưa đủ điều kiện thực hiện.'} />}
       <RentalDateTime label={action === 'hold' ? 'thực tế thu xe / bắt đầu bảo lưu' : action === 'resume' ? 'thực tế thuê lại' : 'thực tế xác nhận'} value={at} disabled={disabled} onChange={v => changed(() => setAt(v))} />
@@ -128,8 +171,8 @@ function LifecycleActionForm({ id, context, initialAction, disabled, onDirty, on
       <FormField label="Lý do / nội dung đối chiếu trạng thái" value={note} multiline maxLength={1000} editable={!disabled} onChangeText={v => changed(() => setNote(v))} hint="Không bắt buộc; ghi nội dung thực tế để giữ trong lịch sử." />
       <ChoiceField label="Xác nhận đã đối chiếu thực tế" value={confirmed ? 'yes' : 'no'} disabled={disabled} choices={[{ value: 'no', label: 'Chưa xác nhận' }, { value: 'yes', label: action === 'complete_hold' ? 'Đã đối chiếu tổn thất công nợ và đồng ý hoàn thành' : action === 'close_bad_debt' ? 'Đã nhận đủ xe; khoản chưa thanh toán tiếp tục theo dõi và thu hồi' : 'Đã đối chiếu tình trạng xe, tiền và lịch thuê' }]} onChange={v => changed(() => setConfirmed(v === 'yes'))} />
       {!!error && <InlineError message={error} />}
-      <Button label="Kiểm tra thao tác tình trạng" disabled={disabled || !selectedAction.enabled} onPress={review} />
-    </>}
+      <Button danger={selectedAction.action === 'mark_bad_debt'} label={selectedAction.action === 'mark_bad_debt' ? 'Xác nhận chuyển sang Nợ xấu' : 'Kiểm tra thao tác tình trạng'} disabled={disabled || !selectedAction.enabled} onPress={review} />
+    </View>}
     {picker && inventory.data && <DraftVehiclePicker lifecycleId={id} stores={inventory.data.stores} initialStore="" selectedIds={vehicles.map(v => v.id)} onClose={() => setPicker(false)} onPick={v => { changed(() => { setVehicles(rows => rows.some(r => r.id === v.id) ? rows : [...rows, v]); }); setPicker(false); }} />}
   </Card>;
 }

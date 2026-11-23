@@ -32,7 +32,12 @@ function OwnershipTermsEditor({ id }: { id: string }) {
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, gap: 16, maxWidth: 760, width: '100%', alignSelf: 'center' }}>
       {!!write.error && <InlineError message={write.error} />}{!!error && <InlineError message={error} />}{!!write.notice && <Text style={muted}>{write.notice}</Text>}
       {write.query.isPending && <StateView title="Đang tải thời hạn thuê sở hữu" loading />}{write.query.isError && <StateView title="Chưa tải được thời hạn thuê sở hữu" message={(write.query.error as Error).message} retry={() => void write.query.refetch()} />}
-      {write.key && <Card style={{ gap: 12 }}><Text selectable style={muted}>Mã lần sửa: {write.key}</Text>{write.proof ? <><Text style={text}>Đã lưu thời hạn / mức đóng · Hồ sơ #{write.proof.receipt.id}</Text><Text style={muted}>Phiên bản lần lưu: {write.proof.receipt.revision}. Thông tin hiện tại có thể đã được sửa tiếp.</Text><Button label="Đã xem kết quả, mở hồ sơ" loading={write.busy} onPress={() => void write.acknowledge(disablePrevention)} /></> : <Button label="Đối chiếu kết quả thời hạn sở hữu" loading={write.busy} onPress={() => void write.resolve()} />}</Card>}
+      {write.key && <Card style={{ gap: 12 }}><Text selectable style={muted}>Mã lần sửa: {write.key}</Text>{write.proof ? <>
+        <Text style={text}>Đã lưu thời hạn / mức đóng · Hồ sơ #{write.proof.receipt.id}</Text>
+        <Text style={muted}>Phiên bản lần lưu: {write.proof.receipt.revision}. Thông tin hiện tại có thể đã được sửa tiếp.</Text>
+        <Button label="Đã xem kết quả, mở hồ sơ" loading={write.busy} onPress={() => void write.acknowledge(disablePrevention)} />
+        <Button secondary label="Gửi Telegram hợp đồng" loading={write.busy} onPress={() => void write.acknowledge(disablePrevention, () => router.replace({ pathname: '/contract-telegram/[id]', params: { id } }))} />
+      </> : <Button label="Đối chiếu kết quả thời hạn sở hữu" loading={write.busy} onPress={() => void write.resolve()} />}</Card>}
       {p && value && !write.key && <>
         <Card style={{ gap: 10 }}>
           <Text accessibilityRole="header" style={{ ...text, fontSize: 20, fontWeight: '800' }}>{p.code}</Text>
@@ -46,6 +51,7 @@ function OwnershipTermsEditor({ id }: { id: string }) {
         <ChoiceField label="Thời hạn thuê sở hữu" value={value.term_months} choices={ownershipTermChoices.map(t => ({ ...t }))} disabled={disabled} onChange={v => change({ ...value, term_months: v as MobileOwnershipTerm })} />
         <FormField label="Tổng mức đóng mỗi ngày (VND)" value={value.daily_amount || ''} keyboardType="number-pad" maxLength={13} editable={!disabled} onChangeText={v => change({ ...value, daily_amount: v || null })} hint="Để trống nếu chưa xác định. Nhập tổng mức đóng của tất cả xe trong hợp đồng." />
         {p.can_edit && <Button label="Kiểm tra thời hạn / mức đóng" disabled={disabled} onPress={check} />}
+        <Button secondary label="Gửi Telegram hợp đồng" disabled={write.busy} onPress={() => router.push({ pathname: '/contract-telegram/[id]', params: { id } })} />
         <View style={{ flexDirection: 'row', gap: 10 }}>
           <Button size="sm" equalWidth secondary label="Tải lại thời hạn sở hữu mới nhất" disabled={write.busy || write.query.isFetching} onPress={() => setReload(true)} />
           <Button size="sm" equalWidth secondary label="Xem lịch sử thay đổi đầy đủ" onPress={() => router.push({ pathname: '/contract-history/[id]', params: { id } })} />

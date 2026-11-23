@@ -1,6 +1,7 @@
 import { KeyboardFormScrollView } from "./keyboard-form-scroll-view";
 import {useEffect,useRef,useState} from 'react';
 import {Keyboard,Pressable,Text,View,type ScrollViewInstance} from 'react-native';
+import {router} from 'expo-router';
 import {keepPreviousData,useQuery} from '@tanstack/react-query';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import type {MobileRecoveryInput,MobileRecoveryItem,MobileRecoveryPreparation,MobileRecoveryPreview} from '../../../shared/mobile-bad-debt-recovery';
@@ -161,5 +162,6 @@ function RecoveryForm({id}:{id:string}) {
         <Button size="sm" equalWidth label="Tải lại xe cần thu hồi" secondary disabled={locked} onPress={()=>setReload(true)}/>
       </View>
     </>}
+    <Button secondary label="Gửi Telegram hợp đồng" disabled={action.busy} onPress={()=>router.push({pathname:'/contract-telegram/[id]',params:{id,eventKind:'return'}})}/>
   </>);
 }

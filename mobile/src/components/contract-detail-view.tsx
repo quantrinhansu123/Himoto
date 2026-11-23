@@ -38,13 +38,15 @@ import { Button, Card, InfoBanner, InlineError, KeyValueRow, StatusBadge } from 
 import { ConfirmEdit } from "./editor-sheet";
 import { SectionTabs } from "./section-tabs";
 import { ContractApprovalSummary } from "./contract-approval-summary";
+import { ContractPhotosTab } from "./contract-photos-tab";
 
-type ContractTab = "overview" | "customer" | "finance" | "actions";
+type ContractTab = "overview" | "customer" | "finance" | "photos" | "actions";
 
 const CONTRACT_TABS = [
   { id: "overview" as ContractTab, label: "Hợp đồng & Xe" },
   { id: "customer" as ContractTab, label: "Khách hàng" },
   { id: "finance" as ContractTab, label: "Chi phí & Thu chi" },
+  { id: "photos" as ContractTab, label: "Ảnh thuê / trả xe" },
   { id: "actions" as ContractTab, label: "Nghiệp vụ quầy" },
 ] as const;
 
@@ -252,6 +254,19 @@ export function ContractDetailView({
               )}
             </View>
 
+            <Button
+              size="sm"
+              secondary
+              label="Gửi Telegram"
+              icon={<MessageCircle size={15} color={theme.text} />}
+              onPress={() =>
+                router.push({
+                  pathname: "/contract-telegram/[id]",
+                  params: { id, ...(status === "wait_payment" ? { eventKind: "return" } : {}) },
+                })
+              }
+            />
+
             {isBadDebt && permissions.includes("contracts.settle") && (
               <Button
                 size="sm"
@@ -298,6 +313,15 @@ export function ContractDetailView({
                 secondary
                 label="Khách không đến nhận xe"
                 onPress={() => router.push({ pathname: "/contract-operation/[action]/[id]", params: { id, action: "no_show" } })}
+              />
+            )}
+            {status === "deposit_contract" && (
+              <Button
+                size="sm"
+                secondary
+                label="Gửi Telegram hợp đồng cọc"
+                icon={<MessageCircle size={15} color={theme.text} />}
+                onPress={() => router.push({ pathname: "/contract-telegram/[id]", params: { id, eventKind: "reservation" } })}
               />
             )}
             {status === "deposit_contract" && permissions.includes("contracts.delete") && (
@@ -448,7 +472,7 @@ export function ContractDetailView({
                 <Button
                   size="sm"
                   secondary
-                  label="Giấy tờ & CCCD"
+                  label="Giấy tờ và CCCD trong hợp đồng"
                   icon={<FileText size={14} color={theme.text} />}
                   onPress={() =>
                     router.push({
@@ -573,7 +597,10 @@ export function ContractDetailView({
           </View>
         )}
 
-        {/* TAB 4: ACTIONS & TOOLS (Nghiệp vụ quầy) */}
+        {/* TAB 4: PHOTOS (Ảnh thuê / trả xe) */}
+        {activeTab === "photos" && <ContractPhotosTab id={id} />}
+
+        {/* TAB 5: ACTIONS & TOOLS (Nghiệp vụ quầy) */}
         {activeTab === "actions" && (
           <View style={{ gap: 12 }}>
             {/* Tiện ích in ấn & truyền thông */}

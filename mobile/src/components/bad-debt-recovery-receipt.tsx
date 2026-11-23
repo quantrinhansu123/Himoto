@@ -56,13 +56,14 @@ function Receipt({id}:{id:string}) {
     finally{running.current=false;if(alive.current&&epoch.current===current)setBusy(false);}
   }
   const openContract=()=>router.dismissTo({pathname:'/record/[kind]/[id]',params:{kind:'contracts',id}});
-  async function acknowledge(){
+  async function acknowledge(telegram = false){
     if(!key||!receipt||receipt.requestId!==key||running.current)return;
     running.current=true;setBusy(true);setError('');const current=epoch.current;
     try{
       await pendingWrites.complete(scope,operation,key);if(!alive.current||epoch.current!==current)return;
       for(const queryKey of [['record'],['catalogue'],['overview'],['recovery-preparation'],['return-preparation'],['swap-preparation'],['finance'],['contract-history'],['vehicle-profile'],['vehicle-history'],['fleet-inventory']])void cache.invalidateQueries({queryKey});
-      openContract();
+      if(telegram)router.replace({pathname:'/contract-telegram/[id]',params:{id,eventKind:'return'}});
+      else openContract();
     }catch(cause){if(alive.current&&epoch.current===current)setError((cause as Error).message);}
     finally{running.current=false;if(alive.current&&epoch.current===current)setBusy(false);}
   }
@@ -106,6 +107,7 @@ function Receipt({id}:{id:string}) {
           <Text style={{color:theme.muted,fontSize:13.5,lineHeight:20}}>Không phát sinh thu hoặc hoàn tiền. Kiểm tra tình trạng kho hiện tại trước khi bàn giao xe tiếp.</Text>
         </Card>
         <Button label="Xác nhận đã kiểm tra phiếu thu hồi" loading={busy} onPress={()=>{void acknowledge();}}/>
+        <Button secondary label="Gửi Telegram hợp đồng" disabled={busy} onPress={()=>{void acknowledge(true);}}/>
         <Button label="Tải lại phiếu thu hồi" secondary loading={busy} onPress={()=>{void load();}}/>
       </>}
     </ScrollView>

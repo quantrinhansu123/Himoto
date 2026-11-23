@@ -96,6 +96,7 @@ function CollectionForm({ id, version }: { id: string; version?: string }) {
         {!saved.billCurrent && <Text style={{ color: theme.warning, fontSize: 13.5, lineHeight: 20 }}>Ảnh bill trong hồ sơ đã thay đổi sau lần thu. Kết quả khoản thu gốc vẫn được giữ.</Text>}
         {!!action.error && <InlineError message={action.error} />}
         <Button label="Xác nhận đã kiểm tra khoản thu theo kỳ" loading={action.checking} onPress={() => { void action.acknowledge(); }} />
+        <Button secondary label="Gửi Telegram gia hạn" loading={action.checking} onPress={() => { void action.acknowledge(() => router.replace({ pathname: "/contract-telegram/[id]", params: { id, event: `renewal:${id}:${saved.version}`, onlyEvent: "1" } })); }} />
       </Card></ScrollView>
     </SafeAreaView>;
   }
@@ -146,6 +147,7 @@ function CollectionForm({ id, version }: { id: string; version?: string }) {
           <Button secondary label={billLedger.pending?"Đối chiếu bill đang chờ xác nhận":"Chọn hoặc thay bill khoản thu theo kỳ"} disabled={locked} onPress={() => { Keyboard.dismiss(); router.push({ pathname: "/collection-bill/[id]", params: { id, version: String(data.period.version), returnTo: "collection" } }); }} />
           <Button secondary label={billKey && reviewedBill === billKey ? "Đã rà soát bill khoản thu theo kỳ" : "Xác nhận bill đúng khoản thu theo kỳ"} disabled={locked || !billKey || readyBill !== billKey || bill.isError || bill.isFetching} onPress={() => setReviewedBill(billKey)} />
         </Card>
+        <Button secondary label="Gửi Telegram kỳ gia hạn" disabled={action.busy || action.checking} onPress={() => router.push({ pathname: "/contract-telegram/[id]", params: { id, event: `renewal:${id}:${data.period.version}`, onlyEvent: "1" } })} />
         <View style={{ flexDirection: "row", gap: 10 }}>
           <Button size="sm" equalWidth secondary label="Ẩn bàn phím" onPress={Keyboard.dismiss} />
           <Button size="sm" equalWidth secondary label="Tải lại số liệu thu theo kỳ" loading={query.isFetching || bill.isFetching} disabled={action.busy || action.checking} onPress={() => { setReviewedBill(""); setImageEpoch(value => value + 1); void query.refetch(); void bill.refetch(); }} />

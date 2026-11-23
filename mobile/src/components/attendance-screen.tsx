@@ -11,6 +11,7 @@ import { Button, Card, Chip, InfoBanner, InlineError, KeyValueRow, PaginationBar
 import { ChoiceField } from '@/components/form-fields';
 import { DateField } from '@/components/date-field';
 import { EditorSheet } from '@/components/editor-sheet';
+import { ApiError } from '@/lib/api';
 import { captureAttendancePhoto, locateAttendance } from '@/lib/attendance-capture';
 import { loadAttendancePending, storeAttendancePending, clearAttendancePending, discardAttendancePending, refreshAttendancePendingLocation, type AttendancePending } from '@/lib/attendance-pending';
 import type { RecordMediaPhoto } from '@/lib/record-media-photo';
@@ -96,14 +97,44 @@ export function AttendanceScreen({ historyOnly = false }: { historyOnly?: boolea
         if (alive.current) setLocation(initial);
         return initial;
       }
+      initialLocationRef.current = null;
     }
-    setLocating(true);
+    if (alive.current) {
+      setError('');
+      setLocating(true);
+    }
     try {
       const fresh = await locateAttendance();
       if (alive.current) setLocation(fresh);
       return fresh;
     } finally {
       if (alive.current) setLocating(false);
+    }
+  }
+  async function submitClockAttempt(attempt: AttendancePending) {
+    const buildBody = () => supportFormData({ action: attempt.action, request_id: attempt.id, location: JSON.stringify(attempt.location) }, attempt.photo);
+    try {
+      await api!.clockAttendance(await buildBody());
+      return;
+    } catch (cause) {
+      if (!(cause instanceof ApiError) || cause.status !== 0 || cause.code !== 'NETWORK') throw cause;
+      // After returning from the system Camera app, Android (Xiaomi/Oppo/Vivo/Samsung) can drop idle sockets.
+      // Pause briefly, check if the server already recorded this idempotent request_id, then retry once with a fresh FormData.
+      await new Promise<void>(resolve => setTimeout(resolve, 900));
+      try {
+        const resolved = await api!.resolveAttendance(attempt.id);
+        if (resolved.result) return;
+      } catch {
+        // Proceed to fresh single retry below.
+      }
+      try {
+        await api!.clockAttendance(await buildBody());
+      } catch (retryCause) {
+        if (retryCause instanceof ApiError && retryCause.status === 0 && retryCause.code === 'NETWORK') {
+          throw Error('Không kết nối được máy chủ chấm công. Ảnh và mã chấm công đã được giữ trên máy — hãy kiểm tra Wi-Fi/4G rồi bấm "Thử lại lần này" hoặc "Đối chiếu lần chấm đang chờ".');
+        }
+        throw retryCause;
+      }
     }
   }
   async function save() {
@@ -122,8 +153,8 @@ export function AttendanceScreen({ historyOnly = false }: { historyOnly?: boolea
       }
     }
     if (attempt.photo.size <= 0) throw Error('Ảnh chấm công chờ không còn trên máy. Bấm "Chụp lại ảnh" để tạo lần chấm mới.');
-    const body = await supportFormData({ action: attempt.action, request_id: attempt.id, location: JSON.stringify(attempt.location) }, attempt.photo);
-    await api!.clockAttendance(body); await acknowledge(attempt.id);
+    await submitClockAttempt(attempt);
+    await acknowledge(attempt.id);
   }
   const copy = (text: string) => <Text style={{ color: theme.muted, fontSize: 13.5, lineHeight: 20 }}>{text}</Text>;
   const shiftSummaryLabel = query.data
@@ -253,9 +284,14 @@ export function AttendanceScreen({ historyOnly = false }: { historyOnly?: boolea
             if (coords) void Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${coords.latitude},${coords.longitude}`)}`);
           }} />
         </View>}
-        {!!error && <InlineError message={error} />}
+        {!!error && <View style={{ gap: 8 }}>
+          <InlineError message={error} />
+          {/(GPS|vị trí|quyền)/i.test(error) && (
+            <Button size="sm" secondary label="Mở cài đặt quyền vị trí" onPress={() => { void Linking.openSettings().catch(() => {}); }} />
+          )}
+        </View>}
         {pending && copy('Ảnh và mã gốc được giữ trên máy. Thử lại sẽ đối chiếu kết quả trước khi gửi.')}
-        <Button label={locating && busy ? 'Đang lấy vị trí…' : action === 'in' ? 'Xác nhận vào ca' : 'Xác nhận ra ca'} disabled={!pending && !photo} loading={busy} onPress={() => { void run(save); }} />
+        <Button label={locating && busy ? 'Đang lấy vị trí GPS…' : busy ? 'Đang gửi chấm công…' : action === 'in' ? 'Xác nhận vào ca' : 'Xác nhận ra ca'} disabled={!pending && !photo} loading={busy} onPress={() => { void run(save); }} />
         {!pending && !photo && copy('Chụp ảnh hiện tại để bật nút xác nhận chấm công.')}
       </ScrollView>
     </EditorSheet>}

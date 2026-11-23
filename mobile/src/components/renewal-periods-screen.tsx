@@ -73,6 +73,8 @@ function Periods({ id }: { id: string }) {
         </View>
         {data.canWrite && item.remaining > 0 && <Button label={`Thu cho kỳ gia hạn #${item.version}`} disabled={!data.available || stale || query.isFetching}
           onPress={() => router.push({ pathname: "/renewal-payment/[id]", params: { id, version: String(item.version) } })} />}
+        <Button size="sm" secondary label={`Gửi Telegram kỳ #${item.version}`}
+          onPress={() => router.push({ pathname: "/contract-telegram/[id]", params: { id, event: `renewal:${id}:${item.version}`, onlyEvent: "1" } })} />
       </Card>}
       ListFooterComponent={<View style={{ gap: 12, paddingTop: 8 }}>
         {query.isFetchNextPageError && <InlineError message="Chưa tải được các kỳ tiếp theo. Các kỳ đã tải vẫn được giữ." />}

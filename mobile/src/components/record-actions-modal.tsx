@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { router } from "expo-router";
 import {
+  AlertTriangle,
   ArrowLeftRight,
   BatteryCharging,
   CalendarPlus,
@@ -85,10 +86,16 @@ export function RecordActionsModal({
   const actions: RecordActionItem[] = [];
 
   if (kind === "contracts") {
+    const statusText = contextualStatusLabel("contracts", status) || statuses[status] || status || "hiện tại";
+    const isActiveRental = ["renting", "overdue", "wait_payment"].includes(status);
+    const isOwnership =
+      record.monitoring?.rentalType === "ownership" ||
+      record.monitoring?.rentalType === "ownership_cd";
+
     // 1. Xem chi tiết
     actions.push({
       id: "view",
-      label: "Xem chi tiết hợp đồng",
+      label: "Xem chi tiết",
       icon: Eye,
       onPress: () =>
         router.push({
@@ -97,129 +104,35 @@ export function RecordActionsModal({
         }),
     });
 
-    const statusText = contextualStatusLabel("contracts", status) || statuses[status] || status || "hiện tại";
-
-    // 2. Trả xe
-    if (has("contracts.return")) {
-      if (status === "completed") {
-        actions.push({
-          id: "return",
-          label: "Hồ sơ trả xe",
-          icon: RotateCcw,
-          color: "#4F46E5",
-          onPress: () => router.push({ pathname: "/return-correction/[id]", params: { id } }),
-        });
-      } else if (["renting", "overdue", "wait_payment"].includes(status)) {
-        actions.push({
-          id: "return",
-          label: "Trả xe tại quầy",
-          description: "Kiểm tra xe & kết thúc hợp đồng",
-          icon: RotateCcw,
-          color: "#4F46E5",
-          onPress: () =>
-            router.push({
-              pathname: "/return-editor/[id]",
-              params: { id },
-            }),
-        });
-      } else {
-        actions.push({
-          id: "return",
-          label: "Trả xe tại quầy",
-          blockedReason: status === "bad_debt"
-            ? "Hợp đồng đang nợ xấu — mở chi tiết để dùng chức năng Thu hồi xe nợ xấu."
-            : `Không thể trả xe khi hợp đồng đang ở trạng thái ${statusText}.`,
-          icon: RotateCcw,
-        });
-      }
+    // 2. Gửi Telegram (khớp Web: ẩn trên bản nháp)
+    if (status !== "draft") {
+      actions.push({
+        id: "telegram",
+        label: status === "cancelled" ? "Lịch sử Telegram / Thu hồi tin" : "Gửi Telegram",
+        description: "Xem trạng thái gửi và gửi thông báo Telegram",
+        icon: MessageCircle,
+        color: "#0284C7",
+        onPress: () =>
+          router.push({
+            pathname: "/contract-telegram/[id]",
+            params: { id, ...(status === "completed" || status === "wait_payment" ? { eventKind: "return" } : {}) },
+          }),
+      });
     }
 
-    // 3. Gia hạn
-    if (has("contracts.renew")) {
-      const isOwnership = record.monitoring?.rentalType === "ownership" || record.monitoring?.rentalType === "ownership_cd";
-      if (isOwnership) {
-        actions.push({
-          id: "renew",
-          label: "Gia hạn hợp đồng",
-          blockedReason: "Hợp đồng thuê sở hữu đóng tiền theo kỳ — không dùng chức năng gia hạn ngày/giờ.",
-          icon: CalendarPlus,
-        });
-      } else if (["renting", "overdue", "wait_payment", "bad_debt"].includes(status)) {
-        actions.push({
-          id: "renew",
-          label: "Gia hạn hợp đồng",
-          description: "Cập nhật ngày hẹn trả xe",
-          icon: CalendarPlus,
-          color: "#059669",
-          onPress: () =>
-            router.push({
-              pathname: "/renewal/[id]",
-              params: { id },
-            }),
-        });
-      } else {
-        actions.push({
-          id: "renew",
-          label: "Gia hạn hợp đồng",
-          blockedReason: `Chỉ gia hạn hợp đồng đang thuê, quá hạn, chờ thanh toán hoặc nợ xấu (hiện tại: ${statusText}).`,
-          icon: CalendarPlus,
-        });
-      }
-    }
+    // 3. Điền và in hợp đồng
+    actions.push({
+      id: "print",
+      label: "Điền và in hợp đồng",
+      icon: Printer,
+      onPress: () =>
+        router.push({
+          pathname: "/print/[kind]/[id]",
+          params: { kind: "contracts", id },
+        }),
+    });
 
-    // 4. Đổi xe
-    if (has("contracts.return")) {
-      if (["renting", "overdue", "wait_payment"].includes(status)) {
-        actions.push({
-          id: "swap",
-          label: "Đổi xe cho khách",
-          description: "Đổi sang xe khác trong kho",
-          icon: CarFront,
-          color: "#0284C7",
-          onPress: () =>
-            router.push({
-              pathname: "/swap-editor/[id]",
-              params: { id },
-            }),
-        });
-      } else {
-        actions.push({
-          id: "swap",
-          label: "Đổi xe cho khách",
-          blockedReason: `Chỉ đổi xe khi hợp đồng đang thuê, quá hạn hoặc chờ thanh toán (hiện tại: ${statusText}).`,
-          icon: CarFront,
-        });
-      }
-    }
-
-    // 5. Thu tiền
-    if (has("finance.write")) {
-      if (!["draft", "cancelled"].includes(status)) {
-        actions.push({
-          id: "payment",
-          label: "Thu tiền hợp đồng",
-          description: "Ghi nhận phiếu thu sổ quỹ",
-          icon: Wallet,
-          color: "#9333EA",
-          onPress: () =>
-            router.push({
-              pathname: "/payment/[id]",
-              params: { id },
-            }),
-        });
-      } else {
-        actions.push({
-          id: "payment",
-          label: "Thu tiền hợp đồng",
-          blockedReason: status === "draft"
-            ? "Hợp đồng đang lưu nháp — phát hành hợp đồng trước khi ghi phiếu thu."
-            : "Hợp đồng đã hủy — không ghi thêm phiếu thu.",
-          icon: Wallet,
-        });
-      }
-    }
-
-    // 6. Mã QR chuyển khoản
+    // 4. Mã QR chuyển khoản (khớp Web: ẩn khi đã hủy)
     if (status !== "cancelled") {
       actions.push({
         id: "qr",
@@ -235,12 +148,12 @@ export function RecordActionsModal({
       });
     }
 
-    // 7. Gửi nhắc nợ
+    // 5. Nhắc nợ
     if (record.reminderEligible && (has("contracts.draft") || has("finance.write"))) {
       actions.push({
         id: "reminder",
-        label: "Gửi nhắc nợ qua Zalo",
-        description: "Gửi thông báo công nợ tự động",
+        label: "Nhắc nợ",
+        description: "Gửi thông báo công nợ qua Zalo",
         icon: MessageCircle,
         color: "#D97706",
         onPress: () =>
@@ -251,55 +164,106 @@ export function RecordActionsModal({
       });
     }
 
-    // 8. Gửi Telegram
-    if (status !== "draft") {
+    // 6. Thanh toán (khớp Web: ẩn trên draft / cancelled)
+    if (has("finance.write") && !["draft", "cancelled"].includes(status)) {
       actions.push({
-        id: "telegram",
-        label: "Telegram hợp đồng",
-        description: "Xem trạng thái gửi và thao tác theo quyền",
-        icon: MessageCircle,
+        id: "payment",
+        label: "Thanh toán",
+        description: "Ghi nhận phiếu thu / chi sổ quỹ",
+        icon: Wallet,
+        color: "#9333EA",
+        onPress: () =>
+          router.push({
+            pathname: "/payment/[id]",
+            params: { id },
+          }),
+      });
+    }
+
+    // 7. Giao xe & Bổ sung hồ sơ hợp đồng cọc (khớp Web: chỉ hiển thị với deposit_contract)
+    if (has("contracts.finalize") && status === "deposit_contract") {
+      actions.push({
+        id: "finalize_handover",
+        label: "Giao xe",
+        description: "Bàn giao xe từ hợp đồng đặt cọc",
+        icon: ShieldCheck,
+        color: "#16A34A",
+        onPress: () =>
+          router.push({
+            pathname: "/contract/[id]",
+            params: { id },
+          }),
+      });
+      actions.push({
+        id: "profile_edit",
+        label: "Bổ sung hồ sơ / Tiếp tục hợp đồng cọc",
+        description: "Cập nhật nhanh khách hàng, SĐT, CCCD, ghi chú",
+        icon: FilePenLine,
         color: "#0284C7",
         onPress: () =>
           router.push({
-            pathname: "/contract-telegram/[id]",
-            params: { id, ...(status === "completed" || status === "wait_payment" ? { eventKind: "return" } : {}) },
+            pathname: "/contract-edit/[id]",
+            params: { id, mode: "profile" },
           }),
       });
-    } else {
-      actions.push({
-        id: "telegram",
-        label: "Telegram hợp đồng",
-        blockedReason: "Bản nháp chưa phát hành — phát hành hợp đồng trước khi gửi Telegram.",
-        icon: MessageCircle,
-      });
     }
 
-    // 9. Thuê pin / sạc
-    if (!["draft", "cancelled"].includes(status)) {
+    // 8. Trả xe / Hồ sơ trả xe
+    if (has("contracts.return")) {
+      if (status === "completed") {
+        actions.push({
+          id: "return",
+          label: "Hồ sơ trả xe",
+          icon: RotateCcw,
+          color: "#4F46E5",
+          onPress: () => router.push({ pathname: "/return-correction/[id]", params: { id } }),
+        });
+      } else if (isActiveRental) {
+        actions.push({
+          id: "return",
+          label: "Trả xe",
+          description: "Ghi nhận trả xe trực tiếp trên hợp đồng này",
+          icon: RotateCcw,
+          color: "#4F46E5",
+          onPress: () =>
+            router.push({
+              pathname: "/return-editor/[id]",
+              params: { id },
+            }),
+        });
+      } else {
+        actions.push({
+          id: "return",
+          label: "Trả xe",
+          blockedReason: status === "bad_debt"
+            ? "Hợp đồng đang nợ xấu — mở chi tiết để dùng chức năng Thu hồi xe nợ xấu."
+            : `Không thể trả xe khi hợp đồng đang ở trạng thái ${statusText}.`,
+          icon: RotateCcw,
+        });
+      }
+    }
+
+    // 9. Chuyển sang Nợ xấu (khớp Web DataTable.tsx)
+    if (
+      isActiveRental &&
+      has("contracts.return") &&
+      (status === "overdue" || Boolean(record.monitoring?.collectionOverdue))
+    ) {
       actions.push({
-        id: "battery",
-        label: "Thuê pin / sạc",
-        description: "Hợp đồng pin kèm theo",
-        icon: BatteryCharging,
-        color: "#0D9488",
+        id: "mark_bad_debt",
+        label: "Chuyển sang Nợ xấu",
+        description: "Chuyển hợp đồng quá hạn sang Nợ xấu",
+        icon: AlertTriangle,
+        color: "#DC2626",
         onPress: () =>
-          router.push({ pathname: "/battery-contracts", params: { source: id } }),
+          router.push({
+            pathname: "/contract-lifecycle/[id]",
+            params: { id, action: "mark_bad_debt" },
+          }),
       });
     }
 
-    // 10. In hợp đồng
-    actions.push({
-      id: "print",
-      label: "Điền và in hợp đồng",
-      icon: Printer,
-      onPress: () =>
-        router.push({
-          pathname: "/print/[kind]/[id]",
-          params: { kind: "contracts", id },
-        }),
-    });
-
-    // Settlement is an individual server-projected grant, never implied by role.
+    // 10. Đóng hợp đồng nợ xấu (server-projected settle grant)
     if (status === "bad_debt" && has("contracts.settle")) {
       actions.push({
         id: "close_bad_debt",
@@ -315,21 +279,109 @@ export function RecordActionsModal({
       });
     }
 
-    // 12. Tiếp tục sửa bản nháp / Phát hành & giao xe giữ chỗ
-    if (has("contracts.finalize") && (status === "draft" || status === "deposit_contract")) {
+    // 11. Gia hạn
+    if (has("contracts.renew")) {
+      if (isOwnership) {
+        actions.push({
+          id: "renew",
+          label: "Gia hạn",
+          blockedReason: "Hợp đồng thuê sở hữu đóng tiền theo kỳ — không dùng chức năng gia hạn ngày/giờ.",
+          icon: CalendarPlus,
+        });
+      } else if (["renting", "overdue", "wait_payment", "bad_debt"].includes(status)) {
+        actions.push({
+          id: "renew",
+          label: "Gia hạn",
+          description: "Gia hạn trực tiếp trên hợp đồng",
+          icon: CalendarPlus,
+          color: "#059669",
+          onPress: () =>
+            router.push({
+              pathname: "/renewal/[id]",
+              params: { id },
+            }),
+        });
+      } else {
+        actions.push({
+          id: "renew",
+          label: "Gia hạn",
+          blockedReason: `Chỉ gia hạn hợp đồng đang thuê, quá hạn, chờ thanh toán hoặc nợ xấu (hiện tại: ${statusText}).`,
+          icon: CalendarPlus,
+        });
+      }
+    }
+
+    // 12. Đổi xe (khớp Web: chỉ hiển thị khi đang thuê / quá hạn / chờ thanh toán)
+    if (isActiveRental && has("contracts.return")) {
       actions.push({
-        id: "finalize_handover",
-        label: status === "draft" ? "Rà soát & Phát hành hợp đồng" : "Xác nhận giao xe giữ chỗ",
-        description: status === "draft" ? "Duyệt phát hành hợp đồng nháp" : "Bàn giao xe từ hợp đồng đặt cọc",
-        icon: ShieldCheck,
-        color: "#16A34A",
+        id: "swap",
+        label: "Đổi xe",
+        description: "Đổi xe trực tiếp trên hợp đồng",
+        icon: CarFront,
+        color: "#0284C7",
         onPress: () =>
           router.push({
-            pathname: "/contract/[id]",
+            pathname: "/swap-editor/[id]",
             params: { id },
           }),
       });
     }
+
+    // 13. Thuê pin / sạc (khớp Web: can('contracts.draft') && !draft/cancelled)
+    if (has("contracts.draft") && !["draft", "cancelled"].includes(status)) {
+      actions.push({
+        id: "battery",
+        label: "Thuê pin / sạc",
+        description: "Hợp đồng pin / sạc kèm theo",
+        icon: BatteryCharging,
+        color: "#0D9488",
+        onPress: () =>
+          router.push({ pathname: "/battery-contracts", params: { source: id } }),
+      });
+    }
+
+    // 14. Sửa loại HĐ / mức đóng ngày (khớp Web: hợp đồng thuê sở hữu)
+    if (
+      !["draft", "cancelled"].includes(status) &&
+      isOwnership &&
+      (has("contracts.draft") || has("contracts.settle"))
+    ) {
+      actions.push({
+        id: "ownership_terms",
+        label: "Sửa loại HĐ / mức đóng ngày",
+        description: "Cập nhật thời hạn sở hữu và mức đóng mỗi ngày",
+        icon: FilePenLine,
+        color: "#2563EB",
+        onPress: () =>
+          router.push({
+            pathname: "/ownership-terms/[id]",
+            params: { id },
+          }),
+      });
+    }
+
+    // 15. Duyệt hợp đồng (khớp Web: thuê sở hữu chưa duyệt)
+    if (
+      !["draft", "cancelled"].includes(status) &&
+      !record.approvedAt &&
+      isOwnership &&
+      has("contracts.finalize")
+    ) {
+      actions.push({
+        id: "approve",
+        label: "Duyệt hợp đồng",
+        description: "Xác nhận duyệt hợp đồng thuê sở hữu",
+        icon: ShieldCheck,
+        color: "#16A34A",
+        onPress: () =>
+          router.push({
+            pathname: "/contract-approval/[id]",
+            params: { id },
+          }),
+      });
+    }
+
+    // 16. Tiếp tục sửa bản nháp / Sửa hợp đồng
     if (has("contracts.draft") && status === "draft") {
       actions.push({
         id: "draft_edit",
@@ -342,8 +394,7 @@ export function RecordActionsModal({
             params: { id },
           }),
       });
-    }
-    if (has("contracts.draft") && status !== "draft") {
+    } else if (has("contracts.draft") && status !== "draft") {
       actions.push({
         id: "contract_edit",
         label: "Sửa hợp đồng",
@@ -357,90 +408,24 @@ export function RecordActionsModal({
           }),
       });
     }
-    if (has("contracts.draft") && status === "deposit_contract") {
-      actions.push({
-        id: "profile_edit",
-        label: "Bổ sung hồ sơ HĐ cọc",
-        description: "Cập nhật nhanh khách hàng, SĐT, CCCD, ghi chú",
-        icon: FilePenLine,
-        color: "#0284C7",
-        onPress: () =>
-          router.push({
-            pathname: "/contract-edit/[id]",
-            params: { id, mode: "profile" },
-          }),
-      });
-    }
-    if (has("contracts.settle") && ["renting", "overdue", "wait_payment", "completed"].includes(status)) {
-      actions.push({
-        id: "payment_settlement",
-        label: "Thanh toán & Đóng hợp đồng",
-        description: "Quyết toán công nợ, hoàn cọc và chốt hợp đồng",
-        icon: ShieldCheck,
-        color: "#16A34A",
-        onPress: () =>
-          router.push({
-            pathname: "/contract-operation/[action]/[id]",
-            params: { action: "payment_settlement", id },
-          }),
-      });
-    }
-    if (has("contracts.return") && status === "bad_debt") {
-      actions.push({
-        id: "bad_debt_recovery",
-        label: "Thu hồi xe nợ xấu",
-        description: "Nhận lại xe về kho từ hợp đồng nợ xấu",
-        icon: RotateCcw,
-        color: "#DC2626",
-        onPress: () =>
-          router.push({
-            pathname: "/recovery-editor/[id]",
-            params: { id },
-          }),
-      });
-    }
-    if ((has("contracts.draft") || has("contracts.return")) && !["draft", "cancelled"].includes(status)) {
-      actions.push({
-        id: "battery_swap",
-        label: "Đổi pin theo hợp đồng",
-        description: "Ghi nhận lượt đổi pin và minh chứng",
-        icon: BatteryCharging,
-        color: "#0D9488",
-        onPress: () =>
-          router.push({
-            pathname: "/contract-operation/[action]/[id]",
-            params: { action: "battery_swap", id },
-          }),
-      });
-    }
-    if ((has("contracts.draft") || has("finance.write")) && (status === "overdue" || status === "bad_debt" || Boolean(record.monitoring?.collectionOverdue))) {
-      actions.push({
-        id: "collection_followup",
-        label: "Ghi chú công nợ",
-        description: "Cập nhật kết quả liên hệ và hẹn thanh toán",
-        icon: MessageCircle,
-        color: "#D97706",
-        onPress: () =>
-          router.push({
-            pathname: "/collection-followup/[id]",
-            params: { id },
-          }),
-      });
-    }
+
+    // 17. Xóa bản nháp / Xóa hợp đồng cọc / Ẩn hợp đồng
     if ((status === "draft" ? (has("contracts.delete") || has("contracts.draft")) : has("contracts.delete")) && ["draft", "deposit_contract", "completed"].includes(status)) {
       actions.push({
         id: "delete_or_hide",
-        label: status === "draft" ? "Xóa bản nháp" : status === "deposit_contract" ? "Xóa HĐ đặt cọc" : "Ẩn hợp đồng khỏi danh sách",
-        description: status === "draft" ? "Xóa bản nháp chưa phát hành" : "Mở chi tiết hợp đồng để xác nhận thao tác",
+        label: status === "draft" ? "Xóa hẳn bản nháp" : status === "deposit_contract" ? "Xóa hợp đồng cọc" : "Ẩn hợp đồng",
+        description: status === "draft" ? "Xóa bản nháp chưa phát hành" : status === "deposit_contract" ? "Ẩn hợp đồng cọc và giải phóng xe" : "Mở chi tiết hợp đồng để xác nhận ẩn",
         icon: X,
         color: "#DC2626",
         onPress: () =>
           status === "draft"
             ? router.push({ pathname: "/draft-delete/[id]", params: { id } })
-            : router.push({
-                pathname: "/record/[kind]/[id]",
-                params: { kind: "contracts", id },
-              }),
+            : status === "deposit_contract"
+              ? router.push({ pathname: "/contract-operation/[action]/[id]", params: { action: "delete_reservation", id } })
+              : router.push({
+                  pathname: "/record/[kind]/[id]",
+                  params: { kind: "contracts", id },
+                }),
       });
     }
   } else if (kind === "vehicles") {

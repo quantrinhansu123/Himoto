@@ -46,6 +46,12 @@ export function chooseDraftType<T extends MobileContractFormInput>(
       ? addRentalMonths(input.draft.start_date, type.termMonths)
       : "";
   const nextEnd = autoEnd || input.draft.end_date;
+  const isOwnership =
+    type.rentalType === "ownership" || type.rentalType === "ownership_cd";
+  const mappedTerm =
+    type.termMonths && [6, 9, 12, 18, 24].includes(type.termMonths)
+      ? (String(type.termMonths) as MobileContractDraft["ownership_term_months"])
+      : undefined;
   return {
     ...input,
     rental_type: type.rentalType,
@@ -55,7 +61,7 @@ export function chooseDraftType<T extends MobileContractFormInput>(
       contract_type_name: type.label,
       contract_type_months:
         type.termMonths === null ? "" : String(type.termMonths),
-      ownership: type.rentalType === "ownership",
+      ownership: isOwnership,
       end_date: nextEnd,
       vehicles: autoEnd
         ? input.draft.vehicles.map((row) =>
@@ -69,8 +75,11 @@ export function chooseDraftType<T extends MobileContractFormInput>(
         : ["Theo ngày", "Theo tuần"].includes(input.draft.package_name)
           ? input.draft.package_name
           : "Theo ngày",
-      ...(type.rentalType === "ownership" && !input.draft.ownership_term_months
-        ? { ownership_term_months: "custom" as const }
+      ...(isOwnership
+        ? {
+            ownership_term_months:
+              mappedTerm ?? input.draft.ownership_term_months ?? ("custom" as const),
+          }
         : {}),
     },
   };

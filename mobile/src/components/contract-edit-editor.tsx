@@ -116,7 +116,12 @@ export function ContractEditEditor({ id, initialMode = 'full' }: { id: string; i
         {write.key && <Card style={{ gap: 14 }}>
           <Text accessibilityRole="header" style={{ ...text, fontSize: 20, fontWeight: '700' }}>{write.proof ? 'Đã ghi nhận lần sửa hợp đồng' : 'Cần đối chiếu lần sửa trước'}</Text>
           <Text selectable style={muted}>Mã lần sửa: {write.key}</Text>
-          {write.proof ? <><Text style={text}>Hợp đồng #{write.proof.receipt.id} · phiên bản ghi nhận {write.proof.receipt.revision}.</Text><Text style={muted}>Hồ sơ có thể đã được sửa tiếp trên web. Mở hồ sơ để xem trạng thái hiện tại.</Text><Button label="Đã kiểm tra, mở hợp đồng" loading={write.busy} onPress={() => void write.acknowledge(disablePrevention)} /></> : <><Text style={text}>Nếu đã ghi, mở kết quả gốc. Nếu chưa ghi, khóa mã cũ trước khi cho lưu lại.</Text><Button label="Đối chiếu lần sửa trước" loading={write.busy} onPress={() => void write.resolve()} /></>}
+          {write.proof ? <>
+            <Text style={text}>Hợp đồng #{write.proof.receipt.id} · phiên bản ghi nhận {write.proof.receipt.revision}.</Text>
+            <Text style={muted}>Hồ sơ có thể đã được sửa tiếp trên web. Mở hồ sơ để xem trạng thái hiện tại.</Text>
+            <Button label="Đã kiểm tra, mở hợp đồng" loading={write.busy} onPress={() => void write.acknowledge(disablePrevention)} />
+            <Button secondary label="Gửi Telegram hợp đồng" loading={write.busy} onPress={() => void write.acknowledge(disablePrevention, () => router.replace({ pathname: '/contract-telegram/[id]', params: { id } }))} />
+          </> : <><Text style={text}>Nếu đã ghi, mở kết quả gốc. Nếu chưa ghi, khóa mã cũ trước khi cho lưu lại.</Text><Button label="Đối chiếu lần sửa trước" loading={write.busy} onPress={() => void write.resolve()} /></>}
         </Card>}
         {value && d && props && options && <>
           <SegmentedBar
@@ -141,6 +146,18 @@ export function ContractEditEditor({ id, initialMode = 'full' }: { id: string; i
           {step === 0 && <>
             <DraftSection title="Hợp đồng và cơ sở">
               <ChoiceField label="Loại hợp đồng" value={d.contract_type_id || ''} choices={typeChoices} disabled={disabled || editMode === 'profile'} onChange={id => { const type = types.find(t => t.id === id); if (type) change(chooseDraftType(value, type)); }} />
+              {(d.ownership || value.rental_type === 'ownership' || value.rental_type === 'ownership_cd') && (
+                <ChoiceField
+                  label="Phân loại thuê sở hữu"
+                  value={d.ownership_term_months || 'custom'}
+                  disabled={disabled}
+                  choices={[
+                    { value: 'custom', label: 'Chưa phân loại' },
+                    ...['6', '9', '12', '18', '24'].map(term => ({ value: term, label: `${term} tháng` })),
+                  ]}
+                  onChange={term => set('ownership_term_months', term as MobileContractDraft['ownership_term_months'])}
+                />
+              )}
               <ChoiceField label="Trạng thái hợp đồng" value={value.status} disabled={disabled || profile?.input.status === 'bad_debt'} choices={issuedContractStatuses.map(status => ({ value: status, label: contextualStatusLabel('contracts', status) || status }))} onChange={status => change({ ...value, status })} />
               <Text style={muted}>{profile?.input.status === 'bad_debt' ? 'Hợp đồng nợ xấu giữ nguyên trạng thái khi sửa hồ sơ. Đóng qua thao tác Đóng hợp đồng nợ xấu.' : 'Trạng thái là nhãn điều chỉnh hồ sơ. Tiền và kho vẫn xử lý theo quy trình nghiệp vụ của hợp đồng.'}</Text>
               <ChoiceField label="Cơ sở ghi nhận hợp đồng" value={d.store_id} choices={stores.map(s => ({ value: String(s.id), label: s.name }))} disabled={disabled || editMode === 'profile' || !session?.user.allStores} onChange={v => set('store_id', v)} searchable />
@@ -196,7 +213,10 @@ export function ContractEditEditor({ id, initialMode = 'full' }: { id: string; i
               <Text style={muted}>Dữ liệu và thay đổi tiền/kho được lưu cùng lịch sử người sửa. Giấy tờ/ảnh đã lưu xem tại hồ sơ hợp đồng.</Text>
             </DraftSection>
           </>}
-          <Button secondary label="Tải lại bản mới nhất trước khi sửa" disabled={disabled || write.query.isFetching} onPress={() => setReload(true)} />
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <Button size="sm" equalWidth secondary label="Gửi Telegram hợp đồng" disabled={disabled} onPress={() => router.push({ pathname: '/contract-telegram/[id]', params: { id } })} />
+            <Button size="sm" equalWidth secondary label="Tải lại bản mới nhất" disabled={disabled || write.query.isFetching} onPress={() => setReload(true)} />
+          </View>
         </>}
       </ScrollView>
       {value && !write.key && <View style={{ padding: 16, gap: 10, backgroundColor: theme.surface, borderTopWidth: 1, borderTopColor: theme.border }}>

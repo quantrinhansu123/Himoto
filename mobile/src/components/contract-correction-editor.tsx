@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Keyboard, KeyboardAvoidingView, Platform, ScrollView, Text, View, type ScrollViewInstance } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Stack, usePreventRemove } from 'expo-router';
+import { Stack, router, usePreventRemove } from 'expo-router';
 import type { MobileCorrectionKind, MobileReceiptCorrections, MobileReceiptCorrectionInput, MobileRenewalCorrections, MobileRenewalCorrectionInput, MobileRenewalCorrectionPeriod, MobileRenewalCorrectionReceipt, MobileCorrectionAccount, MobileReceiptSplit } from '../../../shared/mobile-contract-corrections';
 import type { MobileCollectionMethod } from '@himoto/mobile-contract';
 import { validDraftTime } from '@himoto/mobile-draft-validation';
@@ -49,11 +49,19 @@ export function ContractCorrectionEditor({ id, kind }: { id: string; kind: Mobil
         {write.key && <Card style={{ gap: 14 }}>
           <Text accessibilityRole="header" style={{ ...text, fontSize: 20, fontWeight: '700' }}>{write.proof ? 'Đã ghi nhận sửa khoản thu' : 'Cần đối chiếu lần sửa trước'}</Text>
           <Text selectable style={muted}>Mã lần sửa: {write.key}</Text>
-          {write.proof ? <><Text style={text}>Hợp đồng #{write.proof.receipt.id} · phiên bản ghi nhận {write.proof.receipt.revision}.</Text><Text style={muted}>Mở hợp đồng để xem số liệu hiện tại. Kết quả này xác nhận lần sửa gốc.</Text><Button label="Đã kiểm tra, mở hợp đồng" loading={write.busy} onPress={() => void write.acknowledge(disablePrevention)} /></> : <><Text style={text}>Đối chiếu để mở kết quả đã ghi hoặc khóa mã chưa được ghi trước khi lưu lại.</Text><Button label="Đối chiếu lần sửa khoản thu" loading={write.busy} onPress={() => void write.resolve()} /></>}
+          {write.proof ? <>
+            <Text style={text}>Hợp đồng #{write.proof.receipt.id} · phiên bản ghi nhận {write.proof.receipt.revision}.</Text>
+            <Text style={muted}>Mở hợp đồng để xem số liệu hiện tại. Kết quả này xác nhận lần sửa gốc.</Text>
+            <Button label="Đã kiểm tra, mở hợp đồng" loading={write.busy} onPress={() => void write.acknowledge(disablePrevention)} />
+            <Button secondary label="Gửi Telegram hợp đồng" loading={write.busy} onPress={() => void write.acknowledge(disablePrevention, () => router.replace({ pathname: '/contract-telegram/[id]', params: { id } }))} />
+          </> : <><Text style={text}>Đối chiếu để mở kết quả đã ghi hoặc khóa mã chưa được ghi trước khi lưu lại.</Text><Button label="Đối chiếu lần sửa khoản thu" loading={write.busy} onPress={() => void write.resolve()} /></>}
         </Card>}
         {context && kind === 'receipts' && <ReceiptCorrectionForm key={formVersion} initial={context as MobileReceiptCorrections} disabled={disabled} onDirty={() => setDirty(true)} onReview={setConfirm} />}
         {context && kind === 'renewal' && <RenewalCorrectionForm key={formVersion} initial={context as MobileRenewalCorrections} disabled={disabled} onDirty={() => setDirty(true)} onReview={setConfirm} />}
-        {context && !write.key && <Button secondary label="Tải lại phiếu mới nhất trước khi sửa" disabled={disabled || write.query.isFetching} onPress={() => setReload(true)} />}
+        {context && !write.key && <View style={{ flexDirection: 'row', gap: 10 }}>
+          <Button size="sm" equalWidth secondary label="Gửi Telegram hợp đồng" disabled={disabled} onPress={() => router.push({ pathname: '/contract-telegram/[id]', params: { id } })} />
+          <Button size="sm" equalWidth secondary label="Tải lại phiếu mới nhất" disabled={disabled || write.query.isFetching} onPress={() => setReload(true)} />
+        </View>}
       </ScrollView>
     </KeyboardAvoidingView>
     {confirm && <ConfirmEdit title="Xác nhận sửa phiếu đã ghi?" message={`${context?.code || `Hợp đồng #${id}`}\n${reviewDetails}\nLý do: ${confirm.reason}\n\n${kind === 'receipts' ? 'Cọc và các khoản chia sẽ thay thế số liệu thực nhận của phiếu đang sửa. Ngày thu, loại phiếu và cơ sở cũ được giữ.' : 'Đối chiếu ngày thực hiện và số tiền thực tế đã thu riêng với phí và khoảng gia hạn. Tiền hợp đồng, tổng đã thu và hạn trả cập nhật theo các trường thay đổi.'}\n\nLịch sử trước–sau và người sửa được giữ. Tin Telegram đã gửi được giữ để đối chiếu.`} confirmLabel="Xác nhận sửa khoản thu" busy={write.busy} onCancel={() => setConfirm(null)} onConfirm={() => { const input = confirm; setConfirm(null); void write.save(input); }} />}

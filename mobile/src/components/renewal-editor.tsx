@@ -99,10 +99,8 @@ function RenewalForm({ id,backfill }: { id: string;backfill:boolean }) {
           {!result.current && <InlineError message="Hồ sơ hoặc phiếu thu đã được chỉnh sau lần gia hạn này. Đây là kết quả gốc đã lưu; kiểm tra hồ sơ hiện tại trước khi thao tác tiếp." />}
           {!!action.error && <InlineError message={action.error} />}
           <Button label="Xác nhận đã kiểm tra gia hạn" loading={action.checking} onPress={() => { void action.acknowledge(); }} />
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-            <Button size="sm" equalWidth secondary label="Mở Telegram gia hạn" loading={action.checking} onPress={() => { void action.acknowledge(() => router.replace({ pathname: "/contract-telegram/[id]", params: { id, event: `renewal:${id}:${result.version}`, onlyEvent: "1" } })); }} />
-            <Button size="sm" equalWidth secondary label="Mở Sổ quỹ" loading={action.checking} onPress={() => { void action.acknowledge(() => router.replace("/cashbook")); }} />
-          </View>
+          <Button secondary label="Gửi Telegram gia hạn" loading={action.checking} onPress={() => { void action.acknowledge(() => router.replace({ pathname: "/contract-telegram/[id]", params: { id, event: `renewal:${id}:${result.version}`, onlyEvent: "1" } })); }} />
+          <Button size="sm" secondary label="Mở Sổ quỹ" loading={action.checking} onPress={() => { void action.acknowledge(() => router.replace("/cashbook")); }} />
         </Card>
       </ScrollView>
     </SafeAreaView>;
@@ -201,6 +199,7 @@ function RenewalForm({ id,backfill }: { id: string;backfill:boolean }) {
             <Button secondary label={billKey && reviewedBill === billKey ? "Đã rà soát bill đúng giao dịch" : "Xác nhận bill đúng giao dịch"} disabled={locked || !billKey || readyBill !== billKey || bill.isError || bill.isFetching} onPress={() => setReviewedBill(billKey)} />
           </> : <Text style={{ color: theme.muted, fontSize: 15, lineHeight: 24 }}>Lưu ngày hẹn trả và phí thỏa thuận. Khoản chưa nhận không được ghi thành phiếu thu.</Text>}
         </Card>
+        <Button secondary label="Gửi Telegram hợp đồng" disabled={action.busy || action.checking} onPress={() => router.push({ pathname: "/contract-telegram/[id]", params: { id } })} />
         <View style={{ flexDirection: "row", gap: 10 }}>
           <Button size="sm" equalWidth secondary label="Ẩn bàn phím" onPress={Keyboard.dismiss} />
           <Button size="sm" equalWidth secondary label="Tải lại số liệu gia hạn" loading={query.isFetching || (collected && bill.isFetching)} disabled={action.busy || action.checking} onPress={() => { setReviewedBill(""); void query.refetch(); if (collected) void bill.refetch(); }} />

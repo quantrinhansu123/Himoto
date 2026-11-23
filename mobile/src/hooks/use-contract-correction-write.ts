@@ -56,10 +56,10 @@ export function useContractCorrectionWrite(id: string, kind: MobileCorrectionKin
     } catch (cause) { if (active(version)) setError((cause as Error).message); }
     finally { running.current = false; if (active(version)) setBusy(false); }
   }
-  async function acknowledge(beforeOpen: () => void) {
+  async function acknowledge(beforeOpen: () => void, next?: () => void) {
     if (!scope || !key || !proof || running.current) return;
     const version = epoch.current.generation; running.current = true; setBusy(true); setError('');
-    try { await pendingWrites.complete(scope, operation, key); if (active(version)) { invalidate(); beforeOpen(); router.dismissTo({ pathname: '/record/[kind]/[id]', params: { kind: 'contracts', id } }); } }
+    try { await pendingWrites.complete(scope, operation, key); if (active(version)) { invalidate(); beforeOpen(); if (next) next(); else router.dismissTo({ pathname: '/record/[kind]/[id]', params: { kind: 'contracts', id } }); } }
     catch (cause) { if (active(version)) setError((cause as Error).message); }
     finally { running.current = false; if (active(version)) setBusy(false); }
   }

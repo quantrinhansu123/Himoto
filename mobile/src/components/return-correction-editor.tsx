@@ -38,7 +38,12 @@ export function ReturnCorrectionEditor({ id, initialItem }: { id: string; initia
         {write.query.isError && <><Button secondary label="Tải lại các lượt trả" disabled={write.busy} onPress={() => void write.query.refetch()} /><Button secondary label="Mở thao tác cần đối chiếu" onPress={() => router.push('/(tabs)/account')} /></>}
         {write.key && <Card style={{ gap: 14 }}>
           <Text accessibilityRole="header" style={{ ...text, fontSize: 20, fontWeight: '700' }}>{write.proof ? 'Đã ghi nhận sửa hồ sơ trả xe' : 'Cần đối chiếu lần sửa trước'}</Text><Text selectable style={muted}>Mã lần sửa: {write.key}</Text>
-          {write.proof ? <><Text style={text}>Hợp đồng #{write.proof.receipt.id} · phiên bản ghi nhận {write.proof.receipt.revision}.</Text><Text style={muted}>Mở hợp đồng để xem hồ sơ hiện tại. Lịch sử giữ lần sửa và các phiếu đã thay thế.</Text><Button label="Đã kiểm tra, mở hợp đồng" loading={write.busy} onPress={() => void write.acknowledge(disablePrevention)} /></> : <><Text style={text}>Mở kết quả đã ghi hoặc khóa mã chưa ghi trước khi cho lưu lại.</Text><Button label="Đối chiếu sửa hồ sơ trả xe" loading={write.busy} onPress={() => void write.resolve()} /></>}
+          {write.proof ? <>
+            <Text style={text}>Hợp đồng #{write.proof.receipt.id} · phiên bản ghi nhận {write.proof.receipt.revision}.</Text>
+            <Text style={muted}>Mở hợp đồng để xem hồ sơ hiện tại. Lịch sử giữ lần sửa và các phiếu đã thay thế.</Text>
+            <Button label="Đã kiểm tra, mở hợp đồng" loading={write.busy} onPress={() => void write.acknowledge(disablePrevention)} />
+            <Button secondary label="Gửi Telegram trả xe" loading={write.busy} onPress={() => void write.acknowledge(disablePrevention, () => router.replace({ pathname: '/contract-telegram/[id]', params: { id, eventKind: 'return', ...(itemId ? { returnItemId: itemId } : {}) } }))} />
+          </> : <><Text style={text}>Mở kết quả đã ghi hoặc khóa mã chưa ghi trước khi cho lưu lại.</Text><Button label="Đối chiếu sửa hồ sơ trả xe" loading={write.busy} onPress={() => void write.resolve()} /></>}
         </Card>}
         {options && !write.key && <>
           <Text style={text}>{options.code} · {options.total} lượt xe đã trả</Text>

@@ -62,19 +62,29 @@ function actions(kind, row = record, permissions = user.permissions) {
 function actionKeys(kind, row, permissions) { return actions(kind, row, permissions).map(n => n.key); }
 async function main() {
   reset();
-  assert.deepEqual(actionKeys('contracts'), ['view','qr','telegram','battery','print']);
-  for (const [permission, enabled] of [['contracts.return',['return','swap']], ['contracts.renew',['renew']], ['finance.write',['payment','reminder']], ['contracts.draft',['reminder']]]) {
+  assert.deepEqual(actionKeys('contracts'), ['view','telegram','print','qr']);
+  for (const [permission, enabled] of [['contracts.return',['return','swap']], ['contracts.renew',['renew']], ['finance.write',['payment','reminder']], ['contracts.draft',['reminder','battery','contract_edit']]]) {
     const keys = actionKeys('contracts', record, ['contracts.read',permission]);
-    for (const key of ['return','swap','renew','payment','reminder']) assert.equal(keys.includes(key), enabled.includes(key), permission + ': ' + key);
+    for (const key of ['return','swap','renew','payment','reminder','battery','contract_edit']) assert.equal(keys.includes(key), enabled.includes(key), permission + ': ' + key);
+    for (const extra of ['payment_settlement','battery_swap','bad_debt_recovery','collection_followup']) assert(!keys.includes(extra), 'Extra non-web action must not appear in row menu: ' + extra);
   }
   assert(!actionKeys('contracts', { ...record, status: 'draft' }).includes('draft_edit'));
   assert(actionKeys('contracts', { ...record, status: 'draft' }, ['contracts.read','contracts.draft']).includes('draft_edit'));
+  assert(!actionKeys('contracts', { ...record, status: 'draft' }, ['contracts.read']).includes('telegram'));
   assert(!actionKeys('contracts', { ...record, reminderEligible: false }, ['contracts.read','finance.write']).includes('reminder'));
+  const overdueRow = { ...record, status: 'overdue' };
+  const markBadDebt = actions('contracts', overdueRow, ['contracts.read','contracts.return']).find(n => n.key === 'mark_bad_debt');
+  assert(markBadDebt, 'Overdue contract must expose Chuyển sang Nợ xấu in row menu');
+  markBadDebt.props.onPress(); assert.deepEqual(pushed.pop(), { pathname: '/contract-lifecycle/[id]', params: { id: '101', action: 'mark_bad_debt' } });
+  const ownershipRow = { ...record, monitoring: { rentalType: 'ownership' } };
+  assert(actionKeys('contracts', ownershipRow, ['contracts.read','contracts.draft']).includes('ownership_terms'));
+  assert(actionKeys('contracts', ownershipRow, ['contracts.read','contracts.finalize']).includes('approve'));
+  assert(!actionKeys('contracts', { ...ownershipRow, approvedAt: '2026-11-20T00:00:00Z' }, ['contracts.read','contracts.finalize']).includes('approve'));
   assert.deepEqual(actionKeys('vehicles'), ['view','history']);
   assert(actionKeys('vehicles', record, ['vehicles.read','vehicles.transfer']).includes('transfer'));
   assert(actionKeys('vehicles', record, ['vehicles.read','vehicles.write']).includes('status'));
   assert.deepEqual(actionKeys('customers', record, ['customers.read']), ['view']);
-  checks.push('Row menus require each projected write grant; read-only accounts keep only readable actions, draft/reminder eligibility is preserved');
+  checks.push('Row menus match web DataTable actions and require each projected write grant; read-only accounts keep only readable actions, draft/reminder/bad-debt/ownership eligibility is preserved');
 
   const bad = { ...record, status: 'bad_debt' };
   assert(!actionKeys('contracts', bad, ['contracts.read']).includes('close_bad_debt'));
@@ -82,8 +92,9 @@ async function main() {
   close.props.onPress(); assert.deepEqual(pushed.pop(), { pathname: '/contract-lifecycle/[id]', params: { id: '101', action: 'close_bad_debt' } });
   const { default: Lifecycle } = load('mobile/src/app/contract-lifecycle/[id].tsx', { '@/components/contract-lifecycle-editor': { ContractLifecycleEditor: 'Lifecycle' } });
   params = { id: '101', action: 'close_bad_debt' }; assert.equal(Lifecycle().props.initialAction, 'close_bad_debt');
+  params = { id: '101', action: 'mark_bad_debt' }; assert.equal(Lifecycle().props.initialAction, 'mark_bad_debt');
   params = { id: '101', action: 'arbitrary' }; assert.equal(Lifecycle().props.initialAction, undefined);
-  checks.push('Settlement grant opens contract lifecycle with close_bad_debt for server review, never the vehicle recovery writer; arbitrary action presets are ignored');
+  checks.push('Lifecycle presets accept close_bad_debt and mark_bad_debt for server review while arbitrary action presets are ignored');
 
   actions('customers').find(n => n.key === 'history').props.onPress();
   const history = pushed.pop(); assert.equal(history.params.customer_id, '101'); assert.equal(history.params.status, 'all'); assert(!Object.hasOwn(history.params, 'search'));
@@ -156,6 +167,7 @@ async function main() {
   });
   let tree = CatalogueScreen({ kind: 'contracts', initialStatus: 'draft', initialCustomerId: '101', customerName: 'Same Name', initialStore: 'all' });
   assert(text(tree).includes('Tất cả (10)')); assert(text(tree).includes('Đang thuê (7)'));
+  assert(!text(tree).includes('Tổng HĐ:'), 'Contracts catalogue must match web and omit top total contract summary banner');
   assert(text(tree).includes('Hợp đồng của khách: Same Name'));
   assert(statisticsOptions.enabled); const countKey = statisticsOptions.queryKey;
   await infiniteOptions.queryFn({ pageParam: 1, signal: new AbortController().signal });

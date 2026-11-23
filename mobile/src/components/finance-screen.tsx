@@ -5,6 +5,7 @@ import { useInfiniteQuery } from "@tanstack/react-query";
 import {
   CalendarClock,
   CheckCircle2,
+  MessageCircle,
   Pencil,
   PlusCircle,
   Wallet,
@@ -367,6 +368,18 @@ function FinanceContent({ id }: { id: string }) {
                     }
                   />
                 )}
+                <Button
+                  size="sm"
+                  secondary
+                  icon={<MessageCircle size={14} color={theme.text} />}
+                  label="Gửi Telegram"
+                  onPress={() =>
+                    router.push({
+                      pathname: "/contract-telegram/[id]",
+                      params: { id },
+                    })
+                  }
+                />
                 {canOpenCashbook && (
                   <Button
                     size="sm"
