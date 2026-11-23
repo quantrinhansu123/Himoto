@@ -823,8 +823,8 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingVertical: 3,
   },
-  kvLabel: { fontSize: 13, lineHeight: 19, flexShrink: 1 },
-  kvValue: { fontSize: 13.5, lineHeight: 19, textAlign: "right", flexShrink: 1 },
+  kvLabel: { fontSize: 13, lineHeight: 19, flexShrink: 0, maxWidth: "46%" },
+  kvValue: { fontSize: 13.5, lineHeight: 19, textAlign: "right", flex: 1, flexShrink: 1 },
   chip: {
     minHeight: 36,
     paddingHorizontal: 12,

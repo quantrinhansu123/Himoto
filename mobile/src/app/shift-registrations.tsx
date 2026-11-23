@@ -59,10 +59,7 @@ function Board({ initialDate, initialStaff }: { initialDate?: string; initialSta
   }
   return <SafeAreaView edges={['bottom', 'left', 'right']} style={{ flex: 1, backgroundColor: theme.background }}><FlatList data={staff} keyExtractor={person => String(person.id)} initialNumToRender={10} maxToRenderPerBatch={10} windowSize={5} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, paddingBottom: 36, gap: 11, maxWidth: 760, width: '100%', alignSelf: 'center' }} refreshControl={<RefreshControl refreshing={query.isRefetching} tintColor={theme.primary} onRefresh={() => void reload()} />}
     ListHeaderComponent={<View style={{ gap: 11 }}>
-      <View style={{ gap: 2 }}>
-        <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 22, fontWeight: '800' }}>Bảng đăng ký ca</Text>
-        <Text style={{ color: theme.muted, fontSize: 12.5 }}>{staff.length} nhân sự · {dates.length} ngày ({range.from.split('-').reverse().join('/')} → {range.to.split('-').reverse().join('/')})</Text>
-      </View>
+      <Text style={{ color: theme.muted, fontSize: 13 }}>{staff.length} nhân sự · {dates.length} ngày ({range.from.split('-').reverse().join('/')} → {range.to.split('-').reverse().join('/')})</Text>
       {/* Compact Month Stepper */}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.border, borderRadius: 11, padding: 6 }}>
         <Pressable accessibilityRole="button" accessibilityLabel="Tháng trước" disabled={locked || month === '2000-01'} onPress={() => moveMonth(-1)} style={{ minWidth: 38, minHeight: 36, borderRadius: 8, backgroundColor: theme.background, borderWidth: 1, borderColor: theme.border, alignItems: 'center', justifyContent: 'center', opacity: locked || month === '2000-01' ? 0.4 : 1 }}>

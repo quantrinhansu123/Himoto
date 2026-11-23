@@ -82,10 +82,7 @@ export function CashbookScreen({ initialStore }: { initialStore?: string }) {
   return <FlatList ref={list} data={current?.rows || []} keyExtractor={row => row.id} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, paddingBottom: 36, gap: 12, width: "100%", maxWidth: 760, alignSelf: "center" }}
     refreshControl={<RefreshControl refreshing={query.isRefetching||accounts.isRefetching} onRefresh={() => { if(valid) void query.refetch(); void accounts.refetch(); }} tintColor={theme.primary} />}
     ListHeaderComponent={<View style={{ gap: 12 }}>
-      <View style={{ gap: 3 }}>
-        <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 22, fontWeight: "800" }}>Sổ quỹ / Sổ két</Text>
-        <Text style={{ color: theme.muted, fontSize: 13 }}>{stores.find(row => String(row.id) === store)?.name || "Tất cả cơ sở"} · Theo ngày thực thu / thực chi</Text>
-      </View>
+      <Text style={{ color: theme.muted, fontSize: 13 }}>{stores.find(row => String(row.id) === store)?.name || "Tất cả cơ sở"} · Theo ngày thực thu / thực chi</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
         <Chip label={open ? "Ẩn bộ lọc" : activeFilterCount ? `Bộ lọc (${activeFilterCount})` : "Bộ lọc"} selected={open || activeFilterCount > 0} icon={<SlidersHorizontal size={14} color={open || activeFilterCount > 0 ? theme.primary : theme.text} />} onPress={() => setOpen(value => !value)} />
         {session!.user.permissions.includes('finance.write') && <Chip label="Hoàn cọc chờ duyệt" onPress={() => router.push('/deposit-refund-queue')} />}
@@ -128,15 +125,15 @@ export function CashbookScreen({ initialStore }: { initialStore?: string }) {
             <Text style={{ color: theme.primary, fontSize: 13, fontWeight: "700" }}>{expanded ? "Thu gọn" : "Đối chiếu chi tiết"}</Text>
           </Pressable>
         </View>
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+        <View style={{ flexDirection: "row", gap: 8 }}>
           {[
             { label: "Doanh thu thuê xe", amount: totals?.revenue, color: theme.text },
             { label: "Tổng thu thực tế", amount: totals?.income, color: theme.success },
             { label: "Tổng chi thực tế", amount: totals?.expense, color: theme.danger },
           ].map(metric => (
-            <View key={metric.label} style={{ flexGrow: 1, flexBasis: "30%", minWidth: 100, padding: 10, borderRadius: 10, backgroundColor: theme.background, borderWidth: 1, borderColor: theme.border, gap: 3 }}>
-              <Text style={{ color: theme.muted, fontSize: 11.5 }}>{metric.label}</Text>
-              <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={{ color: metric.color, fontWeight: "800", fontSize: 15 }}>{typeof metric.amount === "number" ? money(metric.amount) : "—"}</Text>
+            <View key={metric.label} style={{ flex: 1, minWidth: 0, paddingHorizontal: 8, paddingVertical: 10, borderRadius: 10, backgroundColor: theme.background, borderWidth: 1, borderColor: theme.border, gap: 4 }}>
+              <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.82} style={{ color: theme.muted, fontSize: 11 }}>{metric.label}</Text>
+              <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.68} style={{ color: metric.color, fontWeight: "800", fontSize: 13.5 }}>{typeof metric.amount === "number" ? money(metric.amount) : "—"}</Text>
             </View>
           ))}
         </View>

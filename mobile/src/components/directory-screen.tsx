@@ -43,14 +43,12 @@ export function DirectoryScreen({ kind, initialStore }: { kind: MobileDirectoryK
     getNextPageParam: page => page.page < page.pages ? page.page + 1 : undefined, enabled: allowed && (kind !== "stores" || storeTab === "stores") });
   if (!allowed) return <StateView title="Không có quyền xem danh bạ" />;
   const rows = [...new Map(query.data?.pages.flatMap(page => page.rows).map(row => [row.id, row])).values()];
-  const title = kind === "staff" ? "Nhân sự" : "Cơ sở & Ca làm việc";
   const stores = (workspace.data?.stores || []).filter(item => canReadAll || item.id === session!.user.storeId);
 
   if (kind === "stores" && storeTab === "work_shifts") {
     return (
       <SafeAreaView edges={['bottom', 'left', 'right']} style={{ flex: 1, backgroundColor: theme.background }}>
         <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 36, gap: 12, maxWidth: 760, width: "100%", alignSelf: "center" }}>
-          <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 22, fontWeight: "800" }}>{title}</Text>
           <SegmentedBar
             value={storeTab}
             onChange={setStoreTab}
@@ -82,7 +80,7 @@ export function DirectoryScreen({ kind, initialStore }: { kind: MobileDirectoryK
       refreshControl={<RefreshControl refreshing={query.isRefetching && !query.isFetchingNextPage} onRefresh={() => { void query.refetch(); }} tintColor={theme.primary} />}
       ListHeaderComponent={<View style={{ gap: 11 }}>
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-          <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 22, fontWeight: "800", flex: 1 }}>{title}</Text>
+          <Text style={{ color: theme.muted, fontSize: 13, flex: 1 }}>{kind === "staff" ? "Quản lý hồ sơ nhân sự và bộ phận" : "Quản lý danh sách cơ sở và ca làm việc"}</Text>
           {kind === "stores" && session!.user.permissions.includes("settings.write") && <Button size="sm" icon={<Plus size={14} color={theme.primaryText} />} label="Thêm cơ sở" onPress={() => router.push({ pathname: "/store-editor/[id]", params: { id: "new" } })} />}
           {kind === "staff" && session!.user.permissions.includes("hr.write") && <Button size="sm" icon={<Plus size={14} color={theme.primaryText} />} label="Thêm nhân sự" onPress={() => router.push({ pathname: "/staff-editor/[id]", params: { id: "new", store: session!.user.allStores ? store : String(session!.user.storeId || "") } })} />}
         </View>

@@ -104,10 +104,7 @@ export function DutyRosterScreen({initialStore}:{initialStore?:string}={}) {
       refreshControl={<RefreshControl refreshing={roster.isRefetching} onRefresh={() => { void roster.refetch(); }} tintColor={theme.primary} />}
       ListHeaderComponent={<View style={{ gap: 11 }}>
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-          <View style={{ flex: 1, gap: 2 }}>
-            <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 22, fontWeight: "800" }}>Lịch trực cơ sở</Text>
-            <Text style={{ color: theme.muted, fontSize: 12.5 }}>{visible.length} ca · {week.split("-").reverse().join("/")} → {days[6].split("-").reverse().join("/")}</Text>
-          </View>
+          <Text style={{ color: theme.muted, fontSize: 13, flex: 1 }}>{visible.length} ca · {week.split("-").reverse().join("/")} → {days[6].split("-").reverse().join("/")}</Text>
           {writable && <Button size="sm" icon={<Plus size={14} color={theme.primaryText} />} label="Tạo ca" onPress={() => setEditor({ row: null })} />}
         </View>
         {/* Compact Week Stepper Bar */}

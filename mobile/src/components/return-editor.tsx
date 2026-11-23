@@ -109,17 +109,17 @@ function ReturnForm({ id }: { id: string }) {
       confirmLabel="Xác nhận trả xe và quyết toán" onCancel={() => setConfirm(false)} onConfirm={() => { setConfirm(false); if (Object.values(qrPending).some(Boolean)) { setError('Còn ảnh QR chưa lưu. Lưu hoặc bỏ ảnh trước khi xác nhận.'); return; } void action.submit({ ...reviewInput, settlement_snapshot: review.snapshot }); }} />}
   </>;
   if (!action.checked) return <SafeAreaView edges={['left', 'right', 'bottom']} style={{ flex: 1, backgroundColor: theme.background }}>
-    <KeyboardFormScrollView contentContainerStyle={{ padding: 20 }}><Card style={{ gap: 16 }}>
-      <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 23, fontWeight: '700' }}>Kiểm tra thao tác trên thiết bị</Text>
+    <KeyboardFormScrollView contentContainerStyle={{ padding: 16 }}><Card style={{ gap: 14 }}>
+      <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 19, fontWeight: '700' }}>Kiểm tra thao tác trên thiết bị</Text>
       {!!action.error && <InlineError message={action.error} />}
       <Button label="Đọc lại thao tác trả xe" loading={action.checking} onPress={() => { void action.checkPending(); }} />
       <Button label="Mở Tài khoản để đối chiếu" secondary disabled={action.checking} onPress={action.openAccount} />
     </Card></KeyboardFormScrollView>{overlays}
   </SafeAreaView>;
   if (action.key) return <SafeAreaView edges={['left', 'right', 'bottom']} style={{ flex: 1, backgroundColor: theme.background }}>
-    <KeyboardFormScrollView contentContainerStyle={{ padding: 20 }}><Card style={{ gap: 16 }}>
-      <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 25, fontWeight: '800' }}>Trả xe đang chờ đối chiếu</Text>
-      <Text style={{ color: theme.muted, fontSize: 16, lineHeight: 25 }}>Kiểm tra phiếu gốc trước khi trả hoặc ghi tiền thêm. Nội dung đang nhập được giữ trong màn hình này.</Text>
+    <KeyboardFormScrollView contentContainerStyle={{ padding: 16 }}><Card style={{ gap: 14 }}>
+      <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 20, fontWeight: '800' }}>Trả xe đang chờ đối chiếu</Text>
+      <Text style={{ color: theme.muted, fontSize: 14, lineHeight: 21 }}>Kiểm tra phiếu gốc trước khi trả hoặc ghi tiền thêm. Nội dung đang nhập được giữ trong màn hình này.</Text>
       {!!action.error && <InlineError message={action.error} />}
       <Button label="Đối chiếu trả xe với máy chủ" loading={action.busy} onPress={() => setResolving(true)} />
       <Button label="Mở phiếu trả xe" secondary disabled={action.busy} onPress={action.openReceipt} />
@@ -128,141 +128,141 @@ function ReturnForm({ id }: { id: string }) {
   if (!data) return <><StateView title="Chuẩn bị trả xe" loading={query.isPending} message={query.isError ? (query.error as Error).message : undefined} retry={query.isError ? () => { void query.refetch(); } : undefined} />{overlays}</>;
   return <SafeAreaView edges={['left', 'right', 'bottom']} style={{ flex: 1, backgroundColor: theme.background }}>
 
-      <KeyboardFormScrollView
-        ref={scroll}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
-        contentContainerStyle={{padding:20,gap:18,maxWidth:760,width:'100%',alignSelf:'center'}}
-        refreshControl={
-          <RefreshControl
-            refreshing={query.isRefetching}
-            onRefresh={() => { void query.refetch(); }}
-            tintColor={theme.primary}
-          />
-        }
-      >
-        <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'800'}}>{['1. Chọn xe trả','2. Phí và giờ nhận xe','3. Tiền thực thu và hoàn','4. Rà soát quyết toán'][step]}</Text>
-        <Text style={{color:theme.muted,fontSize:14,lineHeight:21}}>{data.code} · đã chọn {lines.length} xe{data.ownership?' · thuê sở hữu':''}</Text>
-        {!!error&&<InlineError message={error}/>}
-        {!!action.error&&<InlineError message={action.error}/>}
-        {!!action.notice&&<Text accessibilityLiveRegion="polite" style={{color:theme.text,fontSize:14,lineHeight:21}}>{action.notice}</Text>}
-        {query.isError&&<InlineError message="Chưa cập nhật được dữ liệu trả xe. Giữ nội dung và tải lại trước khi rà soát."/>}
-        {!data.available&&<InlineError message={data.blockedReason||'Hợp đồng chưa cho phép trả xe.'}/>}
-        {step===0&&<>
-          <Card style={{gap:14}}>
-            <Text style={{color:theme.text,fontSize:14,lineHeight:21}}>Chọn các xe thực tế đã nhận. Có thể chọn qua nhiều trang, tối đa 50 xe mỗi lượt.</Text>
-            {data.items.rows.map(row=>{
-              const checked=lines.some(line=>line.vehicle.id===row.id);
-              return <Pressable key={row.id} accessibilityRole="checkbox" accessibilityLabel={'Chọn trả xe '+(row.license||row.name||row.vehicleId)} accessibilityState={{checked,disabled:locked||!row.available||query.isPlaceholderData}}
-                disabled={locked||!row.available||query.isPlaceholderData} onPress={()=>{
-                  if(!checked&&lines.length>=50){setError('Mỗi lượt chọn tối đa 50 xe.');return;}
-                  setLines(old=>checked?old.filter(line=>line.vehicle.id!==row.id):[...old,newReturnLine(row)]);
-                  setFees(null);setFeeInput(null);clearReview();
-                }} style={({pressed})=>({padding:14,gap:5,minHeight:64,borderWidth:1,borderColor:checked?theme.primary:theme.border,borderRadius:12,backgroundColor:checked?theme.tint:theme.surface,opacity:pressed?0.7:row.available?1:0.6})}>
-                <Text style={{color:theme.text,fontSize:16,fontWeight:'700'}}>{checked?'Đã chọn · ':''}{row.license||row.name||('Xe #'+row.vehicleId)}</Text>
-                <Text style={{color:theme.muted,fontSize:13.5,lineHeight:20}}>{row.returnAt?'Hạn trả '+dateTime(row.returnAt):'Chưa có hạn trả'}{row.completedAt?' · đã trả':''}</Text>
-                {!!row.blockedReason&&<Text style={{color:theme.danger,fontSize:13.5,lineHeight:20}}>{row.blockedReason}</Text>}
-              </Pressable>;
-            })}
-            {!data.items.rows.length&&<Text style={{color:theme.muted}}>Không có dòng xe để trả.</Text>}
-          </Card>
-          <Text style={{color:theme.muted,fontSize:13.5}}>Trang {data.items.page}/{data.items.pages}</Text>
-          <View style={{flexDirection:'row',gap:10}}>
-            <Button size="sm" equalWidth label="Trang xe trước" secondary disabled={page<=1||locked||query.isFetching} onPress={()=>{setPage(p=>p-1);top();}}/>
-            <Button size="sm" equalWidth label="Trang xe tiếp" secondary disabled={page>=data.items.pages||locked||query.isFetching} onPress={()=>{setPage(p=>p+1);top();}}/>
-          </View>
-          <Button label="Nhập phí trả xe" disabled={!lines.length||locked||!data.available||query.isFetching||query.isError} onPress={()=>{setLineIndex(0);setStep(1);top();}}/>
-        </>}
-        {step===1&&selected&&<>
-          <Card style={{gap:18}}>
-            <Text accessibilityRole="header" style={{color:theme.text,fontSize:21,fontWeight:'700'}}>Xe {lineIndex+1}/{lines.length} · {selected.vehicle.license||selected.vehicle.name}</Text>
-            <Text style={{color:theme.muted,fontSize:15,lineHeight:24}}>Hạn trả {dateTime(selected.vehicle.returnAt??'')} · giá ngày {selected.vehicle.dailyPrice===null?'cần đối chiếu':money(selected.vehicle.dailyPrice)}</Text>
-            <RentalDateTime label="nhận xe thực tế" value={selected.returnedAt} disabled={locked} onChange={returnedAt=>editLine({returnedAt})}/>
-            <FormField label="Đơn giá trễ mỗi giờ (VND)" value={selected.hourlyRate} keyboardType="number-pad" editable={!locked} maxLength={7} onChangeText={hourlyRate=>editLine({hourlyRate})}/>
-            <FormField label="Phí trễ đã đối chiếu (VND, tùy chọn)" hint="Để trống để dùng phí gợi ý theo giờ/ngày. Chỉ nhập thay thế khi đã đối chiếu." value={selected.lateOverride} keyboardType="number-pad" editable={!locked} maxLength={13} onChangeText={lateOverride=>editLine({lateOverride})}/>
-            <View style={{flexDirection:'row',flexWrap:'wrap',gap:8}}>
-              {(selected.lateOverride==='0'||Boolean(selected.vehicle.returnAt&&Number.isFinite(Date.parse(`${selected.returnedAt}:00+07:00`))&&Date.parse(`${selected.returnedAt}:00+07:00`)>Date.parse(selected.vehicle.returnAt)))&&(
-                <Button size="sm" secondary label={selected.lateOverride==='0'?'Đã miễn phí quá hạn (0đ)':'Không thu phí quá hạn (0đ)'} disabled={locked} onPress={()=>editLine({lateOverride:selected.lateOverride==='0'?'':'0'})}/>
-              )}
-              <Button size="sm" secondary label="Ảnh & video trả xe" disabled={locked} onPress={()=>router.push({pathname:'/record-media/[entity]/[id]',params:{entity:'contracts',id,kind:'return',referenceId:String(selected.vehicle.id)}})}/>
-            </View>
-            <FormField label="Phí sửa chữa (VND)" value={selected.repairFee} keyboardType="number-pad" editable={!locked} maxLength={13} onChangeText={repairFee=>editLine({repairFee})}/>
-            <FormField label="Nội dung sửa chữa" value={selected.repairNote} multiline editable={!locked} maxLength={1000} onChangeText={repairNote=>editLine({repairNote})}/>
-            {!data.ownership&&<FormField label="Giảm doanh thu trả sớm (VND)" value={selected.earlyDiscount} keyboardType="number-pad" editable={!locked} maxLength={13} onChangeText={earlyDiscount=>editLine({earlyDiscount})}/>}
-            {data.ownership&&<Text style={{color:theme.muted,fontSize:15,lineHeight:24}}>Tiền thuê sở hữu được đối chiếu theo lịch đóng tiền; không tự giảm vào kỳ đầu.</Text>}
-          </Card>
-          {lines.length>1&&<View style={{flexDirection:'row',gap:8}}>
-            <Button size="sm" equalWidth label="Xe trước" secondary disabled={lineIndex<=0||locked} onPress={()=>{setLineIndex(i=>i-1);top();}}/>
-            <Button size="sm" equalWidth label="Xe tiếp" secondary disabled={lineIndex>=lines.length-1||locked} onPress={()=>{setLineIndex(i=>i+1);top();}}/>
-          </View>}
-          <Button label="Tính phí và số dư" loading={previewing} disabled={locked&&!previewing||!data.available||query.isError} onPress={()=>{void calculateFees();}}/>
-          <Button label="Sửa lựa chọn xe" secondary disabled={locked} onPress={()=>{setStep(0);top();}}/>
-        </>}
-        {step===2&&fees&&<>
-          <Card style={{gap:10}}>
-            <Text accessibilityRole="header" style={{color:theme.text,fontSize:18,fontWeight:'700'}}>Phí sau khi nhận xe</Text>
-            <View style={{gap:2}}>
-              {fees.items.map(row=><KeyValueRow key={row.id} label={row.license||row.name} value={`Trễ ${money(row.lateFee)} · Sửa ${money(row.repairFee)} · Giảm sớm ${money(row.earlyDiscount)}`} />)}
-              <KeyValueRow label="Tổng phí hợp đồng" value={money(fees.after.totalAmount)} />
-              <KeyValueRow label="Còn thiếu" value={money(fees.after.rentalRemaining)} emphasize />
-              <KeyValueRow label="Cọc đang giữ & xe còn lại" value={`${money(fees.after.depositHeld)} · Còn ${fees.after.remainingItems} xe`} />
-            </View>
-            <Text style={{color:theme.muted,fontSize:13.5,lineHeight:20}}>Nhập tiền thực tế đã thu/hoàn. Phí gợi ý chưa phải khoản thu tiền.</Text>
-          </Card>
-          <Card style={{gap:14}}>
-            <Text accessibilityRole="header" style={{color:theme.text,fontSize:18,fontWeight:'700'}}>Khoản thực thu ({receipts.length})</Text>
-            {receipts.map((row,i)=><Button key={i} secondary label={'Sửa khoản thu '+(i+1)+' · '+(row.amount?money(Number(row.amount)):'chưa nhập tiền')} disabled={locked} onPress={()=>setReceiptIndex(i)}/>)}
-            {receipt&&<>
-              <ChoiceField label="Loại khoản thu" value={receipt.kind} choices={kinds} disabled={locked} onChange={kind=>{setReceipts(old=>old.map((r,i)=>i===receiptIndex?{...r,kind:kind as ReturnReceiptDraft['kind']}:r));clearReview();}}/>
-              {moneyFields(receipt,next=>setReceipts(old=>old.map((r,i)=>i===receiptIndex?{...next,kind:r.kind}:r)),'Khoản thu '+(receiptIndex+1))}
-              <Button label="Bỏ khoản thu này" secondary danger disabled={locked} onPress={()=>{setReceipts(old=>old.filter((_,i)=>i!==receiptIndex));setReceiptIndex(0);clearReview();}}/>
-            </>}
-            <Button label="Thêm khoản thực thu" secondary disabled={locked||receipts.length>=50} onPress={()=>{setReceiptIndex(receipts.length);setReceipts(old=>[...old,{...defaultMoney(),kind:'rental_debt'}]);clearReview();}}/>
-          </Card>
-          <Card style={{gap:14}}>
-            <Text accessibilityRole="header" style={{color:theme.text,fontSize:18,fontWeight:'700'}}>Hoàn tiền thuê</Text>
-            <Text style={{color:theme.muted,fontSize:13.5,lineHeight:20}}>Khoản giảm sớm có thể hoàn trước các khoản thu mới: {money(fees.after.rentalRefundable)}. Chỉ hoàn trong credit hợp lệ và tiền đã thu dư.</Text>
-            <ChoiceField label="Ghi hoàn tiền thuê" value={rentalRefund?'yes':'no'} choices={[{value:'no',label:'Chưa ghi hoàn thuê'},{value:'yes',label:'Đã thực tế hoàn thuê'}]} disabled={locked} onChange={v=>{setRentalRefund(v==='yes'?defaultMoney():null);clearReview();}}/>
-            {rentalRefund&&moneyFields(rentalRefund,setRentalRefund,'Hoàn thuê',true)}
-          </Card>
-          <Card style={{gap:14}}>
-            <Text accessibilityRole="header" style={{color:theme.text,fontSize:18,fontWeight:'700'}}>Hoàn cọc</Text>
-            <Text style={{color:theme.muted,fontSize:13.5,lineHeight:20}}>Đang giữ {money(fees.after.depositHeld)}. Chỉ hoàn khi đã nhận đủ xe và thu đủ công nợ.</Text>
-            <ChoiceField label="Ghi hoàn cọc" value={depositRefund?'yes':'no'} choices={[{value:'no',label:'Chưa hoàn cọc'},{value:'yes',label:'Đã thực tế hoàn cọc'}]} disabled={locked||!fees.after.closesRental} onChange={v=>{setDepositRefund(v==='yes'?defaultMoney():null);clearReview();}}/>
-            {depositRefund?moneyFields(depositRefund,setDepositRefund,'Hoàn cọc',true):fees.after.depositHeld>0&&<>
-              <Text style={{color:theme.muted,fontSize:13.5,lineHeight:20}}>Có thể tải ảnh QR hoàn cọc hoặc nhập tài khoản nhận để kế toán đối chiếu hoàn sau.</Text>
-              {lines[0]&&<RefundQrReader id={id} itemId={lines[0].vehicle.id} value={deferredRecipient} onPendingChange={pending=>setQrPending(old=>old.deferred===pending?old:{...old,deferred:pending})} onRead={(fields,before)=>{setDeferredRecipient(old=>mergeMobileRefundRecipient(old,fields,before));clearReview();}}/>}
-              <FormField label="Ngân hàng nhận hoàn cọc (tùy chọn)" value={deferredRecipient.bank} editable={!locked} onChangeText={bank=>{setDeferredRecipient(old=>({...old,bank}));clearReview();}} maxLength={150}/>
-              <FormField label="Số tài khoản nhận hoàn cọc (tùy chọn)" value={deferredRecipient.recipientAccount} editable={!locked} onChangeText={recipientAccount=>{setDeferredRecipient(old=>({...old,recipientAccount}));clearReview();}} maxLength={150}/>
-              <FormField label="Tên chủ tài khoản nhận hoàn cọc (tùy chọn)" value={deferredRecipient.recipientName} editable={!locked} onChangeText={recipientName=>{setDeferredRecipient(old=>({...old,recipientName}));clearReview();}} maxLength={150}/>
-            </>}
-          </Card>
-          <Button label="Rà soát quyết toán" loading={previewing} disabled={locked&&!previewing||query.isError} onPress={()=>{void calculateSettlement();}}/>
-          <Button label="Sửa giờ và phí xe" secondary disabled={locked} onPress={()=>{setStep(1);clearReview();top();}}/>
-        </>}
-        {step===3&&review&&<>
-          <Card style={{gap:12}}>
-            <Text accessibilityRole="header" style={{color:theme.text,fontSize:18,fontWeight:'700'}}>Xác nhận tiền thực tế</Text>
-            <View style={{gap:2}}>
-              <KeyValueRow label="Số xe nhận & còn lại" value={`Nhận ${review.fees.items.length} xe · Còn ${review.after.remainingItems} xe`} emphasize />
-              {review.payments.map((row,i)=><KeyValueRow key={i} label={`${row.kind==='rental_refund'?'Hoàn thuê':row.kind==='deposit_refund'?'Hoàn cọc':kinds.find(k=>k.value===row.kind)?.label} (${row.label})`} value={`${money(Number(row.amount))} · ${dateTime(row.paid_at+':00+07:00')}`} emphasize />)}
-              <KeyValueRow label="Tổng phí sau quyết toán" value={money(review.after.totalAmount)} />
-              <KeyValueRow label="Còn thiếu" value={money(review.after.rentalRemaining)} emphasize />
-              <KeyValueRow label="Cọc còn giữ" value={money(review.after.depositHeld)} />
-            </View>
-            {!review.payments.length&&<Text style={{color:theme.muted,fontSize:13.5}}>Không ghi khoản thu/hoàn trong lượt này.</Text>}
-            {review.settlement.refund_deferred&&<Text style={{color:theme.warning,fontSize:13.5}}>Cọc được giữ để hoàn sau.</Text>}
-            {review.overpayment&&<Text accessibilityRole="alert" style={{color:theme.warning,fontSize:13.5,lineHeight:20}}>Tiền thực thu vượt phần còn thiếu. Tổng phí tăng thêm {money(review.totals.totalIncrease)}. Chỉ xác nhận khi đúng khoản khách đã trả.</Text>}
-          </Card>
-          {review.overpayment&&!review.overpaymentAcknowledged&&<Button label="Xác nhận khoản thu vượt và rà soát lại" loading={previewing} onPress={()=>{void calculateSettlement(true);}}/>}
-          <Button label="Ghi trả xe và quyết toán" disabled={locked||query.isError||review.overpayment&&!review.overpaymentAcknowledged} onPress={()=>setConfirm(true)}/>
-          <Button label="Sửa khoản thu và hoàn" secondary disabled={locked} onPress={()=>{setStep(2);clearReview();top();}}/>
-        </>}
-        <View style={{flexDirection:'row',gap:10}}>
-          <Button size="sm" equalWidth label="Tải lại dữ liệu trả xe" secondary loading={query.isFetching} disabled={locked} onPress={()=>{void query.refetch();}}/>
-          <Button size="sm" equalWidth label="Ẩn bàn phím" secondary disabled={action.busy} onPress={()=>Keyboard.dismiss()}/>
+    <KeyboardFormScrollView
+      ref={scroll}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
+      contentContainerStyle={{ padding: 20, gap: 18, maxWidth: 760, width: '100%', alignSelf: 'center' }}
+      refreshControl={
+        <RefreshControl
+          refreshing={query.isRefetching}
+          onRefresh={() => { void query.refetch(); }}
+          tintColor={theme.primary}
+        />
+      }
+    >
+      <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 20, fontWeight: '800' }}>{['1. Chọn xe trả', '2. Phí và giờ nhận xe', '3. Tiền thực thu và hoàn', '4. Rà soát quyết toán'][step]}</Text>
+      <Text style={{ color: theme.muted, fontSize: 14, lineHeight: 21 }}>{data.code} · đã chọn {lines.length} xe{data.ownership ? ' · thuê sở hữu' : ''}</Text>
+      {!!error && <InlineError message={error} />}
+      {!!action.error && <InlineError message={action.error} />}
+      {!!action.notice && <Text accessibilityLiveRegion="polite" style={{ color: theme.text, fontSize: 14, lineHeight: 21 }}>{action.notice}</Text>}
+      {query.isError && <InlineError message="Chưa cập nhật được dữ liệu trả xe. Giữ nội dung và tải lại trước khi rà soát." />}
+      {!data.available && <InlineError message={data.blockedReason || 'Hợp đồng chưa cho phép trả xe.'} />}
+      {step === 0 && <>
+        <Card style={{ gap: 14 }}>
+          <Text style={{ color: theme.text, fontSize: 14, lineHeight: 21 }}>Chọn các xe thực tế đã nhận. Có thể chọn qua nhiều trang, tối đa 50 xe mỗi lượt.</Text>
+          {data.items.rows.map(row => {
+            const checked = lines.some(line => line.vehicle.id === row.id);
+            return <Pressable key={row.id} accessibilityRole="checkbox" accessibilityLabel={'Chọn trả xe ' + (row.license || row.name || row.vehicleId)} accessibilityState={{ checked, disabled: locked || !row.available || query.isPlaceholderData }}
+              disabled={locked || !row.available || query.isPlaceholderData} onPress={() => {
+                if (!checked && lines.length >= 50) { setError('Mỗi lượt chọn tối đa 50 xe.'); return; }
+                setLines(old => checked ? old.filter(line => line.vehicle.id !== row.id) : [...old, newReturnLine(row)]);
+                setFees(null); setFeeInput(null); clearReview();
+              }} style={({ pressed }) => ({ padding: 14, gap: 5, minHeight: 64, borderWidth: 1, borderColor: checked ? theme.primary : theme.border, borderRadius: 12, backgroundColor: checked ? theme.tint : theme.surface, opacity: pressed ? 0.7 : row.available ? 1 : 0.6 })}>
+              <Text style={{ color: theme.text, fontSize: 16, fontWeight: '700' }}>{checked ? 'Đã chọn · ' : ''}{row.license || row.name || ('Xe #' + row.vehicleId)}</Text>
+              <Text style={{ color: theme.muted, fontSize: 13.5, lineHeight: 20 }}>{row.returnAt ? 'Hạn trả ' + dateTime(row.returnAt) : 'Chưa có hạn trả'}{row.completedAt ? ' · đã trả' : ''}</Text>
+              {!!row.blockedReason && <Text style={{ color: theme.danger, fontSize: 13.5, lineHeight: 20 }}>{row.blockedReason}</Text>}
+            </Pressable>;
+          })}
+          {!data.items.rows.length && <Text style={{ color: theme.muted }}>Không có dòng xe để trả.</Text>}
+        </Card>
+        <Text style={{ color: theme.muted, fontSize: 13.5 }}>Trang {data.items.page}/{data.items.pages}</Text>
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          <Button size="sm" equalWidth label="Trang xe trước" secondary disabled={page <= 1 || locked || query.isFetching} onPress={() => { setPage(p => p - 1); top(); }} />
+          <Button size="sm" equalWidth label="Trang xe tiếp" secondary disabled={page >= data.items.pages || locked || query.isFetching} onPress={() => { setPage(p => p + 1); top(); }} />
         </View>
-      </KeyboardFormScrollView>
+        <Button label="Nhập phí trả xe" disabled={!lines.length || locked || !data.available || query.isFetching || query.isError} onPress={() => { setLineIndex(0); setStep(1); top(); }} />
+      </>}
+      {step === 1 && selected && <>
+        <Card style={{ gap: 18 }}>
+          <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 21, fontWeight: '700' }}>Xe {lineIndex + 1}/{lines.length} · {selected.vehicle.license || selected.vehicle.name}</Text>
+          <Text style={{ color: theme.muted, fontSize: 15, lineHeight: 24 }}>Hạn trả {dateTime(selected.vehicle.returnAt ?? '')} · giá ngày {selected.vehicle.dailyPrice === null ? 'cần đối chiếu' : money(selected.vehicle.dailyPrice)}</Text>
+          <RentalDateTime label="nhận xe thực tế" value={selected.returnedAt} disabled={locked} onChange={returnedAt => editLine({ returnedAt })} />
+          <FormField label="Đơn giá trễ mỗi giờ (VND)" value={selected.hourlyRate} keyboardType="number-pad" editable={!locked} maxLength={7} onChangeText={hourlyRate => editLine({ hourlyRate })} />
+          <FormField label="Phí trễ đã đối chiếu (VND, tùy chọn)" hint="Để trống để dùng phí gợi ý theo giờ/ngày. Chỉ nhập thay thế khi đã đối chiếu." value={selected.lateOverride} keyboardType="number-pad" editable={!locked} maxLength={13} onChangeText={lateOverride => editLine({ lateOverride })} />
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            {(selected.lateOverride === '0' || Boolean(selected.vehicle.returnAt && Number.isFinite(Date.parse(`${selected.returnedAt}:00+07:00`)) && Date.parse(`${selected.returnedAt}:00+07:00`) > Date.parse(selected.vehicle.returnAt))) && (
+              <Button size="sm" secondary label={selected.lateOverride === '0' ? 'Đã miễn phí quá hạn (0đ)' : 'Không thu phí quá hạn (0đ)'} disabled={locked} onPress={() => editLine({ lateOverride: selected.lateOverride === '0' ? '' : '0' })} />
+            )}
+            <Button size="sm" secondary label="Ảnh & video trả xe" disabled={locked} onPress={() => router.push({ pathname: '/record-media/[entity]/[id]', params: { entity: 'contracts', id, kind: 'return', referenceId: String(selected.vehicle.id) } })} />
+          </View>
+          <FormField label="Phí sửa chữa (VND)" value={selected.repairFee} keyboardType="number-pad" editable={!locked} maxLength={13} onChangeText={repairFee => editLine({ repairFee })} />
+          <FormField label="Nội dung sửa chữa" value={selected.repairNote} multiline editable={!locked} maxLength={1000} onChangeText={repairNote => editLine({ repairNote })} />
+          {!data.ownership && <FormField label="Giảm doanh thu trả sớm (VND)" value={selected.earlyDiscount} keyboardType="number-pad" editable={!locked} maxLength={13} onChangeText={earlyDiscount => editLine({ earlyDiscount })} />}
+          {data.ownership && <Text style={{ color: theme.muted, fontSize: 15, lineHeight: 24 }}>Tiền thuê sở hữu được đối chiếu theo lịch đóng tiền; không tự giảm vào kỳ đầu.</Text>}
+        </Card>
+        {lines.length > 1 && <View style={{ flexDirection: 'row', gap: 8 }}>
+          <Button size="sm" equalWidth label="Xe trước" secondary disabled={lineIndex <= 0 || locked} onPress={() => { setLineIndex(i => i - 1); top(); }} />
+          <Button size="sm" equalWidth label="Xe tiếp" secondary disabled={lineIndex >= lines.length - 1 || locked} onPress={() => { setLineIndex(i => i + 1); top(); }} />
+        </View>}
+        <Button label="Tính phí và số dư" loading={previewing} disabled={locked && !previewing || !data.available || query.isError} onPress={() => { void calculateFees(); }} />
+        <Button label="Sửa lựa chọn xe" secondary disabled={locked} onPress={() => { setStep(0); top(); }} />
+      </>}
+      {step === 2 && fees && <>
+        <Card style={{ gap: 10 }}>
+          <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 18, fontWeight: '700' }}>Phí sau khi nhận xe</Text>
+          <View style={{ gap: 2 }}>
+            {fees.items.map(row => <KeyValueRow key={row.id} label={row.license || row.name} value={`Trễ ${money(row.lateFee)} · Sửa ${money(row.repairFee)} · Giảm sớm ${money(row.earlyDiscount)}`} />)}
+            <KeyValueRow label="Tổng phí hợp đồng" value={money(fees.after.totalAmount)} />
+            <KeyValueRow label="Còn thiếu" value={money(fees.after.rentalRemaining)} emphasize />
+            <KeyValueRow label="Cọc đang giữ & xe còn lại" value={`${money(fees.after.depositHeld)} · Còn ${fees.after.remainingItems} xe`} />
+          </View>
+          <Text style={{ color: theme.muted, fontSize: 13.5, lineHeight: 20 }}>Nhập tiền thực tế đã thu/hoàn. Phí gợi ý chưa phải khoản thu tiền.</Text>
+        </Card>
+        <Card style={{ gap: 14 }}>
+          <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 18, fontWeight: '700' }}>Khoản thực thu ({receipts.length})</Text>
+          {receipts.map((row, i) => <Button key={i} secondary label={'Sửa khoản thu ' + (i + 1) + ' · ' + (row.amount ? money(Number(row.amount)) : 'chưa nhập tiền')} disabled={locked} onPress={() => setReceiptIndex(i)} />)}
+          {receipt && <>
+            <ChoiceField label="Loại khoản thu" value={receipt.kind} choices={kinds} disabled={locked} onChange={kind => { setReceipts(old => old.map((r, i) => i === receiptIndex ? { ...r, kind: kind as ReturnReceiptDraft['kind'] } : r)); clearReview(); }} />
+            {moneyFields(receipt, next => setReceipts(old => old.map((r, i) => i === receiptIndex ? { ...next, kind: r.kind } : r)), 'Khoản thu ' + (receiptIndex + 1))}
+            <Button label="Bỏ khoản thu này" secondary danger disabled={locked} onPress={() => { setReceipts(old => old.filter((_, i) => i !== receiptIndex)); setReceiptIndex(0); clearReview(); }} />
+          </>}
+          <Button label="Thêm khoản thực thu" secondary disabled={locked || receipts.length >= 50} onPress={() => { setReceiptIndex(receipts.length); setReceipts(old => [...old, { ...defaultMoney(), kind: 'rental_debt' }]); clearReview(); }} />
+        </Card>
+        <Card style={{ gap: 14 }}>
+          <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 18, fontWeight: '700' }}>Hoàn tiền thuê</Text>
+          <Text style={{ color: theme.muted, fontSize: 13.5, lineHeight: 20 }}>Khoản giảm sớm có thể hoàn trước các khoản thu mới: {money(fees.after.rentalRefundable)}. Chỉ hoàn trong credit hợp lệ và tiền đã thu dư.</Text>
+          <ChoiceField label="Ghi hoàn tiền thuê" value={rentalRefund ? 'yes' : 'no'} choices={[{ value: 'no', label: 'Chưa ghi hoàn thuê' }, { value: 'yes', label: 'Đã thực tế hoàn thuê' }]} disabled={locked} onChange={v => { setRentalRefund(v === 'yes' ? defaultMoney() : null); clearReview(); }} />
+          {rentalRefund && moneyFields(rentalRefund, setRentalRefund, 'Hoàn thuê', true)}
+        </Card>
+        <Card style={{ gap: 14 }}>
+          <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 18, fontWeight: '700' }}>Hoàn cọc</Text>
+          <Text style={{ color: theme.muted, fontSize: 13.5, lineHeight: 20 }}>Đang giữ {money(fees.after.depositHeld)}. Chỉ hoàn khi đã nhận đủ xe và thu đủ công nợ.</Text>
+          <ChoiceField label="Ghi hoàn cọc" value={depositRefund ? 'yes' : 'no'} choices={[{ value: 'no', label: 'Chưa hoàn cọc' }, { value: 'yes', label: 'Đã thực tế hoàn cọc' }]} disabled={locked || !fees.after.closesRental} onChange={v => { setDepositRefund(v === 'yes' ? defaultMoney() : null); clearReview(); }} />
+          {depositRefund ? moneyFields(depositRefund, setDepositRefund, 'Hoàn cọc', true) : fees.after.depositHeld > 0 && <>
+            <Text style={{ color: theme.muted, fontSize: 13.5, lineHeight: 20 }}>Có thể tải ảnh QR hoàn cọc hoặc nhập tài khoản nhận để kế toán đối chiếu hoàn sau.</Text>
+            {lines[0] && <RefundQrReader id={id} itemId={lines[0].vehicle.id} value={deferredRecipient} onPendingChange={pending => setQrPending(old => old.deferred === pending ? old : { ...old, deferred: pending })} onRead={(fields, before) => { setDeferredRecipient(old => mergeMobileRefundRecipient(old, fields, before)); clearReview(); }} />}
+            <FormField label="Ngân hàng nhận hoàn cọc (tùy chọn)" value={deferredRecipient.bank} editable={!locked} onChangeText={bank => { setDeferredRecipient(old => ({ ...old, bank })); clearReview(); }} maxLength={150} />
+            <FormField label="Số tài khoản nhận hoàn cọc (tùy chọn)" value={deferredRecipient.recipientAccount} editable={!locked} onChangeText={recipientAccount => { setDeferredRecipient(old => ({ ...old, recipientAccount })); clearReview(); }} maxLength={150} />
+            <FormField label="Tên chủ tài khoản nhận hoàn cọc (tùy chọn)" value={deferredRecipient.recipientName} editable={!locked} onChangeText={recipientName => { setDeferredRecipient(old => ({ ...old, recipientName })); clearReview(); }} maxLength={150} />
+          </>}
+        </Card>
+        <Button label="Rà soát quyết toán" loading={previewing} disabled={locked && !previewing || query.isError} onPress={() => { void calculateSettlement(); }} />
+        <Button label="Sửa giờ và phí xe" secondary disabled={locked} onPress={() => { setStep(1); clearReview(); top(); }} />
+      </>}
+      {step === 3 && review && <>
+        <Card style={{ gap: 12 }}>
+          <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 18, fontWeight: '700' }}>Xác nhận tiền thực tế</Text>
+          <View style={{ gap: 2 }}>
+            <KeyValueRow label="Số xe nhận & còn lại" value={`Nhận ${review.fees.items.length} xe · Còn ${review.after.remainingItems} xe`} emphasize />
+            {review.payments.map((row, i) => <KeyValueRow key={i} label={`${row.kind === 'rental_refund' ? 'Hoàn thuê' : row.kind === 'deposit_refund' ? 'Hoàn cọc' : kinds.find(k => k.value === row.kind)?.label} (${row.label})`} value={`${money(Number(row.amount))} · ${dateTime(row.paid_at + ':00+07:00')}`} emphasize />)}
+            <KeyValueRow label="Tổng phí sau quyết toán" value={money(review.after.totalAmount)} />
+            <KeyValueRow label="Còn thiếu" value={money(review.after.rentalRemaining)} emphasize />
+            <KeyValueRow label="Cọc còn giữ" value={money(review.after.depositHeld)} />
+          </View>
+          {!review.payments.length && <Text style={{ color: theme.muted, fontSize: 13.5 }}>Không ghi khoản thu/hoàn trong lượt này.</Text>}
+          {review.settlement.refund_deferred && <Text style={{ color: theme.warning, fontSize: 13.5 }}>Cọc được giữ để hoàn sau.</Text>}
+          {review.overpayment && <Text accessibilityRole="alert" style={{ color: theme.warning, fontSize: 13.5, lineHeight: 20 }}>Tiền thực thu vượt phần còn thiếu. Tổng phí tăng thêm {money(review.totals.totalIncrease)}. Chỉ xác nhận khi đúng khoản khách đã trả.</Text>}
+        </Card>
+        {review.overpayment && !review.overpaymentAcknowledged && <Button label="Xác nhận khoản thu vượt và rà soát lại" loading={previewing} onPress={() => { void calculateSettlement(true); }} />}
+        <Button label="Ghi trả xe và quyết toán" disabled={locked || query.isError || review.overpayment && !review.overpaymentAcknowledged} onPress={() => setConfirm(true)} />
+        <Button label="Sửa khoản thu và hoàn" secondary disabled={locked} onPress={() => { setStep(2); clearReview(); top(); }} />
+      </>}
+      <View style={{ flexDirection: 'row', gap: 10 }}>
+        <Button size="sm" equalWidth label="Tải lại dữ liệu trả xe" secondary loading={query.isFetching} disabled={locked} onPress={() => { void query.refetch(); }} />
+        <Button size="sm" equalWidth label="Ẩn bàn phím" secondary disabled={action.busy} onPress={() => Keyboard.dismiss()} />
+      </View>
+    </KeyboardFormScrollView>
     {overlays}
   </SafeAreaView>;
 }

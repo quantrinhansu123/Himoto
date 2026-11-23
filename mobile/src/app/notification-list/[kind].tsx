@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Pressable, ScrollView, Text, View, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router, useLocalSearchParams } from 'expo-router';
+import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, ChevronRight } from 'lucide-react-native';
 import { NOTIFICATION_KINDS, NOTIFICATION_LABELS, type MobileNotificationKind, type MobileNotificationRow } from '../../../../shared/mobile-notifications';
@@ -25,11 +25,8 @@ export default function NotificationList() {
     if (kind === 'transfer') router.push({pathname:'/vehicle-transfer/[id]',params:{id:row.id}});
     else router.push({pathname:'/record/[kind]/[id]',params:{kind:'contracts',id:row.id}});
   };
-  return <SafeAreaView edges={['left','right','bottom']} style={{flex:1,backgroundColor:theme.background}}><ScrollView contentContainerStyle={{padding:16,paddingBottom:32,gap:12,maxWidth:760,width:'100%',alignSelf:'center'}} refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={()=>{void query.refetch();}} tintColor={theme.primary}/> }>
-    <View style={{gap:4}}>
-      <Text accessibilityRole="header" style={{color:theme.text,fontSize:22,fontWeight:'800'}}>{NOTIFICATION_LABELS[kind]}</Text>
-      {isGps && <Text style={{color:theme.muted,fontSize:13}}>Cảnh báo ngầm chỉ hiển thị cho quản trị viên (phạm vi chuẩn ≤ 200 m trong 7 ngày gần nhất).</Text>}
-    </View>
+  return <SafeAreaView edges={['left','right','bottom']} style={{flex:1,backgroundColor:theme.background}}><Stack.Screen options={{ title: NOTIFICATION_LABELS[kind] }} /><ScrollView contentContainerStyle={{padding:16,paddingBottom:32,gap:12,maxWidth:760,width:'100%',alignSelf:'center'}} refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={()=>{void query.refetch();}} tintColor={theme.primary}/> }>
+    {isGps && <Text style={{color:theme.muted,fontSize:13}}>Cảnh báo ngầm chỉ hiển thị cho quản trị viên (phạm vi chuẩn ≤ 200 m trong 7 ngày gần nhất).</Text>}
     {query.isPending ? <SkeletonList count={4} lines={2}/> : query.error ? <><InlineError message={query.error.message}/><Button secondary label="Thử lại" onPress={()=>{void query.refetch();}}/></> : <>
       <Text style={{color:theme.muted,fontSize:13}}>{query.data.total} {isGps ? 'cảnh báo' : 'công việc'} · Trang {query.data.page}/{query.data.pages}</Text>
       {query.data.rows.map(row=><Pressable key={row.id} accessibilityRole="button" accessibilityLabel={`Mở ${row.label}`} onPress={()=>openRow(row)}>

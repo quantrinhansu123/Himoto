@@ -72,23 +72,22 @@ function RecoveryForm({id}:{id:string}) {
       <KeyboardFormScrollView ref={scroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={{padding:20,gap:18,maxWidth:760,width:'100%',alignSelf:'center'}}>{children}</KeyboardFormScrollView>
     {overlays}
   </SafeAreaView>;
-  if(action.key)return frame(<Card style={{gap:16}}>
-    <Text accessibilityRole="header" style={{color:theme.text,fontSize:25,fontWeight:'800'}}>Thu hồi xe đang chờ đối chiếu</Text>
-    <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>Kiểm tra phiếu gốc trước khi gửi thêm. Xe, ngày thu hồi và ghi chú đang nhập được giữ trong màn hình này.</Text>
+  if(action.key)return frame(<Card style={{gap:14}}>
+    <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'800'}}>Thu hồi xe đang chờ đối chiếu</Text>
+    <Text style={{color:theme.muted,fontSize:14,lineHeight:21}}>Kiểm tra phiếu gốc trước khi gửi thêm. Xe, ngày thu hồi và ghi chú đang nhập được giữ trong màn hình này.</Text>
     {!!action.error&&<InlineError message={action.error}/>}
     <Button label="Đối chiếu thu hồi với máy chủ" loading={action.busy} onPress={()=>setResolve(true)}/>
     <Button label="Mở phiếu thu hồi xe" secondary disabled={action.busy} onPress={action.openReceipt}/>
   </Card>);
-  if(!action.checked)return frame(<Card style={{gap:16}}>
-    <Text accessibilityRole="header" style={{color:theme.text,fontSize:23,fontWeight:'700'}}>Kiểm tra thao tác đang chờ</Text>
+  if(!action.checked)return frame(<Card style={{gap:14}}>
+    <Text accessibilityRole="header" style={{color:theme.text,fontSize:19,fontWeight:'700'}}>Kiểm tra thao tác đang chờ</Text>
     {!!action.error&&<InlineError message={action.error}/>}
     <Button label="Kiểm tra lại thao tác thu hồi" loading={action.checking} onPress={()=>{void action.checkPending();}}/>
     <Button label="Mở Tài khoản để đối chiếu" secondary disabled={action.checking} onPress={action.openAccount}/>
   </Card>);
   const data=query.data,amount=(v:number|null)=>v===null?'Chưa đối chiếu':money(v);
   return frame(<>
-    <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'800'}}>Thu hồi xe nợ xấu</Text>
-    <Text style={{color:theme.muted,fontSize:14,lineHeight:21}}>Bước {step+1}/3 · {selection?.order.code||data?.code||'Hợp đồng'}</Text>
+    <Text style={{color:theme.muted,fontSize:13.5,lineHeight:20,fontWeight:'600'}}>Bước {step+1}/3 · {selection?.order.code||data?.code||'Hợp đồng'}</Text>
     {!!(error||action.error)&&<InlineError message={error||action.error}/>}
     {!!action.notice&&<Text accessibilityLiveRegion="polite" style={{color:theme.text,fontSize:14,lineHeight:21}}>{action.notice}</Text>}
     {step===0&&<Card style={{gap:14}}>

@@ -41,8 +41,7 @@ export function ContractCorrectionEditor({ id, kind }: { id: string; kind: Mobil
   return <SafeAreaView edges={['left', 'right', 'bottom']} style={{ flex: 1, backgroundColor: theme.background }}>
     <Stack.Screen options={{ title }} />
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <ScrollView ref={scroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={{ padding: 18, gap: 16, maxWidth: 760, width: '100%', alignSelf: 'center', paddingBottom: 36 }}>
-        <Text accessibilityRole="header" style={{ ...text, fontSize: 24, lineHeight: 32, fontWeight: '800' }}>{title}</Text>
+      <ScrollView ref={scroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={{ padding: 16, gap: 14, maxWidth: 760, width: '100%', alignSelf: 'center', paddingBottom: 36 }}>
         {!!(write.error || write.query.error) && <InlineError message={write.error || write.query.error?.message || 'Chưa tải được khoản thu.'} />}
         {!!write.notice && <Text accessibilityLiveRegion="polite" style={text}>{write.notice}</Text>}
         {write.query.isPending && <StateView title="Đang đối chiếu khoản thu và lần sửa trước" loading />}

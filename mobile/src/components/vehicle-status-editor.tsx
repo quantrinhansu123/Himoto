@@ -47,15 +47,12 @@ function StatusForm({id}:{id:string}) {
       <KeyboardFormScrollView ref={scroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={{padding:20,gap:18,maxWidth:760,width:'100%',alignSelf:'center'}}>
         <Card style={{gap:8}}>
           <View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center',gap:8}}>
-            <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'800',flex:1}}>Đổi trạng thái xe</Text>
+            <Text style={{color:theme.text,fontSize:18,fontWeight:'800',flex:1}}>{vehicle?.license||vehicle?.name||`Xe #${id}`}</Text>
             {vehicle&&<StatusBadge status={vehicle.status} label={statuses[vehicle.status]||vehicle.status} />}
           </View>
-          <View style={{gap:2}}>
-            <KeyValueRow label="Xe" value={vehicle?.license||vehicle?.name||`Xe #${id}`} emphasize />
-            {vehicle&&<KeyValueRow label="Kho hiện tại" value={vehicle.storeName} />}
-          </View>
-          <Text style={{color:theme.muted,fontSize:13.5,lineHeight:20}}>Đổi trạng thái độc lập trong Danh sách xe, kể cả Nợ xấu → Lưu kho. Cơ sở và hợp đồng hiện có được giữ nguyên.</Text>
-          {!!(data?.inventory||query.data?.inventory)?.hasOpenContract&&<Text style={{color:theme.muted,fontSize:13.5,lineHeight:20}}>Xe còn hợp đồng liên quan. Đổi trạng thái xe không thay đổi hợp đồng hoặc công nợ.</Text>}
+          {vehicle&&<KeyValueRow label="Kho hiện tại" value={vehicle.storeName} />}
+          <Text style={{color:theme.muted,fontSize:13,lineHeight:19}}>Đổi trạng thái độc lập trong Danh sách xe, kể cả Nợ xấu → Lưu kho. Cơ sở và hợp đồng hiện có được giữ nguyên.</Text>
+          {!!(data?.inventory||query.data?.inventory)?.hasOpenContract&&<Text style={{color:theme.muted,fontSize:13,lineHeight:19}}>Xe còn hợp đồng liên quan. Đổi trạng thái xe không thay đổi hợp đồng hoặc công nợ.</Text>}
         </Card>
         {!!(error||write.error)&&<InlineError message={error||write.error}/>}
         {write.pending.length>0?<Card style={{gap:14}}>

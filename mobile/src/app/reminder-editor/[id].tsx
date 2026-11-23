@@ -32,7 +32,6 @@ function Editor({id}:{id:string}) {
     }catch(cause){if(alive.current)setError((cause as Error).message);}finally{running.current=false;if(alive.current)setBusy(false);}
   }
   return <SafeAreaView edges={["left","right","bottom"]} style={{flex:1,backgroundColor:theme.background}}><KeyboardFormScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{padding:16,paddingBottom:40,gap:14,maxWidth:760,width:"100%",alignSelf:"center"}}>
-    <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:"800"}}>Soạn nhắc nợ qua Zalo</Text>
     <Card style={{gap:10}}><Text style={{color:theme.text,fontSize:18,fontWeight:"800"}}>{context.code} · {context.customer_name}</Text><View style={{gap:2}}><KeyValueRow label="Cơ sở" value={context.store_name} /><KeyValueRow label="Công nợ nhắc" value={money(context.amount)} emphasize valueColor={theme.danger} /><KeyValueRow label="Số Zalo" value={context.phone} selectable emphasize /></View><Text style={{color:theme.muted,fontSize:13.5,lineHeight:20}}>Số điện thoại lấy từ hồ sơ khách của hợp đồng. Cập nhật hồ sơ khách nếu cần đổi số. Hợp đồng thuê sở hữu chỉ nhắc khoản đã đến hạn.</Text></Card>
     <FormField label="Nội dung nhắc nợ Zalo" value={content} onChangeText={setMessage} multiline maxLength={4000} editable={!busy&&!attempted} />
     {!attempted&&<Button size="sm" secondary label="Dùng nội dung nhắc nợ mẫu" onPress={()=>setMessage(context.message)} />}

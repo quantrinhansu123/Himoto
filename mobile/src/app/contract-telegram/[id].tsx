@@ -21,10 +21,7 @@ function Telegram({id,initialEvent,preferReturn,returnItemId,onlyEvent}:{id:stri
     :returnItemId?available.filter(e=>e.kind==='return'&&e.phases.includes(`return-${returnItemId}`)):available;
   const event=events.find(e=>e.key===selected)||(preferReturn?events.find(e=>e.kind==='return'):undefined)||events[0],locked=write.busy||!!write.key||!write.checked,muted={color:theme.muted,fontSize:14,lineHeight:21};
   return <SafeAreaView edges={['left','right','bottom']} style={{flex:1,backgroundColor:theme.background}}><ScrollView contentContainerStyle={{padding:16,paddingBottom:40,gap:14,maxWidth:760,width:'100%',alignSelf:'center'}}>
-    <View style={{gap:4}}>
-      <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'800'}}>Telegram hợp đồng</Text>
-      <Text style={muted}>Kiểm tra giao dịch, nội dung, nhóm nhận và toàn bộ ảnh/video đã lưu trước khi gửi.</Text>
-    </View>
+    <Text style={muted}>Kiểm tra giao dịch, nội dung, nhóm nhận và toàn bộ ảnh/video đã lưu trước khi gửi.</Text>
     {!!write.error&&<InlineError message={write.error}/>}
     {!!write.notice&&<Text style={muted}>{write.notice}</Text>}
     {write.key?<Card style={{gap:14}}><Text style={{color:theme.text,fontSize:18,fontWeight:'700'}}>Thao tác Telegram cần đối chiếu</Text><Text style={muted}>Giữ mã gốc để biết máy chủ đã nhận yêu cầu hay chưa. Chưa gửi lại trong lúc chưa rõ kết quả.</Text><Button label="Đối chiếu thao tác Telegram" loading={write.busy} onPress={()=>setResolving(true)}/><Button secondary label="Mở xác nhận Telegram" disabled={write.busy} onPress={write.openResult}/></Card>:<>

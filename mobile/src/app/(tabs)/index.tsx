@@ -283,7 +283,7 @@ export default function Overview() {
           )}
         </Pressable>
 
-        {/* 6 Quick Action Cards chuẩn Web OperationsPage */}
+        {/* Quick Action Cards chuẩn Web OperationsPage — tự cân hàng khi số ô lẻ */}
         <View style={{ gap: 12 }}>
           <Text
             accessibilityRole="header"
@@ -291,218 +291,170 @@ export default function Overview() {
           >
             Nghiệp vụ quầy
           </Text>
-          <View style={styles.grid}>
-            {/* 0. Chấm công */}
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Chấm công vào ra ca"
-              onPress={() => router.push("/attendance")}
-              style={({ pressed }) => [
-                styles.gridItem,
-                {
-                  borderColor: theme.border,
-                  backgroundColor: theme.surface,
-                  opacity: pressed ? 0.72 : 1,
-                },
-              ]}
-            >
-              <View
-                style={[styles.gridIcon, { backgroundColor: "#FEF2F2" }]}
-              >
-                <AlarmClock size={22} color="#DC2626" />
+          {(() => {
+            const quickActions = [
+              {
+                key: "attendance",
+                a11y: "Chấm công vào ra ca",
+                title: "Chấm công",
+                desc: "Vào ca hoặc ra ca",
+                bg: "#FEF2F2",
+                icon: <AlarmClock size={22} color="#DC2626" />,
+                onPress: () => router.push("/attendance"),
+              },
+              ...(grants.includes("contracts.read")
+                ? [
+                    {
+                      key: "battery",
+                      a11y: "Hợp đồng thuê pin và sạc",
+                      title: "Thuê pin / sạc",
+                      desc: "Quản lý hợp đồng pin & sạc",
+                      bg: "#CCFBF1",
+                      icon: <BatteryCharging size={22} color="#0D9488" />,
+                      onPress: () => router.push("/battery-contracts"),
+                    },
+                  ]
+                : []),
+              ...(grants.includes("contracts.draft")
+                ? [
+                    {
+                      key: "draft-new",
+                      a11y: "Làm hợp đồng mới",
+                      title: "Làm hợp đồng",
+                      desc: "Chọn khách, xe & ghi nhận tiền",
+                      bg: theme.tint,
+                      icon: <FilePlus2 size={22} color={theme.primary} />,
+                      onPress: () =>
+                        router.push({
+                          pathname: "/draft/new",
+                          params: {
+                            store_id: session?.user.allStores
+                              ? selectedStore
+                              : String(session?.user.storeId || ""),
+                          },
+                        }),
+                    },
+                  ]
+                : []),
+              ...(grants.includes("contracts.return")
+                ? [
+                    {
+                      key: "return",
+                      a11y: "Nhận trả xe",
+                      title: "Trả xe",
+                      desc: "Tìm biển số hoặc HĐ nhận trả",
+                      bg: "#EEF2FF",
+                      icon: <RotateCcw size={22} color="#4F46E5" />,
+                      onPress: () =>
+                        router.push({
+                          pathname: "/operation-contracts/[action]",
+                          params: { action: "return", store: selectedStore },
+                        }),
+                    },
+                  ]
+                : []),
+              ...(grants.includes("contracts.renew")
+                ? [
+                    {
+                      key: "renew",
+                      a11y: "Gia hạn hợp đồng",
+                      title: "Gia hạn",
+                      desc: "Cập nhật ngày hẹn trả xe",
+                      bg: "#ECFDF5",
+                      icon: <CalendarPlus size={22} color="#059669" />,
+                      onPress: () =>
+                        router.push({
+                          pathname: "/operation-contracts/[action]",
+                          params: { action: "renew", store: selectedStore },
+                        }),
+                    },
+                  ]
+                : []),
+              ...(grants.includes("vehicles.read")
+                ? [
+                    {
+                      key: "vehicles",
+                      a11y: "Trạng thái kho xe",
+                      title: "Trạng thái kho xe",
+                      desc: "Kiểm tra & đổi trạng thái xe",
+                      bg: "#F0FDF4",
+                      icon: <CarFront size={22} color="#16A34A" />,
+                      onPress: () => router.push("/(tabs)/vehicles"),
+                    },
+                  ]
+                : []),
+              ...(grants.includes("contracts.read") && backfillActions(grants).length > 0
+                ? [
+                    {
+                      key: "backfill",
+                      a11y: "Nhập bổ sung hợp đồng",
+                      title: "Nhập bổ sung",
+                      desc: "Bổ sung HĐ, gia hạn, thu chi",
+                      bg: "#F5F3FF",
+                      icon: <History size={22} color="#7C3AED" />,
+                      onPress: () => router.push("/backfill"),
+                    },
+                  ]
+                : []),
+            ];
+            const hasOddTail = quickActions.length % 2 === 1;
+            return (
+              <View style={styles.grid}>
+                {quickActions.map((item, idx) => {
+                  const fullRow = hasOddTail && idx === quickActions.length - 1;
+                  return (
+                    <Pressable
+                      key={item.key}
+                      accessibilityRole="button"
+                      accessibilityLabel={item.a11y}
+                      onPress={item.onPress}
+                      style={({ pressed }) => [
+                        styles.gridItem,
+                        fullRow && styles.gridItemFull,
+                        {
+                          borderColor: theme.border,
+                          backgroundColor: theme.surface,
+                          opacity: pressed ? 0.72 : 1,
+                        },
+                      ]}
+                    >
+                      <View
+                        style={[
+                          styles.gridIcon,
+                          fullRow && { marginBottom: 0 },
+                          { backgroundColor: item.bg },
+                        ]}
+                      >
+                        {item.icon}
+                      </View>
+                      {fullRow ? (
+                        <>
+                          <View style={{ flex: 1, gap: 2 }}>
+                            <Text style={[styles.gridTitle, { color: theme.text }]}>
+                              {item.title}
+                            </Text>
+                            <Text style={[styles.gridDesc, { color: theme.muted }]}>
+                              {item.desc}
+                            </Text>
+                          </View>
+                          <ChevronRight size={18} color={theme.muted} accessible={false} />
+                        </>
+                      ) : (
+                        <>
+                          <Text style={[styles.gridTitle, { color: theme.text }]}>
+                            {item.title}
+                          </Text>
+                          <Text style={[styles.gridDesc, { color: theme.muted }]}>
+                            {item.desc}
+                          </Text>
+                        </>
+                      )}
+                    </Pressable>
+                  );
+                })}
               </View>
-              <Text style={[styles.gridTitle, { color: theme.text }]}>
-                Chấm công
-              </Text>
-              <Text style={[styles.gridDesc, { color: theme.muted }]}>
-                Vào ca hoặc ra ca
-              </Text>
-            </Pressable>
-
-            {/* 1. Thuê pin / sạc */}
-            {grants.includes("contracts.read") && (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Hợp đồng thuê pin và sạc"
-                onPress={() => router.push("/battery-contracts")}
-                style={({ pressed }) => [
-                  styles.gridItem,
-                  {
-                    borderColor: theme.border,
-                    backgroundColor: theme.surface,
-                    opacity: pressed ? 0.72 : 1,
-                  },
-                ]}
-              >
-                <View
-                  style={[styles.gridIcon, { backgroundColor: "#CCFBF1" }]}
-                >
-                  <BatteryCharging size={22} color="#0D9488" />
-                </View>
-                <Text style={[styles.gridTitle, { color: theme.text }]}>
-                  Thuê pin / sạc
-                </Text>
-                <Text style={[styles.gridDesc, { color: theme.muted }]}>
-                  Quản lý hợp đồng pin & sạc
-                </Text>
-              </Pressable>
-            )}
-
-            {/* 2. Làm hợp đồng */}
-            {grants.includes("contracts.draft") && (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Làm hợp đồng mới"
-                onPress={() => router.push({ pathname: "/draft/new", params: { store_id: session?.user.allStores ? selectedStore : String(session?.user.storeId || "") } })}
-                style={({ pressed }) => [
-                  styles.gridItem,
-                  {
-                    borderColor: theme.border,
-                    backgroundColor: theme.surface,
-                    opacity: pressed ? 0.72 : 1,
-                  },
-                ]}
-              >
-                <View
-                  style={[styles.gridIcon, { backgroundColor: theme.tint }]}
-                >
-                  <FilePlus2 size={22} color={theme.primary} />
-                </View>
-                <Text style={[styles.gridTitle, { color: theme.text }]}>
-                  Làm hợp đồng
-                </Text>
-                <Text style={[styles.gridDesc, { color: theme.muted }]}>
-                  Chọn khách, xe & ghi nhận tiền
-                </Text>
-              </Pressable>
-            )}
-
-            {/* 3. Trả xe */}
-            {grants.includes("contracts.return") && (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Nhận trả xe"
-                onPress={() =>
-                  router.push({
-                    pathname: "/operation-contracts/[action]",
-                    params: { action: "return", store: selectedStore },
-                  })
-                }
-                style={({ pressed }) => [
-                  styles.gridItem,
-                  {
-                    borderColor: theme.border,
-                    backgroundColor: theme.surface,
-                    opacity: pressed ? 0.72 : 1,
-                  },
-                ]}
-              >
-                <View
-                  style={[styles.gridIcon, { backgroundColor: "#EEF2FF" }]}
-                >
-                  <RotateCcw size={22} color="#4F46E5" />
-                </View>
-                <Text style={[styles.gridTitle, { color: theme.text }]}>
-                  Trả xe
-                </Text>
-                <Text style={[styles.gridDesc, { color: theme.muted }]}>
-                  Tìm biển số hoặc HĐ nhận trả
-                </Text>
-              </Pressable>
-            )}
-
-            {/* 4. Gia hạn */}
-            {grants.includes("contracts.renew") && (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Gia hạn hợp đồng"
-                onPress={() =>
-                  router.push({
-                    pathname: "/operation-contracts/[action]",
-                    params: { action: "renew", store: selectedStore },
-                  })
-                }
-                style={({ pressed }) => [
-                  styles.gridItem,
-                  {
-                    borderColor: theme.border,
-                    backgroundColor: theme.surface,
-                    opacity: pressed ? 0.72 : 1,
-                  },
-                ]}
-              >
-                <View
-                  style={[styles.gridIcon, { backgroundColor: "#ECFDF5" }]}
-                >
-                  <CalendarPlus size={22} color="#059669" />
-                </View>
-                <Text style={[styles.gridTitle, { color: theme.text }]}>
-                  Gia hạn
-                </Text>
-                <Text style={[styles.gridDesc, { color: theme.muted }]}>
-                  Cập nhật ngày hẹn trả xe
-                </Text>
-              </Pressable>
-            )}
-
-            {/* 5. Trạng thái kho xe */}
-            {grants.includes("vehicles.read") && (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Trạng thái kho xe"
-                onPress={() => router.push("/(tabs)/vehicles")}
-                style={({ pressed }) => [
-                  styles.gridItem,
-                  {
-                    borderColor: theme.border,
-                    backgroundColor: theme.surface,
-                    opacity: pressed ? 0.72 : 1,
-                  },
-                ]}
-              >
-                <View
-                  style={[styles.gridIcon, { backgroundColor: "#F0FDF4" }]}
-                >
-                  <CarFront size={22} color="#16A34A" />
-                </View>
-                <Text style={[styles.gridTitle, { color: theme.text }]}>
-                  Trạng thái kho xe
-                </Text>
-                <Text style={[styles.gridDesc, { color: theme.muted }]}>
-                  Kiểm tra & đổi trạng thái xe
-                </Text>
-              </Pressable>
-            )}
-
-            {/* 6. Nhập bổ sung */}
-            {grants.includes("contracts.read") && backfillActions(grants).length > 0 && (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Nhập bổ sung hợp đồng"
-                onPress={() => router.push("/backfill")}
-                style={({ pressed }) => [
-                  styles.gridItem,
-                  {
-                    borderColor: theme.border,
-                    backgroundColor: theme.surface,
-                    opacity: pressed ? 0.72 : 1,
-                  },
-                ]}
-              >
-                <View
-                  style={[styles.gridIcon, { backgroundColor: "#F5F3FF" }]}
-                >
-                  <History size={22} color="#7C3AED" />
-                </View>
-                <Text style={[styles.gridTitle, { color: theme.text }]}>
-                  Nhập bổ sung
-                </Text>
-                <Text style={[styles.gridDesc, { color: theme.muted }]}>
-                  Bổ sung HĐ, gia hạn, thu chi
-                </Text>
-              </Pressable>
-            )}
-          </View>
+            );
+          })()}
         </View>
 
         {/* Khung Nhận trả xe nhanh theo biển số / SĐT (Chuẩn Web) */}
@@ -705,132 +657,132 @@ export default function Overview() {
         {(grants.includes("contracts.read") ||
           grants.includes("finance.read") ||
           grants.includes("vehicles.read")) && (
-          <View style={{ gap: 12 }}>
-            <Text
-              accessibilityRole="header"
-              style={{ color: theme.text, fontSize: 17, fontWeight: "700" }}
-            >
-              Tiện ích ca trực
-            </Text>
-            <View style={styles.grid}>
-              {/* Báo cáo giữa ca */}
-              {grants.includes("contracts.read") && (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Báo cáo giữa ca"
-                  onPress={() => router.push("/mid-shift-reports")}
-                  style={({ pressed }) => [
-                    styles.gridItem,
-                    {
-                      borderColor: theme.border,
-                      backgroundColor: theme.surface,
-                      opacity: pressed ? 0.72 : 1,
-                    },
-                  ]}
-                >
-                  <View
-                    style={[styles.gridIcon, { backgroundColor: "#FEF3C7" }]}
+            <View style={{ gap: 12 }}>
+              <Text
+                accessibilityRole="header"
+                style={{ color: theme.text, fontSize: 17, fontWeight: "700" }}
+              >
+                Tiện ích ca trực
+              </Text>
+              <View style={styles.grid}>
+                {/* Báo cáo giữa ca */}
+                {grants.includes("contracts.read") && (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Báo cáo giữa ca"
+                    onPress={() => router.push("/mid-shift-reports")}
+                    style={({ pressed }) => [
+                      styles.gridItem,
+                      {
+                        borderColor: theme.border,
+                        backgroundColor: theme.surface,
+                        opacity: pressed ? 0.72 : 1,
+                      },
+                    ]}
                   >
-                    <ReceiptText size={22} color="#D97706" />
-                  </View>
-                  <Text style={[styles.gridTitle, { color: theme.text }]}>
-                    Báo cáo giữa ca
-                  </Text>
-                  <Text style={[styles.gridDesc, { color: theme.muted }]}>
-                    Kiểm kê xe, pin & tiền giữa ca
-                  </Text>
-                </Pressable>
-              )}
+                    <View
+                      style={[styles.gridIcon, { backgroundColor: "#FEF3C7" }]}
+                    >
+                      <ReceiptText size={22} color="#D97706" />
+                    </View>
+                    <Text style={[styles.gridTitle, { color: theme.text }]}>
+                      Báo cáo giữa ca
+                    </Text>
+                    <Text style={[styles.gridDesc, { color: theme.muted }]}>
+                      Kiểm kê xe, pin & tiền giữa ca
+                    </Text>
+                  </Pressable>
+                )}
 
-              {/* Báo cáo Hết ca */}
-              {grants.includes("contracts.read") && (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Báo cáo Hết ca"
-                  onPress={() => router.push("/shift-reports")}
-                  style={({ pressed }) => [
-                    styles.gridItem,
-                    {
-                      borderColor: theme.border,
-                      backgroundColor: theme.surface,
-                      opacity: pressed ? 0.72 : 1,
-                    },
-                  ]}
-                >
-                  <View
-                    style={[styles.gridIcon, { backgroundColor: "#EFF6FF" }]}
+                {/* Báo cáo Hết ca */}
+                {grants.includes("contracts.read") && (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Báo cáo Hết ca"
+                    onPress={() => router.push("/shift-reports")}
+                    style={({ pressed }) => [
+                      styles.gridItem,
+                      {
+                        borderColor: theme.border,
+                        backgroundColor: theme.surface,
+                        opacity: pressed ? 0.72 : 1,
+                      },
+                    ]}
                   >
-                    <ReceiptText size={22} color="#2563EB" />
-                  </View>
-                  <Text style={[styles.gridTitle, { color: theme.text }]}>
-                    Báo cáo Hết ca
-                  </Text>
-                  <Text style={[styles.gridDesc, { color: theme.muted }]}>
-                    Bàn giao hết ca & nộp tiền
-                  </Text>
-                </Pressable>
-              )}
+                    <View
+                      style={[styles.gridIcon, { backgroundColor: "#EFF6FF" }]}
+                    >
+                      <ReceiptText size={22} color="#2563EB" />
+                    </View>
+                    <Text style={[styles.gridTitle, { color: theme.text }]}>
+                      Báo cáo Hết ca
+                    </Text>
+                    <Text style={[styles.gridDesc, { color: theme.muted }]}>
+                      Bàn giao hết ca & nộp tiền
+                    </Text>
+                  </Pressable>
+                )}
 
-              {/* Sổ quỹ / Sổ két */}
-              {grants.includes("finance.read") && (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Sổ quỹ và sổ két"
-                  onPress={() => router.push("/cashbook")}
-                  style={({ pressed }) => [
-                    styles.gridItem,
-                    {
-                      borderColor: theme.border,
-                      backgroundColor: theme.surface,
-                      opacity: pressed ? 0.72 : 1,
-                    },
-                  ]}
-                >
-                  <View
-                    style={[styles.gridIcon, { backgroundColor: "#FDF4FF" }]}
+                {/* Sổ quỹ / Sổ két */}
+                {grants.includes("finance.read") && (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Sổ quỹ và sổ két"
+                    onPress={() => router.push("/cashbook")}
+                    style={({ pressed }) => [
+                      styles.gridItem,
+                      {
+                        borderColor: theme.border,
+                        backgroundColor: theme.surface,
+                        opacity: pressed ? 0.72 : 1,
+                      },
+                    ]}
                   >
-                    <Wallet size={22} color="#9333EA" />
-                  </View>
-                  <Text style={[styles.gridTitle, { color: theme.text }]}>
-                    Sổ quỹ / Sổ két
-                  </Text>
-                  <Text style={[styles.gridDesc, { color: theme.muted }]}>
-                    Tiền mặt két & tài khoản
-                  </Text>
-                </Pressable>
-              )}
+                    <View
+                      style={[styles.gridIcon, { backgroundColor: "#FDF4FF" }]}
+                    >
+                      <Wallet size={22} color="#9333EA" />
+                    </View>
+                    <Text style={[styles.gridTitle, { color: theme.text }]}>
+                      Sổ quỹ / Sổ két
+                    </Text>
+                    <Text style={[styles.gridDesc, { color: theme.muted }]}>
+                      Tiền mặt két & tài khoản
+                    </Text>
+                  </Pressable>
+                )}
 
-              {/* Định vị GPS */}
-              {grants.includes("vehicles.read") && (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Định vị GPS"
-                  onPress={() => router.push("/gps")}
-                  style={({ pressed }) => [
-                    styles.gridItem,
-                    {
-                      borderColor: theme.border,
-                      backgroundColor: theme.surface,
-                      opacity: pressed ? 0.72 : 1,
-                    },
-                  ]}
-                >
-                  <View
-                    style={[styles.gridIcon, { backgroundColor: "#F0F9FF" }]}
+                {/* Định vị GPS */}
+                {grants.includes("vehicles.read") && (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Định vị GPS"
+                    onPress={() => router.push("/gps")}
+                    style={({ pressed }) => [
+                      styles.gridItem,
+                      {
+                        borderColor: theme.border,
+                        backgroundColor: theme.surface,
+                        opacity: pressed ? 0.72 : 1,
+                      },
+                    ]}
                   >
-                    <MapPin size={22} color="#0284C7" />
-                  </View>
-                  <Text style={[styles.gridTitle, { color: theme.text }]}>
-                    Định vị GPS
-                  </Text>
-                  <Text style={[styles.gridDesc, { color: theme.muted }]}>
-                    Bản đồ giám sát xe
-                  </Text>
-                </Pressable>
-              )}
+                    <View
+                      style={[styles.gridIcon, { backgroundColor: "#F0F9FF" }]}
+                    >
+                      <MapPin size={22} color="#0284C7" />
+                    </View>
+                    <Text style={[styles.gridTitle, { color: theme.text }]}>
+                      Định vị GPS
+                    </Text>
+                    <Text style={[styles.gridDesc, { color: theme.muted }]}>
+                      Bản đồ giám sát xe
+                    </Text>
+                  </Pressable>
+                )}
+              </View>
             </View>
-          </View>
-        )}
+          )}
 
         {/* Khối Danh mục quản lý (Đội xe, Hợp đồng, Khách hàng) */}
         <View style={{ gap: 12 }}>
@@ -917,8 +869,8 @@ export default function Overview() {
         {(queries.some((query) => query.isError) ||
           workspace.isError ||
           operationsQuery.isError) && (
-          <InlineError message="Một số dữ liệu chưa tải được. Kéo xuống để thử lại." />
-        )}
+            <InlineError message="Một số dữ liệu chưa tải được. Kéo xuống để thử lại." />
+          )}
 
         <Text
           style={{
@@ -1119,6 +1071,12 @@ const styles = StyleSheet.create({
     padding: 13,
     gap: 5,
     ...cardShadow,
+  },
+  gridItemFull: {
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
   },
   gridIcon: {
     width: 38,

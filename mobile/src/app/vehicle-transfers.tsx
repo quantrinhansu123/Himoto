@@ -43,12 +43,9 @@ function TransferHistory() {
         contentContainerStyle={{ padding: 16, paddingBottom: 36, gap: 11, width: "100%", maxWidth: 760, alignSelf: "center" }}
         refreshControl={<RefreshControl refreshing={query.isRefetching} tintColor={theme.primary} onRefresh={() => { void query.refetch(); }} />}
         ListHeaderComponent={<View style={{ gap: 11 }}>
-          <View style={{ gap: 2 }}>
-            <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 22, fontWeight: "800" }}>Lịch sử điều chuyển</Text>
-            <Text style={{ color: theme.muted, fontSize: 12.5 }}>
-              {query.data ? `${query.data.total}/${query.data.scopeCount} sự kiện · ${query.data.from.split("-").reverse().join("/")} → ${query.data.to.split("-").reverse().join("/")}` : "Theo dõi chuyển, nhận, từ chối và hủy điều chuyển xe"}
-            </Text>
-          </View>
+          <Text style={{ color: theme.muted, fontSize: 13 }}>
+            {query.data ? `${query.data.total}/${query.data.scopeCount} sự kiện · ${query.data.from.split("-").reverse().join("/")} → ${query.data.to.split("-").reverse().join("/")}` : "Theo dõi chuyển, nhận, từ chối và hủy điều chuyển xe"}
+          </Text>
           <View style={{ flexDirection: "row", gap: 8 }}>
             <View style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1, borderRadius: 10, borderColor: theme.controlBorder, backgroundColor: theme.surface, paddingHorizontal: 11, minHeight: 44 }}>
               <Search size={18} color={theme.muted} accessible={false} />

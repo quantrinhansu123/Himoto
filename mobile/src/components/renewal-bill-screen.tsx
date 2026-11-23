@@ -25,9 +25,9 @@ function BillAlbum({id,collection=false,collectionVersion,returnToRenewal=false,
   },staleTime:0,refetchOnWindowFocus:false});
   if(!query.data)return <StateView title="Chuẩn bị bill gia hạn" loading={query.isPending} message={query.error?.message} retry={()=>{void query.refetch();}}/>;
   const data=query.data,base=`renewal-${data.version}-document-1`,operation=`${collection?'payment':'renewal'}.bill:${id}`;
-  return <SafeAreaView edges={['left','right','bottom']} style={{flex:1,backgroundColor:theme.background}}><ScrollView contentContainerStyle={{padding:20,gap:18,maxWidth:760,width:'100%',alignSelf:'center'}}>
-    <Text accessibilityRole="header" style={{color:theme.text,fontSize:25,fontWeight:'800'}}>{data.code} · Bill gia hạn #{data.version}</Text>
-    <Text style={{color:theme.muted,lineHeight:24}}>Chọn cả bộ bill, xem hoặc bỏ từng ảnh, rồi lưu. Ảnh được gắn vào đúng kỳ; bước này chưa ghi tiền hay gia hạn. Ảnh cũ được giữ.</Text>
+  return <SafeAreaView edges={['left','right','bottom']} style={{flex:1,backgroundColor:theme.background}}><ScrollView contentContainerStyle={{padding:16,paddingBottom:36,gap:14,maxWidth:760,width:'100%',alignSelf:'center'}}>
+    <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'800'}}>{data.code} · Bill gia hạn #{data.version}</Text>
+    <Text style={{color:theme.muted,fontSize:13.5,lineHeight:20}}>Chọn cả bộ bill, xem hoặc bỏ từng ảnh, rồi lưu. Ảnh được gắn vào đúng kỳ; bước này chưa ghi tiền hay gia hạn. Ảnh cũ được giữ.</Text>
     {!data.available&&<InlineError message={data.blockedReason||'Hợp đồng chưa thể thao tác.'}/>}
     <PhotoBatch key={`${id}:${data.version}`} disabled={!data.available} adapter={{identity:`bill:${id}:${data.version}:${collection}`,label:'Bộ ảnh bill gia hạn',operation,conflicts:[operation,`renewal.record:${id}`,`payment.renewal:${id}`],
       prepare:async row=>{const target={entity:'contracts' as const,id:Number(id),kind:'renewal' as const,referenceId:data.version};let info=await api!.mediaSlotInfo(target,row.slot);while(info.photo){if(!info.nextSlot)throw Error('Nhóm ảnh đã đầy.');info=await api!.mediaSlotInfo(target,info.nextSlot);}const fresh=collection?await api!.renewalCollection(id,data.version):await api!.renewalPreparation(id,1,'',undefined,backfill);if('nextVersion'in fresh&&fresh.nextVersion!==data.version)throw Error('Kỳ gia hạn đã đổi. Giữ bộ ảnh và mở đúng kỳ gốc.');return{revision:fresh.revision,slot:info.slot};},

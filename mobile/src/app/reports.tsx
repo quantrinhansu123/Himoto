@@ -113,14 +113,9 @@ export default function ReportsHub() {
           paddingBottom: 40,
         }}
       >
-        <View style={{ gap: 4 }}>
-          <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 22, fontWeight: "800" }}>
-            Báo cáo dùng chung
-          </Text>
-          <Text style={{ color: theme.muted, fontSize: 13.5, lineHeight: 19 }}>
-            Tổng hợp các phân hệ báo cáo toàn hệ thống Himoto: doanh thu, giao dịch, ca trực, sổ két và công nợ.
-          </Text>
-        </View>
+        <Text style={{ color: theme.muted, fontSize: 13, lineHeight: 19 }}>
+          Tổng hợp các phân hệ báo cáo toàn hệ thống Himoto: doanh thu, giao dịch, ca trực, sổ két và công nợ.
+        </Text>
 
         {visibleBusiness.length > 0 && (
           <View style={{ gap: 12 }}>

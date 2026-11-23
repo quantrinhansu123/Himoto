@@ -36,10 +36,7 @@ function Accounts({ initialStore,initialStatus }: { initialStore?: string;initia
     refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={() => { void query.refetch(); }} tintColor={theme.primary} />}
     ListHeaderComponent={<View style={{ gap: 12 }}>
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-        <View style={{ flex: 1, gap: 2 }}>
-          <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 20, fontWeight: "800" }}>Tài khoản ngân hàng / Két</Text>
-          <Text style={{ color: theme.muted, fontSize: 12.5 }}>Số dư = đầu kỳ + tổng thu − tổng chi</Text>
-        </View>
+        <Text style={{ color: theme.muted, fontSize: 13, flex: 1 }}>Số dư = đầu kỳ + tổng thu − tổng chi</Text>
         {session!.user.permissions.includes("finance.write") && <Button size="sm" icon={<Plus size={14} color={theme.primaryText} />} label="Thêm TK" onPress={() => router.push({ pathname: "/cashbook-account-editor/[kind]/[id]", params: { kind: "cash", id: "new", store } })} />}
       </View>
       <SegmentedBar value={status} onChange={setStatus} options={[{ value: "active", label: "Đang dùng" }, { value: "inactive", label: "Ngừng dùng" }, { value: "all", label: "Tất cả" }]} />

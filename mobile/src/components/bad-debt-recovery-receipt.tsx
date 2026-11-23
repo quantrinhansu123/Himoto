@@ -71,9 +71,9 @@ function Receipt({id}:{id:string}) {
     <ScrollView contentContainerStyle={{padding:20,gap:18,maxWidth:760,width:'100%',alignSelf:'center'}}>
       {!!error&&<InlineError message={error}/>}
       {!!notice&&<Text accessibilityLiveRegion="polite" style={{color:theme.text,fontSize:16,lineHeight:25}}>{notice}</Text>}
-      {!receipt?<Card style={{gap:16}}>
-        <Text accessibilityRole="header" style={{color:theme.text,fontSize:25,fontWeight:'800'}}>{key?'Thu hồi xe đang chờ đối chiếu':'Đối chiếu thu hồi xe'}</Text>
-        <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>{key?'Giữ mã đến khi đã kiểm tra phiếu gốc hoặc máy chủ xác nhận chưa ghi.':'Không có yêu cầu thu hồi xe chờ đối chiếu cho hợp đồng này.'}</Text>
+      {!receipt?<Card style={{gap:14}}>
+        <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'800'}}>{key?'Thu hồi xe đang chờ đối chiếu':'Đối chiếu thu hồi xe'}</Text>
+        <Text style={{color:theme.muted,fontSize:14,lineHeight:21}}>{key?'Giữ mã đến khi đã kiểm tra phiếu gốc hoặc máy chủ xác nhận chưa ghi.':'Không có yêu cầu thu hồi xe chờ đối chiếu cho hợp đồng này.'}</Text>
         {key&&<Button label="Đối chiếu thu hồi với máy chủ" loading={busy} onPress={()=>setConfirm(true)}/>}
         <Button label="Tải lại phiếu thu hồi" secondary loading={busy} onPress={()=>{void load();}}/>
         {!key&&<Button label="Mở hợp đồng" secondary disabled={busy} onPress={openContract}/>}

@@ -41,9 +41,8 @@ function WeekForm({ initial, moveWeek }: { initial: SelfRegistrationWeek; moveWe
   }
   return <KeyboardFormScrollView contentContainerStyle={{ padding: 16, paddingBottom: 36, gap: 12, maxWidth: 760, width: '100%', alignSelf: 'center' }}>
     <View style={{ gap: 2 }}>
-      <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 22, fontWeight: '800' }}>Đăng ký ca làm việc</Text>
-      <Text style={{ color: theme.muted, fontSize: 13 }}>{data.staff.name} · {data.staff.store_name}</Text>
-      <Text style={{ color: theme.muted, fontSize: 12.5 }}>Tuần {labelDate(data.week)} – {labelDate(data.dates[6])}</Text>
+      <Text style={{ color: theme.text, fontSize: 14.5, fontWeight: '700' }}>{data.staff.name} · {data.staff.store_name}</Text>
+      <Text style={{ color: theme.muted, fontSize: 13 }}>Tuần {labelDate(data.week)} – {labelDate(data.dates[6])}</Text>
     </View>
     <View style={{ flexDirection: 'row', gap: 8 }}>
       <Button size="sm" equalWidth secondary label="Tuần trước" disabled={busy || changed.length > 0 || data.week <= dutyWeekStart(data.today || dutyToday())} onPress={() => moveWeek(dutyAddDays(data.week, -7))} />

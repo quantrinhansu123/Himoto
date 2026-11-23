@@ -78,24 +78,24 @@ function Recovery({id}:{id:string}) {
     <ScrollView contentContainerStyle={{padding:20,gap:18,maxWidth:760,width:'100%',alignSelf:'center'}}>
       {!!error&&<InlineError message={error}/>}
       {!!notice&&<Text accessibilityLiveRegion="polite" style={{color:theme.text,fontSize:16,lineHeight:25}}>{notice}</Text>}
-      {!receipt?<Card style={{gap:16}}>
-        <Text accessibilityRole="header" style={{color:theme.text,fontSize:25,fontWeight:'800'}}>{key?'Đổi xe đang chờ đối chiếu':'Đối chiếu đổi xe'}</Text>
-        <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>{key?'Giữ mã đến khi đã kiểm tra phiếu gốc hoặc máy chủ xác nhận chưa ghi.':'Không có yêu cầu đổi xe chờ đối chiếu cho hợp đồng này.'}</Text>
+      {!receipt?<Card style={{gap:14}}>
+        <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'800'}}>{key?'Đổi xe đang chờ đối chiếu':'Đối chiếu đổi xe'}</Text>
+        <Text style={{color:theme.muted,fontSize:14,lineHeight:21}}>{key?'Giữ mã đến khi đã kiểm tra phiếu gốc hoặc máy chủ xác nhận chưa ghi.':'Không có yêu cầu đổi xe chờ đối chiếu cho hợp đồng này.'}</Text>
         {key&&<Button label="Đối chiếu đổi xe với máy chủ" loading={busy} onPress={()=>setConfirm(true)}/>}
         <Button label="Tải lại kết quả đổi xe" secondary loading={busy} onPress={()=>{void load();}}/>
         {!key&&<Button label="Mở hợp đồng" secondary disabled={busy} onPress={openContract}/>}
       </Card>:<>
-        <Card style={{gap:16}}>
-          <Text accessibilityRole="header" style={{color:theme.text,fontSize:25,fontWeight:'800'}}>Đổi xe đã được ghi nhận</Text>
-          <Text style={{color:theme.text,fontSize:19,fontWeight:'700'}}>{receipt.code}</Text>
-          <Text selectable style={{color:theme.muted,fontSize:15,lineHeight:24}}>Ghi lúc {dateTime(receipt.recordedAt)} · phiếu #{receipt.swapId} · mã {receipt.requestId}</Text>
+        <Card style={{gap:10}}>
+          <Text accessibilityRole="header" style={{color:theme.success,fontSize:20,fontWeight:'800'}}>Đổi xe đã được ghi nhận</Text>
+          <Text style={{color:theme.text,fontSize:17,fontWeight:'700'}}>{receipt.code}</Text>
+          <Text selectable style={{color:theme.muted,fontSize:13,lineHeight:20}}>Ghi lúc {dateTime(receipt.recordedAt)} · phiếu #{receipt.swapId} · mã {receipt.requestId}</Text>
           {!receipt.current&&<InlineError message="Hồ sơ có thay đổi sau lần đổi xe này. Đây là phiếu gốc; kiểm tra dữ liệu hiện tại trước khi thao tác tiếp."/>}
-          {!receipt.itemCurrent&&<Text style={{color:theme.warning,fontSize:16}}>Dòng thuê xe đã thay đổi.</Text>}
-          {!receipt.vehicleCurrent&&<Text style={{color:theme.warning,fontSize:16}}>Thông tin hoặc trạng thái xe thay thế đã thay đổi.</Text>}
-          {!receipt.historyCurrent&&<Text style={{color:theme.warning,fontSize:16}}>Lịch sử đổi xe đã được chỉnh sửa sau khi ghi.</Text>}
+          {!receipt.itemCurrent&&<Text style={{color:theme.warning,fontSize:14}}>Dòng thuê xe đã thay đổi.</Text>}
+          {!receipt.vehicleCurrent&&<Text style={{color:theme.warning,fontSize:14}}>Thông tin hoặc trạng thái xe thay thế đã thay đổi.</Text>}
+          {!receipt.historyCurrent&&<Text style={{color:theme.warning,fontSize:14}}>Lịch sử đổi xe đã được chỉnh sửa sau khi ghi.</Text>}
         </Card>
-        <Card style={{gap:16}}>
-          <Text accessibilityRole="header" style={{color:theme.text,fontSize:21,fontWeight:'700'}}>Xe cũ đã thay</Text>
+        <Card style={{gap:12}}>
+          <Text accessibilityRole="header" style={{color:theme.text,fontSize:17,fontWeight:'800'}}>Xe cũ đã thay</Text>
           <Text style={{color:theme.text,fontSize:19,fontWeight:'700'}}>{receipt.from.license||('Xe #'+receipt.from.id)}</Text>
           <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>{receipt.from.name}</Text>
           <Text accessibilityRole="header" style={{color:theme.text,fontSize:21,fontWeight:'700'}}>Xe thay thế</Text>

@@ -27,10 +27,7 @@ function Dashboard(){
   const active=DASHBOARD_PRESETS.find(p=>{const[a,b]=dashboardPeriod(p.id,today);return a===from&&b===to;})?.id||'custom';
   const storeName=store==='all'?'Tất cả cơ sở':(workspace.data?.stores||[]).find(s=>String(s.id)===store)?.name||'Cơ sở được phân công';
   return <SafeAreaView edges={['bottom','left','right']} style={{flex:1,backgroundColor:theme.background}}><ScrollView refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={()=>void query.refetch()} tintColor={theme.primary}/>} contentContainerStyle={{padding:16,paddingBottom:36,gap:12,maxWidth:760,width:'100%',alignSelf:'center'}}>
-    <View style={{gap:2}}>
-      <Text accessibilityRole="header" style={{color:theme.text,fontSize:22,fontWeight:'800'}}>Tổng quan giao dịch</Text>
-      <Text style={{color:theme.muted,fontSize:13}}>{storeName} · {from.split('-').reverse().join('/')} → {to.split('-').reverse().join('/')}</Text>
-    </View>
+    <Text style={{color:theme.muted,fontSize:13}}>{storeName} · {from.split('-').reverse().join('/')} → {to.split('-').reverse().join('/')}</Text>
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap:7}}>
       {DASHBOARD_PRESETS.map(p=><Chip key={p.id} label={p.label} selected={active===p.id} onPress={()=>{const[a,b]=dashboardPeriod(p.id,today);setFrom(a);setTo(b);}}/>)}
       <Chip label={filtersOpen?'Ẩn bộ lọc':'Tùy chỉnh & Cơ sở'} selected={filtersOpen||active==='custom'} icon={<SlidersHorizontal size={14} color={filtersOpen||active==='custom'?theme.primary:theme.text}/>} onPress={()=>setFiltersOpen(v=>!v)}/>

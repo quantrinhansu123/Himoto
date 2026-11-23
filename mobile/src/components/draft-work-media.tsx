@@ -1,5 +1,6 @@
 import {useEffect,useMemo,useRef,useState} from 'react';
 import {Platform,ScrollView,Text} from 'react-native';
+import {SafeAreaView} from 'react-native-safe-area-context';
 import {router} from 'expo-router';
 import {useSession} from '@/providers/session';
 import {useContractPhotos} from '@/hooks/use-contract-photos';
@@ -47,15 +48,14 @@ function Media({setup}:{setup:Setup}){
       await complete();
     }catch(cause){if(alive.current)setError((cause as Error).message);}finally{if(alive.current)setBusy(false);}
   }
-  return <>
-    <ScrollView contentContainerStyle={{padding:20,gap:16}}>
-      <Text accessibilityRole="header" style={{color:theme.text,fontSize:25,fontWeight:'800'}}>Hoàn tất hồ sơ đã lưu</Text>
-      <Card style={{gap:12}}><Text style={{color:theme.text,fontSize:20,fontWeight:'700'}}>{`Hợp đồng #${id}`}</Text><Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>Thông tin hợp đồng đã được lưu. Tiếp tục ảnh và giấy tờ trên đúng hợp đồng này; app kiểm tra quyền hiện tại khi đọc hoặc lưu từng mục.</Text></Card>
+  return <SafeAreaView edges={['left','right','bottom']} style={{flex:1,backgroundColor:theme.background}}>
+    <ScrollView contentContainerStyle={{padding:16,paddingBottom:36,gap:14,maxWidth:760,width:'100%',alignSelf:'center'}}>
+      <Card style={{gap:10}}><Text accessibilityRole="header" style={{color:theme.text,fontSize:19,fontWeight:'800'}}>{`Hợp đồng #${id}`}</Text><Text style={{color:theme.muted,fontSize:14,lineHeight:21}}>Thông tin hợp đồng đã được lưu. Tiếp tục ảnh và giấy tờ trên đúng hợp đồng này; app kiểm tra quyền hiện tại khi đọc hoặc lưu từng mục.</Text></Card>
       {!!error&&<InlineError message={error}/>}
       <Button label={`Hoàn tất ảnh và giấy tờ #${id}`} loading={busy} onPress={()=>void proceed()}/>
       <Button secondary label="Về Tài khoản" disabled={busy} onPress={()=>router.dismissTo('/(tabs)/account')}/>
     </ScrollView>
     {photoStage&&<ContractPhotoSave contractId={id} revision={revision} copyAfter={!!head.work.input.draft.customer_id} documents={documents} vehicles={head.work.input.draft.vehicles} onClose={()=>setPhotoStage(false)} onComplete={complete}/>}
     {copyStage&&<CustomerPhotoCopyStage id={id} revision={revision} work={work} onClose={()=>setCopyStage(false)} onComplete={complete}/>}
-  </>;
+  </SafeAreaView>;
 }

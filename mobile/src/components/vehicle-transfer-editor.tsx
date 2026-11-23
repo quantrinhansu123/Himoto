@@ -67,18 +67,18 @@ function TransferForm({id}:{id:string}){
       <KeyboardFormScrollView ref={scroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={{padding:20,gap:18,maxWidth:760,width:'100%',alignSelf:'center'}}>{children}</KeyboardFormScrollView>
     {overlays}
   </SafeAreaView>;
-  if(write.pending.length)return frame(<Card style={{gap:16}}>
-    <Text accessibilityRole="header" style={{color:theme.text,fontSize:25,fontWeight:'800'}}>Thao tác kho đang chờ đối chiếu</Text>
-    <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>Đối chiếu các mã của xe này trước thao tác mới. Nội dung đang nhập được giữ trong màn hình.</Text>
+  if(write.pending.length)return frame(<Card style={{gap:14}}>
+    <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'800'}}>Thao tác kho đang chờ đối chiếu</Text>
+    <Text style={{color:theme.muted,fontSize:14,lineHeight:21}}>Đối chiếu các mã của xe này trước thao tác mới. Nội dung đang nhập được giữ trong màn hình.</Text>
     {!!write.error&&<InlineError message={write.error}/>}
-    {write.pending.map(entry=><Card key={entry.key} style={{gap:12}}>
-      <Text style={{color:theme.text,fontSize:18,fontWeight:'700'}}>{transferLabels[entry.action]}</Text>
+    {write.pending.map(entry=><Card key={entry.key} style={{gap:10}}>
+      <Text style={{color:theme.text,fontSize:16,fontWeight:'700'}}>{transferLabels[entry.action]}</Text>
       <Button label={'Đối chiếu '+transferLabels[entry.action].toLowerCase()} loading={write.busy} onPress={()=>setResolving(entry)}/>
       <Button label={'Mở phiếu '+transferLabels[entry.action].toLowerCase()} secondary disabled={write.busy} onPress={()=>write.openReceipt(entry.action)}/>
     </Card>)}
   </Card>);
-  if(!write.checked)return frame(<Card style={{gap:16}}>
-    <Text accessibilityRole="header" style={{color:theme.text,fontSize:23,fontWeight:'700'}}>Kiểm tra thao tác trên thiết bị</Text>
+  if(!write.checked)return frame(<Card style={{gap:14}}>
+    <Text accessibilityRole="header" style={{color:theme.text,fontSize:19,fontWeight:'700'}}>Kiểm tra thao tác trên thiết bị</Text>
     {!!write.error&&<InlineError message={write.error}/>}
     <Button label="Đọc lại các thao tác kho" loading={write.checking} onPress={()=>{void write.checkPending();}}/>
   </Card>);
@@ -86,7 +86,7 @@ function TransferForm({id}:{id:string}){
   return frame(<>
     <Card style={{gap:8}}>
       <View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center',gap:8}}>
-        <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'800',flex:1}}>Điều chuyển và nhận xe</Text>
+        <Text accessibilityLiveRegion="polite" style={{color:theme.text,fontSize:14,fontWeight:'700',flex:1}}>Bước {step+1}/3 · {step===0?'Chọn thao tác':step===1?'Thông tin thực tế':'Rà soát trước khi ghi'}</Text>
         {vehicle&&<StatusBadge status={vehicle.status} label={statuses[vehicle.status]||vehicle.status} />}
       </View>
       <View style={{gap:2}}>
@@ -96,7 +96,6 @@ function TransferForm({id}:{id:string}){
           <KeyValueRow label="Cơ sở sở hữu hiện tại" value={vehicle.ownerStoreName||'Chưa xác định'} />
         </>}
       </View>
-      <Text accessibilityLiveRegion="polite" style={{color:theme.text,fontSize:14,fontWeight:'700'}}>Bước {step+1}/3 · {step===0?'Chọn thao tác':step===1?'Thông tin thực tế':'Rà soát trước khi ghi'}</Text>
     </Card>
     {!!(error||write.error)&&<InlineError message={error||write.error}/>}
     {!!write.notice&&<Text accessibilityLiveRegion="polite" style={{color:theme.text,fontSize:14,lineHeight:21}}>{write.notice}</Text>}

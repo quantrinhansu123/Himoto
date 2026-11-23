@@ -75,25 +75,24 @@ function SwapForm({id}:{id:string}) {
       </KeyboardFormScrollView>
     {overlays}
   </SafeAreaView>;
-  if(action.key)return frame(<Card style={{gap:16}}>
-    <Text accessibilityRole="header" style={{color:theme.text,fontSize:25,fontWeight:'800'}}>Đổi xe đang chờ đối chiếu</Text>
-    <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>Kiểm tra phiếu gốc trước khi đổi xe thêm. Lựa chọn đang nhập được giữ trong màn hình này.</Text>
+  if(action.key)return frame(<Card style={{gap:14}}>
+    <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'800'}}>Đổi xe đang chờ đối chiếu</Text>
+    <Text style={{color:theme.muted,fontSize:14,lineHeight:21}}>Kiểm tra phiếu gốc trước khi đổi xe thêm. Lựa chọn đang nhập được giữ trong màn hình này.</Text>
     {!!action.error&&<InlineError message={action.error}/>}
     <Button label="Đối chiếu đổi xe với máy chủ" loading={action.busy} onPress={()=>setResolving(true)}/>
     <Button label="Mở phiếu đổi xe" secondary disabled={action.busy} onPress={action.openReceipt}/>
   </Card>);
-  if(!action.checked)return frame(<Card style={{gap:16}}>
-    <Text accessibilityRole="header" style={{color:theme.text,fontSize:23,fontWeight:'700'}}>Kiểm tra thao tác trên thiết bị</Text>
+  if(!action.checked)return frame(<Card style={{gap:14}}>
+    <Text accessibilityRole="header" style={{color:theme.text,fontSize:19,fontWeight:'700'}}>Kiểm tra thao tác trên thiết bị</Text>
     {!!action.error&&<InlineError message={action.error}/>}
     <Button label="Đọc lại thao tác đổi xe" loading={action.checking} onPress={()=>{void action.checkPending();}}/>
     <Button label="Mở Tài khoản để đối chiếu" secondary disabled={action.checking} onPress={action.openAccount}/>
   </Card>);
   const data=query.data;
   return frame(<>
-    <Card style={{gap:8}}>
-      <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'800'}}>Đổi xe trong hợp đồng</Text>
-      <Text style={{color:theme.muted,fontSize:14,lineHeight:21}}>{selection?.order.code||data?.code||('#'+id)} · {selection?.order.ownership||data?.ownership?'Thuê sở hữu':'Thuê xe'}</Text>
-      <Text accessibilityLiveRegion="polite" style={{color:theme.text,fontSize:14,fontWeight:'700'}}>Bước {step+1}/3 · {['Chọn xe đang thuê','Chọn xe thay thế','Rà soát đổi xe'][step]}</Text>
+    <Card style={{gap:6}}>
+      <Text style={{color:theme.text,fontSize:15,fontWeight:'700'}}>{selection?.order.code||data?.code||('#'+id)} · {selection?.order.ownership||data?.ownership?'Thuê sở hữu':'Thuê xe'}</Text>
+      <Text accessibilityLiveRegion="polite" style={{color:theme.muted,fontSize:13.5,fontWeight:'600'}}>Bước {step+1}/3 · {['Chọn xe đang thuê','Chọn xe thay thế','Rà soát đổi xe'][step]}</Text>
     </Card>
     {!!(error||action.error)&&<InlineError message={error||action.error}/>}
     {!!action.notice&&<Text accessibilityLiveRegion="polite" style={{color:theme.text,fontSize:14,lineHeight:21}}>{action.notice}</Text>}

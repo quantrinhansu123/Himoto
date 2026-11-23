@@ -27,12 +27,9 @@ function Pending() {
         contentContainerStyle={{ padding: 16, paddingBottom: 36, gap: 11, maxWidth: 760, width: '100%', alignSelf: 'center' }}
         refreshControl={<RefreshControl refreshing={query.isRefetching} tintColor={theme.primary} onRefresh={() => { void query.refetch(); }} />}
       >
-        <View style={{ gap: 2 }}>
-          <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 22, fontWeight: '800' }}>Chưa gửi Telegram</Text>
-          <Text style={{ color: theme.muted, fontSize: 12.5, lineHeight: 18 }}>
-            Giao dịch chờ gửi, thiếu cấu hình, lỗi hoặc đã thu hồi. Mở từng mục để kiểm tra và gửi.
-          </Text>
-        </View>
+        <Text style={{ color: theme.muted, fontSize: 13, lineHeight: 19 }}>
+          Giao dịch chờ gửi, thiếu cấu hình, lỗi hoặc đã thu hồi. Mở từng mục để kiểm tra và gửi.
+        </Text>
         <ChoiceField label="Cơ sở" value={store} choices={[...(session!.user.allStores ? [{ value: 'all', label: 'Tất cả cơ sở' }] : []), ...(workspace.data?.stores || []).filter(s => session!.user.allStores || s.id === session!.user.storeId).map(s => ({ value: String(s.id), label: s.name }))]} searchable onChange={v => { setStore(v); setPage(1); }} />
         {query.isPending ? (
           <SkeletonList count={4} lines={3} />

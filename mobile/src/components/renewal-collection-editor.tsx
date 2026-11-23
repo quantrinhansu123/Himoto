@@ -100,9 +100,9 @@ function CollectionForm({ id, version }: { id: string; version?: string }) {
     </SafeAreaView>;
   }
   if (!data) {
-    if (action.key) return <SafeAreaView edges={["left", "right", "bottom"]} style={{ flex: 1, backgroundColor: theme.background }}><ScrollView contentContainerStyle={{ padding: 20 }}><Card style={{ gap: 16 }}>
-      <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 24, fontWeight: "800" }}>Khoản thu đang chờ đối chiếu</Text>
-      <Text style={{ color: theme.muted, fontSize: 16, lineHeight: 25 }}>Giữ mã yêu cầu để mở đúng phiếu đã lưu trước khi ghi khoản khác.</Text>
+    if (action.key) return <SafeAreaView edges={["left", "right", "bottom"]} style={{ flex: 1, backgroundColor: theme.background }}><ScrollView contentContainerStyle={{ padding: 16 }}><Card style={{ gap: 14 }}>
+      <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 20, fontWeight: "800" }}>Khoản thu đang chờ đối chiếu</Text>
+      <Text style={{ color: theme.muted, fontSize: 14, lineHeight: 21 }}>Giữ mã yêu cầu để mở đúng phiếu đã lưu trước khi ghi khoản khác.</Text>
       {!!action.error && <InlineError message={action.error} />}
       <Button label="Đối chiếu khoản thu theo kỳ" loading={action.busy || action.checking} onPress={() => setResolving(true)} />
     </Card></ScrollView>{overlays}</SafeAreaView>;

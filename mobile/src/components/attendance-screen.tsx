@@ -139,10 +139,7 @@ export function AttendanceScreen({ historyOnly = false }: { historyOnly?: boolea
     <FlatList data={historyOnly ? query.data?.rows || [] : []} keyExtractor={row => String(row.id)} contentContainerStyle={{ padding: 16, paddingBottom: 36, gap: 12, maxWidth: 760, width: '100%', alignSelf: 'center' }} refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={() => { void query.refetch(); }} tintColor={theme.primary} />}
       ListHeaderComponent={<View style={{ gap: 12 }}>
         {!historyOnly && <>
-          <View style={{ gap: 2 }}>
-            <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 22, fontWeight: '800' }}>Chấm công</Text>
-            {serverNow && <Text style={{ color: theme.muted, fontSize: 13 }}>Giờ máy chủ (VN): {dateTime(serverNow)}</Text>}
-          </View>
+          {serverNow && <Text style={{ color: theme.muted, fontSize: 13 }}>Giờ máy chủ (VN): {dateTime(serverNow)}</Text>}
           {/* Hero Check-In / Check-Out Card FIRST above the fold */}
           {query.isPending && !query.data ? <SkeletonList count={1} lines={4} /> : <Card style={{ gap: 12, padding: 16 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
@@ -185,10 +182,7 @@ export function AttendanceScreen({ historyOnly = false }: { historyOnly?: boolea
         </>}
         {historyOnly && <>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-            <View style={{ flex: 1, gap: 2 }}>
-              <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 22, fontWeight: '800' }}>Lịch sử chấm công</Text>
-              <Text style={{ color: theme.muted, fontSize: 13 }}>{from.split('-').reverse().join('/')} → {to.split('-').reverse().join('/')} · {query.data?.total ?? '—'} lượt</Text>
-            </View>
+            <Text style={{ color: theme.muted, fontSize: 13, flex: 1 }}>{from.split('-').reverse().join('/')} → {to.split('-').reverse().join('/')} · {query.data?.total ?? '—'} lượt</Text>
             <Button size="sm" label="Chấm công" disabled={busy} onPress={() => router.push('/attendance')} />
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>

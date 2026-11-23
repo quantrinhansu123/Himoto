@@ -68,12 +68,9 @@ function CollectionReport() {
       refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={() => { void query.refetch(); }} tintColor={theme.primary} />}
       ListHeaderComponent={<View style={{ gap: 11 }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-          <View style={{ flex: 1, gap: 2 }}>
-            <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 22, fontWeight: '800' }}>Báo cáo nợ chậm</Text>
-            <Text style={{ color: theme.muted, fontSize: 12.5 }}>
-              {data ? `${rows.length} hợp đồng · Đọc lúc ${dateTime(data.read_at)}` : 'Theo dõi quá hạn và cập nhật xử lý theo PGD'}
-            </Text>
-          </View>
+          <Text style={{ color: theme.muted, fontSize: 13, flex: 1 }}>
+            {data ? `${rows.length} hợp đồng · Đọc lúc ${dateTime(data.read_at)}` : 'Theo dõi quá hạn và cập nhật xử lý theo PGD'}
+          </Text>
           {user.permissions.includes('contracts.draft') && (
             <Button size="sm" icon={<Send size={13} color={theme.primaryText} />} label="Gửi Telegram" disabled={!canSend || !data || query.isFetching || query.isError || busy} onPress={() => { if (data) { setError(''); setPreview({ store, hash: data.hash, messages: data.messages }); } }} />
           )}

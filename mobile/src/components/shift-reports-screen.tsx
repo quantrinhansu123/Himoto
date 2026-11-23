@@ -47,10 +47,7 @@ function ShiftReportsList({ initialReportType }: { initialReportType: ShiftRepor
             { value: 'end_shift', label: 'Báo cáo Hết ca' },
           ]}
         />
-        <View style={{ gap: 3 }}>
-          <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 22, fontWeight: '800' }}>{title}</Text>
-          <Text style={{ color: theme.muted, fontSize: 13, lineHeight: 19 }}>{midShift ? 'Kiểm kê xe, pin và tiền tại thời điểm giữa ca.' : SHIFT_REPORT_DESCRIPTION}</Text>
-        </View>
+        <Text style={{ color: theme.muted, fontSize: 13, lineHeight: 19 }}>{midShift ? 'Kiểm kê xe, pin và tiền tại thời điểm giữa ca.' : SHIFT_REPORT_DESCRIPTION}</Text>
         <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
           {options.data?.canWrite && (
             <Button

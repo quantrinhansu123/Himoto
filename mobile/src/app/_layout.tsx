@@ -15,8 +15,9 @@ import { AppUpdateBridge } from '@/components/app-update-bridge';
 import { SePayNotice } from '@/components/sepay-notice';
 
 export function ErrorBoundary({ retry }: ErrorBoundaryProps) {
+  const theme = useTheme();
   return (
-    <SafeAreaView style={{ flex: 1 }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
       <StateView
         title="Không mở được màn hình"
         message="Vui lòng thử lại để tiếp tục."
@@ -59,6 +60,8 @@ function Navigator() {
         screenOptions={{
           headerStyle: { backgroundColor: theme.surface },
           headerTintColor: theme.text,
+          headerShadowVisible: false,
+          headerTitleStyle: { fontWeight: "700", fontSize: 17 },
           contentStyle: { backgroundColor: theme.background },
           headerBackButtonDisplayMode: "minimal",
         }}

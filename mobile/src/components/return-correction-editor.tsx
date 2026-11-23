@@ -31,8 +31,7 @@ export function ReturnCorrectionEditor({ id, initialItem }: { id: string; initia
   return <SafeAreaView edges={['left', 'right', 'bottom']} style={{ flex: 1, backgroundColor: theme.background }}>
     <Stack.Screen options={{ title: 'Hồ sơ trả xe' }} />
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <ScrollView ref={scroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={{ padding: 18, gap: 16, maxWidth: 760, width: '100%', alignSelf: 'center', paddingBottom: 36 }}>
-        <Text accessibilityRole="header" style={{ ...text, fontSize: 24, lineHeight: 32, fontWeight: '800' }}>Hồ sơ trả xe</Text>
+      <ScrollView ref={scroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={{ padding: 16, gap: 14, maxWidth: 760, width: '100%', alignSelf: 'center', paddingBottom: 36 }}>
         {!!(write.error || write.query.error) && <InlineError message={write.error || write.query.error?.message || 'Chưa mở được lượt trả.'} />}
         {!!write.notice && <Text accessibilityLiveRegion="polite" style={text}>{write.notice}</Text>}
         {write.query.isPending && <StateView title="Đang kiểm tra lượt trả và lần sửa trước" loading />}

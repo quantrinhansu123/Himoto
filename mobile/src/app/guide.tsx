@@ -110,8 +110,7 @@ export default function Guide() {
   const activeChapter=chapters.find(c=>c.id===chapterId)||chapters[0];
   const cleanInline=(raw:string)=>raw.replace(/\*\*([^*]+)\*\*/g,'$1').replace(/`([^`]+)`/g,'$1');
   return <SafeAreaView edges={['bottom','left','right']} style={{flex:1,backgroundColor:theme.background}}>
-    <View style={{paddingHorizontal:16,paddingTop:14,paddingBottom:6,gap:10,maxWidth:760,width:'100%',alignSelf:'center'}}>
-      <Text accessibilityRole="header" style={{color:theme.text,fontSize:22,fontWeight:'800'}}>Hướng dẫn & Hỏi đáp</Text>
+    <View style={{paddingHorizontal:16,paddingTop:12,paddingBottom:6,gap:8,maxWidth:760,width:'100%',alignSelf:'center'}}>
       <SegmentedBar value={tab} onChange={setTab} options={[{value:'guide',label:'Quy trình'},{value:'manual',label:'Sổ tay (17)'},{value:'faq',label:'Hỏi đáp'}]} />
     </View>
     {tab==='faq'?<FaqList onZoom={(uri,headers)=>setZoomImage({uri,headers})}/>:tab==='manual'?<ScrollView contentContainerStyle={{padding:16,gap:14,maxWidth:760,width:'100%',alignSelf:'center'}}>

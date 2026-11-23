@@ -22,10 +22,7 @@ export default function Route() {
         contentContainerStyle={{ padding: 16, gap: 11, paddingBottom: 36, maxWidth: 760, width: '100%', alignSelf: 'center' }}
         refreshControl={<RefreshControl refreshing={query.isRefetching} tintColor={theme.primary} onRefresh={() => { void query.refetch(); }} />}
       >
-        <View style={{ gap: 2 }}>
-          <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 22, fontWeight: '800' }}>Tiền về SePay</Text>
-          <Text style={{ color: theme.muted, fontSize: 12.5 }}>Biến động giao dịch chuyển khoản tự động đối chiếu hợp đồng</Text>
-        </View>
+        <Text style={{ color: theme.muted, fontSize: 13 }}>Biến động giao dịch chuyển khoản tự động đối chiếu hợp đồng</Text>
         {session && <SoundSetting key={session.user.id} userId={session.user.id} />}
         {query.isPending ? (
           <SkeletonList count={4} lines={2} />

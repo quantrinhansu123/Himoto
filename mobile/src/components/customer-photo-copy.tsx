@@ -13,8 +13,8 @@ export function CustomerPhotoCopy({id,expectedRevision,autoStart=false,onComplet
   useEffect(()=>{if(autoStart&&copy.checked&&!copy.busy&&!copy.key&&!copy.receipt&&!started.current){started.current=true;void copy.save();}},[autoStart,copy]);
   useEffect(()=>{onCloseAvailabilityChange?.(!copy.busy&&!copy.key);},[onCloseAvailabilityChange,copy.busy,copy.key]);
   return <SafeAreaView style={{flex:1,backgroundColor:theme.background}}>
-    <ScrollView contentContainerStyle={{padding:18,gap:16,maxWidth:760,width:'100%',alignSelf:'center'}}>
-      <Text accessibilityRole="header" style={{color:theme.text,fontSize:24,fontWeight:'800'}}>Giấy tờ khách trên hợp đồng</Text>
+    <ScrollView contentContainerStyle={{padding:16,paddingBottom:36,gap:14,maxWidth:760,width:'100%',alignSelf:'center'}}>
+      {!!onClose&&<Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'800'}}>Giấy tờ khách trên hợp đồng</Text>}
       <Card style={{gap:10}}><Text style={{color:theme.text,fontSize:18,fontWeight:'700'}}>Hợp đồng #{id}</Text>
         <Text style={{color:theme.muted,fontSize:15,lineHeight:23}}>Bổ sung giấy tờ từ hồ sơ khách vào các mục còn thiếu. Ảnh hợp đồng đã có được giữ; sửa ảnh khách sau này không đổi bản đã sao chép.</Text>
         {autoStart&&<Text style={{color:theme.muted,fontSize:15,lineHeight:23}}>Thông tin hợp đồng và ảnh đã lưu được giữ. Bước này không tạo thêm bản nháp.</Text>}</Card>

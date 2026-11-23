@@ -19,8 +19,8 @@ function Inventory({transfer,initialStore}:{transfer:boolean;initialStore:string
   return <SafeAreaView edges={['left','right','bottom']} style={{flex:1,backgroundColor:theme.background}}>
     <FlatList ref={list} data={waiting||query.isError?[]:data?.rows||[]} keyExtractor={row=>String(row.id)} keyboardShouldPersistTaps="handled" contentContainerStyle={{padding:16,paddingBottom:40,gap:12,maxWidth:760,width:'100%',alignSelf:'center'}} refreshControl={<RefreshControl refreshing={query.isRefetching&&!query.isPlaceholderData} tintColor={theme.primary} onRefresh={()=>void query.refetch()}/>}
       ListHeaderComponent={<View style={{gap:12,marginBottom:4}}>
-        <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'800'}}>{transfer?'Chọn xe cần chuyển':'Kho xe toàn hệ thống'}</Text>
-        <Text style={{color:theme.muted,fontSize:13.5,lineHeight:20}}>{transfer?'Có thể chọn xe ở mọi cơ sở để điều chuyển (xe Lưu kho sẽ chờ cơ sở đích nhận; xe ở trạng thái khác sẽ chuyển kho ngay).':'Tra cứu xe giữa các cơ sở và kiểm tra khả năng điều chuyển. Nhận xe tại cơ sở đích trước khi lập hợp đồng.'}</Text>
+        {transfer&&<Text accessibilityRole="header" style={{color:theme.text,fontSize:19,fontWeight:'800'}}>Chọn xe cần chuyển</Text>}
+        <Text style={{color:theme.muted,fontSize:13,lineHeight:19}}>{transfer?'Có thể chọn xe ở mọi cơ sở để điều chuyển (xe Lưu kho sẽ chờ cơ sở đích nhận; xe ở trạng thái khác sẽ chuyển kho ngay).':'Tra cứu xe giữa các cơ sở và kiểm tra khả năng điều chuyển. Nhận xe tại cơ sở đích trước khi lập hợp đồng.'}</Text>
         <Card style={{gap:12}}>
           <FormField label="Tìm trong kho xe chung" value={search} onChangeText={setSearch} maxLength={100} hint="Biển số, tên xe hoặc cơ sở" onSubmitEditing={()=>{setApplied(search.trim());move(1);}} returnKeyType="search"/>
           <Button size="sm" secondary label="Tìm xe trong kho chung" onPress={()=>{setApplied(search.trim());move(1);}}/>

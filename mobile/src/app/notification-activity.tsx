@@ -15,8 +15,7 @@ export default function NotificationActivity(){
   const rows=[...new Map(query.data?.pages.flatMap(page=>page.rows).map(row=>[row.id,row])).values()];
   return <SafeAreaView edges={['left','right','bottom']} style={{flex:1,backgroundColor:theme.background}}><FlatList data={rows} keyExtractor={row=>String(row.id)} contentContainerStyle={{padding:16,paddingBottom:36,gap:12,maxWidth:760,width:'100%',alignSelf:'center'}} refreshControl={<RefreshControl refreshing={query.isRefetching&&!query.isFetchingNextPage} onRefresh={()=>{void query.refetch();}} tintColor={theme.primary}/> }
     ListHeaderComponent={<View style={{gap:6}}>
-    <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'800'}}>Sự kiện gần đây</Text>
-    <Text style={{color:theme.muted,fontSize:13.5,lineHeight:20}}>Sự kiện trong 7 ngày theo quyền và cơ sở của tài khoản.</Text>
+    <Text style={{color:theme.muted,fontSize:13,lineHeight:19}}>Sự kiện trong 7 ngày theo quyền và cơ sở của tài khoản.</Text>
     {query.isError&&!!rows.length&&<InlineError message="Chưa cập nhật được sự kiện. Đang giữ danh sách đã tải."/>}
     </View>}
     ListEmptyComponent={query.isPending?<SkeletonList count={4} lines={2}/>:query.isError?<>

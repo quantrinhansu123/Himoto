@@ -81,23 +81,23 @@ function Recovery({id}:{id:string}) {
     <ScrollView contentContainerStyle={{padding:20,gap:18,maxWidth:760,width:'100%',alignSelf:'center'}}>
       {!!error&&<InlineError message={error}/>}
       {!!notice&&<Text accessibilityLiveRegion="polite" style={{color:theme.text,fontSize:16,lineHeight:25}}>{notice}</Text>}
-      {!receipt?<Card style={{gap:16}}>
-        <Text accessibilityRole="header" style={{color:theme.text,fontSize:25,fontWeight:'800'}}>{key?'Trả xe đang chờ đối chiếu':'Đối chiếu trả xe'}</Text>
-        <Text style={{color:theme.muted,fontSize:16,lineHeight:25}}>{key?'Giữ mã đến khi đã kiểm tra phiếu gốc hoặc máy chủ xác nhận chưa ghi.':'Không có yêu cầu trả xe chờ đối chiếu cho hợp đồng này.'}</Text>
+      {!receipt?<Card style={{gap:14}}>
+        <Text accessibilityRole="header" style={{color:theme.text,fontSize:20,fontWeight:'800'}}>{key?'Trả xe đang chờ đối chiếu':'Đối chiếu trả xe'}</Text>
+        <Text style={{color:theme.muted,fontSize:14,lineHeight:21}}>{key?'Giữ mã đến khi đã kiểm tra phiếu gốc hoặc máy chủ xác nhận chưa ghi.':'Không có yêu cầu trả xe chờ đối chiếu cho hợp đồng này.'}</Text>
         {key&&<Button label="Đối chiếu trả xe với máy chủ" loading={busy} onPress={()=>setConfirm(true)}/>}
         <Button label="Tải lại kết quả trả xe" secondary loading={busy} onPress={()=>{void load();}}/>
         {!key&&<Button label="Mở hợp đồng" secondary disabled={busy} onPress={()=>router.dismissTo({pathname:'/record/[kind]/[id]',params:{kind:'contracts',id}})}/>}
       </Card>:<>
-        <Card style={{gap:16}}>
-          <Text accessibilityRole="header" style={{color:theme.text,fontSize:25,fontWeight:'800'}}>Trả xe đã được ghi nhận</Text>
-          <Text style={{color:theme.text,fontSize:19,fontWeight:'700'}}>{receipt.review.fees.code}</Text>
-          <Text selectable style={{color:theme.muted,fontSize:15,lineHeight:24}}>Ghi lúc {dateTime(receipt.recordedAt)} · mã {receipt.requestId}</Text>
+        <Card style={{gap:10}}>
+          <Text accessibilityRole="header" style={{color:theme.success,fontSize:20,fontWeight:'800'}}>Trả xe đã được ghi nhận</Text>
+          <Text style={{color:theme.text,fontSize:17,fontWeight:'700'}}>{receipt.review.fees.code}</Text>
+          <Text selectable style={{color:theme.muted,fontSize:13,lineHeight:20}}>Ghi lúc {dateTime(receipt.recordedAt)} · mã {receipt.requestId}</Text>
           {!receipt.current&&<InlineError message="Hồ sơ có thay đổi sau lần trả xe này. Đây là phiếu gốc; kiểm tra dữ liệu hiện tại trước khi thao tác tiếp."/>}
-          {!receipt.itemsCurrent&&<Text style={{color:theme.warning,fontSize:15,lineHeight:24}}>Dòng xe đã thay đổi sau khi trả.</Text>}
-          {!receipt.paymentsCurrent&&<Text style={{color:theme.warning,fontSize:15,lineHeight:24}}>Có phiếu thu/hoàn đã thay đổi hoặc bị hủy sau khi ghi.</Text>}
+          {!receipt.itemsCurrent&&<Text style={{color:theme.warning,fontSize:14,lineHeight:20}}>Dòng xe đã thay đổi sau khi trả.</Text>}
+          {!receipt.paymentsCurrent&&<Text style={{color:theme.warning,fontSize:14,lineHeight:20}}>Có phiếu thu/hoàn đã thay đổi hoặc bị hủy sau khi ghi.</Text>}
         </Card>
-        <Card style={{gap:16}}>
-          <Text accessibilityRole="header" style={{color:theme.text,fontSize:21,fontWeight:'700'}}>Xe đã nhận</Text>
+        <Card style={{gap:12}}>
+          <Text accessibilityRole="header" style={{color:theme.text,fontSize:17,fontWeight:'800'}}>Xe đã nhận</Text>
           {receipt.review.fees.items.map(row=><View key={row.id} style={{gap:6}}>
             <Text style={{color:theme.text,fontSize:17,fontWeight:'700'}}>{row.license||row.name||('Xe #'+row.vehicleId)}</Text>
             <Text style={{color:theme.muted,fontSize:15,lineHeight:24}}>Nhận lúc {dateTime(row.returnedAt)} · hạn trả {dateTime(row.returnAt)}</Text>

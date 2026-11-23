@@ -32,10 +32,7 @@ export default function Route() {
   }
   const selectedRow = query.data?.find(item => String(item.id) === store);
   return <SafeAreaView edges={['bottom', 'left', 'right']} style={{ flex: 1, backgroundColor: theme.background }}><KeyboardFormScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40, gap: 14, maxWidth: 760, width: '100%', alignSelf: 'center' }}>
-    <View style={{ gap: 4 }}>
-      <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 20, fontWeight: '800' }}>Cài đặt GPS chấm công</Text>
-      <Text style={{ color: theme.muted, fontSize: 13.5, lineHeight: 20 }}>Chọn cơ sở và kiểm tra tọa độ dùng để xác nhận vị trí chấm công và kiểm kê ca.</Text>
-    </View>
+    <Text style={{ color: theme.muted, fontSize: 13, lineHeight: 19 }}>Chọn cơ sở và kiểm tra tọa độ dùng để xác nhận vị trí chấm công và kiểm kê ca.</Text>
     {query.isPending ? <StateView title="Đang tải vị trí cơ sở…" loading /> : query.isError ? <StateView title="Chưa tải được vị trí cơ sở" message={query.error.message} retry={() => void query.refetch()} /> : <Card style={{ gap: 12 }}>
       <ChoiceField label="Cơ sở" value={store} searchable choices={query.data.map(row => ({ value: String(row.id), label: `${row.store_name} · ${row.latitude != null && row.longitude != null ? 'Đã có GPS' : 'Chưa cấu hình GPS'}` }))} disabled={busy || uncertain} onChange={choose} />
       {selectedRow && <View style={{ gap: 4 }}>

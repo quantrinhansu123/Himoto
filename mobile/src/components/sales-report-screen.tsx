@@ -73,10 +73,7 @@ export function SalesReportScreen() {
   const mainChoices = SALES_REPORTS.filter(row => !["by-staff", "by-store", "new-customers", "assigned"].includes(row.value) && (row.value !== "fleet" || options.data?.canViewFleet));
   const storeName = store === "all" ? "Tất cả cơ sở" : (options.data?.stores || []).find(r => String(r.id) === store)?.name || "Cơ sở đã chọn";
   return <ScrollView ref={scroll} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, paddingBottom: 36, gap: 11, width: "100%", maxWidth: 760, alignSelf: "center" }} refreshControl={<RefreshControl refreshing={report.isRefetching || options.isRefetching} tintColor={theme.primary} onRefresh={() => { void report.refetch(); void options.refetch(); }} />}>
-    <View style={{ gap: 2 }}>
-      <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 22, fontWeight: "800" }}>Báo cáo doanh thu</Text>
-      <Text style={{ color: theme.muted, fontSize: 12.5 }}>{storeName} · {from.split("-").reverse().join("/")} → {to.split("-").reverse().join("/")}</Text>
-    </View>
+    <Text style={{ color: theme.muted, fontSize: 13 }}>{storeName} · {from.split("-").reverse().join("/")} → {to.split("-").reverse().join("/")}</Text>
     {/* Horizontal Report Kind Chips */}
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 7 }}>
       {mainChoices.map(opt => {

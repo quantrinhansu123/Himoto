@@ -59,10 +59,7 @@ function Reminders({ initialTab = "history", initialStore }: { initialTab?: stri
         contentContainerStyle={{ padding: 16, paddingBottom: 36, gap: 11, maxWidth: 760, width: "100%", alignSelf: "center" }}
         refreshControl={<RefreshControl refreshing={current.isRefetching} tintColor={theme.primary} onRefresh={() => { void current.refetch(); }} />}
       >
-        <View style={{ gap: 2 }}>
-          <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 22, fontWeight: "800" }}>Gửi nhắc nợ Zalo</Text>
-          <Text style={{ color: theme.muted, fontSize: 12.5 }}>{storeName} · {total} {tab === "history" ? "lần gửi" : "hợp đồng đến hạn"}</Text>
-        </View>
+        <Text style={{ color: theme.muted, fontSize: 13 }}>{storeName} · {total} {tab === "history" ? "lần gửi" : "hợp đồng đến hạn"}</Text>
         {canSend && (
           <SegmentedBar
             value={tab}
