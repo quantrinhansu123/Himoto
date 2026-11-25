@@ -26,6 +26,9 @@ export function TableScrollDock() {
       for (const pane of document.querySelectorAll<HTMLElement>(PANES)) {
         const table = pane.querySelector('table');
         if (!table || pane.closest('.mg-contract-paper-scroll')) continue;
+        // The floating scrollbar intercepts clicks on note editors in the bottom row.
+        // These tables keep their native scrollbar so the full editor stays interactive.
+        if (table.querySelector('th[data-column="collection_notes"], td.mg-collection-note-cell')) continue;
         panes.add(pane); resize.observe(pane); resize.observe(table);
       }
       schedule();
