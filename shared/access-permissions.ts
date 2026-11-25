@@ -12,7 +12,7 @@ export type PermissionAccount = {
   scope_all?: boolean;
 };
 
-export const ACCESS_PERMISSIONS = ['contracts.read','contracts.draft','contracts.finalize','contracts.renew','contracts.return','contracts.delete','contracts.settle','customers.read','customers.write','vehicles.read','vehicles.transfer','vehicles.receive','vehicles.write','hr.read','hr.write','finance.read','finance.write','shift.review','settings.write','accounts.manage'] as const;
+export const ACCESS_PERMISSIONS = ['contracts.read','contracts.draft','contracts.finalize','contracts.renew','contracts.return','contracts.delete','contracts.settle','customers.read','customers.write','vehicles.read','vehicles.transfer','vehicles.receive','vehicles.write','hr.read','hr.write','finance.read','finance.write','shift.review','attendance.review','attendance.export','attendance.note','attendance.settings','shift_registration.manage','settings.write','accounts.manage'] as const;
 // Settlement is an individual grant for the designated administrator. Creating
 // another administrator must not copy that entitlement.
 export const ADMIN_PERMISSIONS = ACCESS_PERMISSIONS.filter(permission => permission !== 'contracts.settle');
@@ -23,6 +23,11 @@ export const ACCESS_PERMISSION_LABELS:Record<AccessPermission,string>={
   'contracts.read':'Xem hợp đồng','contracts.draft':'Lập / sửa hợp đồng','contracts.finalize':'Duyệt và phát hành hợp đồng','contracts.renew':'Gia hạn hợp đồng','contracts.return':'Trả / đổi xe',
   'customers.read':'Xem khách hàng','customers.write':'Thêm / sửa khách hàng','vehicles.read':'Xem xe và lịch sử','vehicles.transfer':'Chuyển xe','vehicles.receive':'Nhận xe','vehicles.write':'Thêm / sửa thông tin xe',
   'hr.read':'Xem nhân sự và lịch trực','hr.write':'Quản lý nhân sự và lịch trực','finance.read':'Xem sổ quỹ','finance.write':'Thu / chi và quản lý TK ngân hàng, két','settings.write':'Quản lý cấu hình và nhập dữ liệu','accounts.manage':'Quản lý tài khoản và phân quyền',
+  'attendance.review':'Xem chấm công theo cơ sở',
+  'attendance.export':'Xuất Excel chấm công',
+  'attendance.note':'Ghi chú nhân sự trên lượt chấm công',
+  'attendance.settings':'Cài đặt vị trí chấm công',
+  'shift_registration.manage':'Quản lý bảng đăng ký ca',
   'shift.review':'KTNB đối soát và xác nhận báo cáo cuối ca',
 };
 export const ACCESS_ROLES = {
@@ -84,7 +89,7 @@ export function canViewStaffDirectory(account: PermissionAccount | null | undefi
 }
 
 export function canReviewAttendance(account: PermissionAccount | null | undefined) {
-  return isAdminAccount(account) || ((account?.access_role ?? account?.role) === 'hr' && hasPermission(account, 'hr.read'));
+  return isAdminAccount(account) || canNoteAttendance(account) || canExportAttendance(account) || account?.permissions?.includes('attendance.review') === true || ((account?.access_role ?? account?.role) === 'hr' && hasPermission(account, 'hr.read'));
 }
 
 export function canManageDutyRoster(account: PermissionAccount | null | undefined) {
@@ -111,4 +116,18 @@ export function canViewOwnedFleetRevenue(account:PermissionAccount|null|undefine
 function hasHrWriteRole(account: Pick<PermissionAccount, 'access_role' | 'role' | 'permissions'> | null | undefined) {
   return (account?.access_role ?? account?.role) === 'hr' && account?.permissions?.includes('hr.write') === true;
 }
-export { hasHrWriteRole as canManageShiftRegistration, hasHrWriteRole as canConfigureAttendance };
+export function canExportAttendance(account: PermissionAccount | null | undefined) {
+  return isAdminAccount(account) || account?.permissions?.includes('attendance.export') === true;
+}
+export function canNoteAttendance(account: PermissionAccount | null | undefined) {
+  return isAdminAccount(account) || hasHrWriteRole(account) || account?.permissions?.includes('attendance.note') === true;
+}
+export function canConfigureAttendance(account: PermissionAccount | null | undefined) {
+  return hasHrWriteRole(account) || hasPermission(account,'attendance.settings');
+}
+export function canManageShiftRegistration(account: PermissionAccount | null | undefined) {
+  return hasHrWriteRole(account) || hasPermission(account,'shift_registration.manage');
+}
+export function canLockShiftRegistration(account: PermissionAccount | null | undefined) {
+  return isAdminAccount(account) || hasHrWriteRole(account) || (account?.scope_all === true && canManageShiftRegistration(account));
+}

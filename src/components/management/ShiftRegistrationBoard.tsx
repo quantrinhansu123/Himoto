@@ -4,7 +4,7 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } f
 import Link from 'next/link';
 import { ChevronLeft, ChevronRight, Plus, RotateCcw } from 'lucide-react';
 import { addDays, dutyRequest, vietnamDate, weekStart } from '@/lib/management/duty-roster';
-import { canManageShiftRegistration } from '@/lib/management/permissions';
+import { canLockShiftRegistration, canManageShiftRegistration } from '@/lib/management/permissions';
 import { WeeklyShiftRegistrationDialog } from './WeeklyShiftRegistrationDialog';
 import { registrationDates, registrationMonthRange, registrationExcel, REGISTRATION_SHIFTS, registrationCredit, type RegisteredStaff, type RegistrationRange, type ShiftRegistration } from '@/lib/management/shift-registration';
 import { shiftCreditLabel } from '@/lib/management/attendance-shifts';
@@ -88,11 +88,12 @@ export function ShiftRegistrationBoard({ focusDate, focusStaff }: { focusDate?: 
   const excel=data?registrationExcel({...data,staff:people}):{headers:[],rows:[]};
   const unavailable = loading || Boolean(error) || !data;
   const writable = canManageShiftRegistration(accessUser);
+  const canLock = canLockShiftRegistration(accessUser);
   const weeks = [...new Set(dates.map(weekStart))];
   const week = weeks.includes(chosenWeek) ? chosenWeek : weeks[0];
   const weekLocked = data?.locked_weeks?.includes(week) ?? false;
   async function toggleWeek() {
-    if (lock.current || unavailable || !writable) return;
+    if (lock.current || unavailable || !canLock) return;
     lock.current = true; setPending(week); setSaved('');
     try {
       await dutyRequest('/api/auth/duty-roster/registrations', 'PATCH', { week, locked: !weekLocked });
@@ -142,7 +143,7 @@ export function ShiftRegistrationBoard({ focusDate, focusStaff }: { focusDate?: 
         <span>Chỉ thêm cột hiển thị, không tự điền ca. Tối đa 93 ngày.</span>
       </div>
       {filterError && <p className="mg-field-error" role="alert">{filterError}</p>}
-      {writable && <div className={styles.range}>
+      {canLock && <div className={styles.range}>
         <label>Tuần đăng ký<select value={week} disabled={Boolean(pending)} onChange={event => setChosenWeek(event.target.value)}>
           {weeks.map(start => <option key={start} value={start}>{start.split('-').reverse().join('/')} – {addDays(start, 6).split('-').reverse().join('/')}{data?.locked_weeks?.includes(start) ? ' · Đã khóa' : ''}</option>)}
         </select></label>

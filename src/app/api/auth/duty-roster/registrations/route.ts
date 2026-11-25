@@ -3,8 +3,8 @@ import { withAccessRequest } from '@/lib/server/access-request';
 import { himotoPool, ownerDatabase } from '@/lib/server/himoto-database';
 import { protectDatabaseRequest, SESSION_COOKIE, userFromSession } from '@/lib/server/management-session';
 import { DutyError } from '@/lib/server/duty-roster';
-import { readRegistrationMonth, readRegistrationRange, saveRegistration, setRegistrationWeekLock } from '@/lib/server/shift-registration';
-import { canManageShiftRegistration } from '@/lib/management/permissions';
+import { parseRegistration, readRegistrationMonth, readRegistrationRange, saveRegistration, setRegistrationWeekLock } from '@/lib/server/shift-registration';
+import { canLockShiftRegistration, canManageShiftRegistration } from '@/lib/management/permissions';
 import { vietnamDate } from '@/lib/management/duty-roster';
 import { failureResponse } from '@/lib/server/public-failure';
 import { dataAccess } from '@/lib/server/access-context';
@@ -17,16 +17,20 @@ async function handle(request: NextRequest) {
     const writing = request.method !== 'GET';
     const user = writing ? await userFromSession(request.cookies.get(SESSION_COOKIE)?.value) : dataAccess.getStore();
     if (!user) return NextResponse.json({ status: 'error', message: 'Phiên đăng nhập đã hết hạn.' }, { status: 401 });
-    if (writing && !canManageShiftRegistration(user)) throw new DutyError('Chỉ HCNS được chỉnh sửa hoặc khóa bảng đăng ký ca.', 403);
+    if (writing && !canManageShiftRegistration(user)) throw new DutyError('Tài khoản chưa có quyền quản lý đăng ký ca.', 403);
+    if (request.method === 'PATCH' && !canLockShiftRegistration(user)) throw new DutyError('Cần quyền quản lý toàn hệ thống để khóa tuần đăng ký.', 403);
     const ownUserId = canManageShiftRegistration(user) ? undefined : user.id;
+    const storeScope = canManageShiftRegistration(user) && !canLockShiftRegistration(user) ? user.store_id : undefined;
+    if (canManageShiftRegistration(user) && !canLockShiftRegistration(user) && !storeScope) throw new DutyError('Tài khoản chưa được gắn cơ sở quản lý.', 403);
     const raw = writing ? await request.json() : null;
+    if (request.method === 'PUT' && storeScope && parseRegistration(raw).store_id !== storeScope) throw new DutyError('Cơ sở nằm ngoài phạm vi quản lý.',403);
     client = await (request.method === 'PATCH' ? ownerDatabase : himotoPool).connect();
     await client.query(writing ? 'BEGIN' : 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
     const params = request.nextUrl.searchParams;
     const data = request.method === 'PATCH' ? await setRegistrationWeekLock(client, user!.id, raw)
       : writing ? await saveRegistration(client, user!.id, raw)
-      : params.has('from') || params.has('to') ? await readRegistrationRange(client, params.get('from') || '', params.get('to') || '', ownUserId)
-      : await readRegistrationMonth(client, params.get('month') || vietnamDate().slice(0, 7), ownUserId);
+      : params.has('from') || params.has('to') ? await readRegistrationRange(client, params.get('from') || '', params.get('to') || '', ownUserId, storeScope ?? undefined)
+      : await readRegistrationMonth(client, params.get('month') || vietnamDate().slice(0, 7), ownUserId, storeScope ?? undefined);
     await client.query('COMMIT');
     return NextResponse.json({ status: 'success', data }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {

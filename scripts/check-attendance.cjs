@@ -81,13 +81,13 @@ async function main() {
       .replace('ON himoto.management_staff_attendance(','ON pg_temp.qa_attendance(')
       .replace('DROP INDEX IF EXISTS himoto.', 'DROP INDEX IF EXISTS pg_temp.');
     await client.query(migration);
-    const staff = {id:900001,full_name:'QA chấm công',store_id:2,store_name:'Home'};
+    const staff = {id:900001,full_name:'QA chấm công',store_id:2,store_name:'Home',store_address:'Home address'};
     await client.query('CREATE TEMP TABLE qa_week_locks (week_start date PRIMARY KEY,locked_by bigint NOT NULL) ON COMMIT DROP');
     let linked=true, punchTime;
     const db = {query(sql,args) {
       if(punchTime && sql==='SELECT clock_timestamp() AS now') return Promise.resolve({rows:[{now:punchTime}]});
       if(sql.includes('FROM himoto.staff_profiles')) return Promise.resolve({rows:linked?[staff]:[]});
-      if(sql.includes('SELECT store_name FROM himoto.stores')) return Promise.resolve({rows:args[0]==='3'?[{store_name:'Other'}]:[]});
+      if(sql.includes('SELECT store_name,store_address FROM himoto.stores')) return Promise.resolve({rows:args[0]==='3'?[{store_name:'Other',store_address:'Other address'}]:[]});
       sql=sql.replaceAll('himoto.management_staff_attendance','pg_temp.qa_attendance');
       sql=sql.replaceAll('himoto.staff_shift_registration_week_locks','pg_temp.qa_week_locks');
       assert(!sql.includes('himoto.'));
@@ -105,7 +105,7 @@ async function main() {
     await assert.rejects(recordAttendance(db,user,'out','44444444-4444-4444-8444-444444444444',photo,location),e=>e.status===409);
     const row=(await client.query('SELECT * FROM qa_attendance')).rows[0];
     assert(row.clock_out_at>=row.clock_in_at);assert.equal(row.staff_name,staff.full_name);assert(row.in_photo.equals(photo));assert(row.out_photo.equals(photo));
-    assert.equal(row.in_location.store_name,'Other');assert.equal(row.in_location.note,'Support shift');assert.equal(row.out_location.store_name,'Home');
+    assert.equal(row.in_location.store_name,'Other');assert.equal(row.in_location.note,'Support shift');assert.equal(row.out_location.store_name,'Home');assert.equal(row.in_location.store_address,'Other address');assert.equal(row.out_location.store_address,'Home address');
     const week='2026-11-16', days=[{work_date:week,shift_code:'S',revision:null}];
     await setRegistrationWeekLock(db,user.id,{week,locked:true});
     assert.deepEqual(await lockedRegistrationWeeks(db,'2026-11-17','2026-11-19'),[week]);
@@ -124,6 +124,15 @@ async function main() {
     const hr = {...manager,access_role:'hr',scope_all:true};
     const admin = {...user,access_role:'admin'};
     const original = {id:first.id,original_in:row.clock_in_at.toISOString(),original_out:row.clock_out_at.toISOString()};
+    const note = {id:first.id,hr_note:' Đã xác minh ',original_hr_note:null};
+    await assert.rejects(manageAttendance(db,user,'PATCH',note),e=>e.status===403);
+    const noteWriter = {...manager,permissions:['attendance.note']};
+    await assert.rejects(manageAttendance(db,{...noteWriter,store_id:3},'PATCH',note),e=>e.status===409);
+    await manageAttendance(db,noteWriter,'PATCH',note);
+    await assert.rejects(manageAttendance(db,noteWriter,'PATCH',note),e=>e.status===409);
+    const noted = (await client.query('SELECT hr_note,hr_note_by,clock_in_at FROM qa_attendance WHERE id=$1',[first.id])).rows[0];
+    assert.equal(noted.hr_note,'Đã xác minh');assert.equal(Number(noted.hr_note_by),user.id);
+    assert.equal(noted.clock_in_at.toISOString(),original.original_in);
     const correction = {...original,clock_in_at:new Date(row.clock_in_at.getTime()-60000).toISOString(),clock_out_at:original.original_out};
     for (const nonAdmin of [user,manager,hr]) {
       await assert.rejects(manageAttendance(db,nonAdmin,'DELETE',original),e=>e.status===403);

@@ -7,6 +7,7 @@ import {useTheme} from '@/theme';
 import {EditorSheet,ConfirmEdit} from './editor-sheet';
 import {KeyboardFormScrollView} from './keyboard-form-scroll-view';
 import {RentalDateTime} from './rental-date-time';
+import {FormField} from './form-fields';
 import {Button,InlineError} from './ui';
 const local=(value:string)=>new Date(Date.parse(value)+7*3600000).toISOString().slice(0,16);
 function iso(value:string){const result=new Date(value+':00+07:00');if(!/^\d{4}-\d\d-\d\dT\d\d:\d\d$/.test(value)||!Number.isFinite(result.getTime())||local(result.toISOString())!==value)throw Error('Giờ chấm công không hợp lệ.');return result.toISOString();}
@@ -27,4 +28,30 @@ export function AttendanceEdit({row,onClose,onReload}:{row:AttendanceEntry;onClo
   {uncertain&&<Button secondary label="Tải lại để đối chiếu" disabled={busy} onPress={onReload}/>}
   {confirm&&<ConfirmEdit title={confirm==='DELETE'?'Xóa lượt chấm công?':'Lưu thay đổi chấm công?'} message={confirm==='DELETE'?`Xóa lượt #${row.id} của ${row.staff_name}, gồm ảnh/GPS đính kèm.`:`${row.staff_name} · Vào: ${start} · Ra: ${end||'Chưa chấm công ra'}`} confirmLabel={confirm==='DELETE'?'Xóa lượt chấm công':'Lưu thay đổi'} onCancel={()=>setConfirm(null)} onConfirm={()=>void save(confirm)}/>}
  </KeyboardFormScrollView></EditorSheet>;
+}
+
+export function AttendanceHrNoteEditor({row,onClose,onSaved}:{row:AttendanceEntry;onClose:()=>void;onSaved:()=>void}) {
+ const {api}=useSession(), lock=useRef(false);
+ const [note,setNote]=useState(row.hr_note ?? '');
+ const [busy,setBusy]=useState(false),[error,setError]=useState('');
+ usePreventRemove(busy,()=>{});
+ async function save() {
+  if (!api || !row.can_note || lock.current) return;
+  lock.current=true;setBusy(true);setError('');
+  try {
+   await api.manageAttendance('PATCH',{id:row.id,hr_note:note,original_hr_note:row.hr_note ?? null});
+   onSaved();
+  } catch (cause) {
+   setError(cause instanceof Error ? cause.message : 'Không lưu được ghi chú.');
+  } finally {
+   lock.current=false;setBusy(false);
+  }
+ }
+ return <EditorSheet title="Ghi chú nhân sự" onClose={()=>{if(!lock.current)onClose();}}>
+  <KeyboardFormScrollView contentContainerStyle={{padding:20,gap:18}}>
+   <FormField label={'Ghi chú nội bộ · '+row.staff_name} value={note} onChangeText={setNote} maxLength={500} editable={!busy} multiline/>
+   {!!error&&<InlineError message={error}/>}
+   <Button label={busy?'Đang lưu…':'Lưu ghi chú'} disabled={busy} onPress={()=>void save()}/>
+  </KeyboardFormScrollView>
+ </EditorSheet>;
 }

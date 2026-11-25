@@ -4,7 +4,7 @@ import { ownerDatabase } from '@/lib/server/himoto-database';
 import { ATTENDANCE_ON_LOCAL_DATE, ATTENDANCE_SCHEDULE_OFFSET, ATTENDANCE_SHIFT_JOIN, SPLIT_SHIFT_MORNING_END, compareRegisteredAttendance, AttendanceError, attendanceDistanceMeters, nearestAttendanceStore, attendanceScope, attendanceStaff, attendancePhotoMime, manageAttendance, parseAttendanceLocation, recordAttendance } from '@/lib/server/attendance';
 import { failureResponse } from '@/lib/server/public-failure';
 import { vietnamDate } from '@/lib/management/duty-roster';
-import { isAdminAccount } from '@/lib/management/permissions';
+import { canExportAttendance, canNoteAttendance, isAdminAccount } from '@/lib/management/permissions';
 
 export async function handleAttendance(request: NextRequest, user: SessionUser) {
   let client;
@@ -33,7 +33,7 @@ export async function handleAttendance(request: NextRequest, user: SessionUser) 
       const valid = (value:string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0,10) === value;
       const store = params.get('store') || 'all', page = Number(params.get('page') || 1);
       const exporting=params.get('export')==='1';
-      if(exporting&&!isAdminAccount(user))throw new AttendanceError('Chỉ quản trị viên được xuất lịch sử chấm công.',403);
+      if(exporting&&!canExportAttendance(user))throw new AttendanceError('Tài khoản chưa có quyền xuất lịch sử chấm công.',403);
       if (!valid(from)||!valid(to)||from>to||Date.parse(to)-Date.parse(from)>93*86400000||store!=='all'&&!/^[1-9]\d{0,14}$/.test(store)||!Number.isSafeInteger(page)||page<1||page>100000) throw new AttendanceError('Chọn khoảng ngày tối đa 93 ngày và cơ sở hợp lệ.');
       await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
       const staff = await attendanceStaff(client,user);
@@ -74,7 +74,9 @@ export async function handleAttendance(request: NextRequest, user: SessionUser) 
       const currentPage = exporting?1:Math.min(page,Math.max(1,Math.ceil(total/50)));
       const rows = (await client.query(`WITH punches AS (
         SELECT a.id,a.staff_id,a.staff_name,${displayStore} AS display_store_id,s.store_name,a.clock_in_at,a.clock_out_at,
-        a.in_location,a.out_location,a.out_photo IS NOT NULL AS has_out_photo,
+        a.in_location,a.out_location,a.hr_note,a.store_id AS attendance_store_id,
+        in_store.store_address AS in_store_address,out_store.store_address AS out_store_address,
+        a.out_photo IS NOT NULL AS has_out_photo,
         profile.store_id IS NOT NULL AS store_from_profile,
         location.latitude AS store_latitude,location.longitude AS store_longitude,
         registration.work_date::text,registration.shift_code,${ATTENDANCE_SCHEDULE_OFFSET} AS offset_minutes,
@@ -85,6 +87,8 @@ export async function handleAttendance(request: NextRequest, user: SessionUser) 
         row_number() OVER (shift_punches ORDER BY a.clock_in_at DESC,a.id DESC) AS credit_rank
         ${attendanceSource}
         LEFT JOIN himoto.stores s ON s.id=${displayStore}
+        LEFT JOIN himoto.stores in_store ON in_store.id=CASE WHEN a.in_location->>'store_id' ~ '^[1-9][0-9]{0,14}$' THEN (a.in_location->>'store_id')::bigint ELSE a.store_id END
+        LEFT JOIN himoto.stores out_store ON out_store.id=CASE WHEN a.out_location->>'store_id' ~ '^[1-9][0-9]{0,14}$' THEN (a.out_location->>'store_id')::bigint ELSE a.store_id END
         LEFT JOIN himoto.management_attendance_locations location ON location.store_id=s.id
         ${ATTENDANCE_SHIFT_JOIN} WHERE ${rangeScope}
         WINDOW shift_punches AS (PARTITION BY a.staff_id,(a.clock_in_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date,${ATTENDANCE_SCHEDULE_OFFSET},
@@ -99,10 +103,11 @@ export async function handleAttendance(request: NextRequest, user: SessionUser) 
         WHERE l.latitude IS NOT NULL AND l.longitude IS NOT NULL ORDER BY s.id`)).rows : [];
       await client.query('COMMIT');
       const canManage = isAdminAccount(user);
+      const mayNote = canNoteAttendance(user);
       return NextResponse.json({status:'success',data:{
         ...summary,
         rows:rows.map(({work_date,shift_code,offset_minutes,store_latitude,store_longitude,display_store_id:_displayStoreId,
-          first_in,last_out,shift_open,punch_count,credit_rank,...row})=>{
+          first_in,last_out,shift_open,punch_count,credit_rank,attendance_store_id,in_store_address,out_store_address,hr_note,...row})=>{
           const storeLocation = store_latitude != null && store_longitude != null
             ? {latitude:Number(store_latitude),longitude:Number(store_longitude)}
             : null;
@@ -113,7 +118,12 @@ export async function handleAttendance(request: NextRequest, user: SessionUser) 
           const credit = creditRow && aggregated
             ? compareRegisteredAttendance(registration,first_in,shift_open?null:last_out,Number(offset_minutes)).earned_credit
             : comparison.earned_credit;
+          const inReviewScope = scope.reviewer && (scope.all || (scope.store != null && Number(attendance_store_id) === Number(scope.store)));
           return {...row,
+            in_location:row.in_location ? {...row.in_location,store_address:row.in_location.store_address || in_store_address} : null,
+            out_location:row.out_location ? {...row.out_location,store_address:row.out_location.store_address || out_store_address} : null,
+            hr_note:inReviewScope?hr_note:null,
+            can_note:inReviewScope && mayNote,
             can_manage:canManage,
             has_store_location:storeLocation !== null,
             in_distance_m:attendanceDistanceMeters(row.in_location,storeLocation),

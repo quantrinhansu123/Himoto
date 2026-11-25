@@ -16,9 +16,9 @@ import type {RecordMediaPhoto} from '@/lib/record-media-photo';
 import {supportFormData} from '@/lib/support-form-data';
 import {splitAttendanceShiftHours} from '../../../shared/attendance-shifts';
 import {dutyToday} from '../../../shared/mobile-duty-roster';
-import {canConfigureAttendance,canReviewAttendance} from '../../../shared/access-permissions';
+import {canConfigureAttendance,canExportAttendance,canManageShiftRegistration,canReviewAttendance} from '../../../shared/access-permissions';
 import {attendanceLocationLabel,type AttendanceLocation,type AttendanceEntry} from '../../../shared/mobile-support';
-import {AttendanceEdit} from './attendance-edit';
+import {AttendanceEdit,AttendanceHrNoteEditor} from './attendance-edit';
 import {FilteredListExport} from './filtered-list-export';
 import {dateTime,useTheme} from '@/theme';
 
@@ -52,6 +52,7 @@ export function AttendanceScreen({historyOnly=false}:{historyOnly?:boolean}) {
   const canReview=canReviewAttendance(session!.user);
   const historyStore=canReview?store:'all';
   const canConfigure=canConfigureAttendance(session!.user);
+  const [noting,setNoting]=useState<AttendanceEntry|null>(null);
   const [editing,setEditing]=useState<AttendanceEntry|null>(null);
   const query=useQuery({queryKey:['attendance',session!.user.id,session!.user.storeId,canReview,historyOnly,from,to,historyStore,page],queryFn:async({signal})=>historyOnly?api!.attendance(new URLSearchParams({from,to,store:historyStore,page:String(page)}).toString(),signal):{...await api!.attendanceOverview(signal),rows:[] as AttendanceEntry[],total:0,page:1},enabled:!!api&&(!historyOnly||from<=to)});
   const homeStore=String(query.data?.staff?.store_id ?? '');
@@ -140,11 +141,9 @@ export function AttendanceScreen({historyOnly=false}:{historyOnly?:boolean}) {
       ListHeaderComponent={<View style={{gap:18}}>
         <Button secondary label={historyOnly?'Chấm công':'Lịch sử chấm công'} disabled={busy} onPress={()=>router.push(historyOnly?'/attendance':'/attendance-history')}/>
         {!historyOnly&&<>
-        {canConfigure && <>
-          <Button secondary label="Đăng ký ca trong tuần" disabled={busy} onPress={()=>router.push("/self-shift-registration")}/>
-          <Button secondary label="Bảng đăng ký ca" disabled={busy} onPress={()=>router.push('/shift-registrations')}/>
-          <Button secondary label="Cài đặt GPS chấm công" disabled={busy} onPress={()=>router.push('/attendance-locations')}/>
-        </>}
+        {Boolean(query.data?.staff?.store_id) && <Button secondary label="Đăng ký ca trong tuần" disabled={busy} onPress={()=>router.push('/self-shift-registration')}/>}
+        {canManageShiftRegistration(session!.user) && <Button secondary label="Bảng đăng ký ca" disabled={busy} onPress={()=>router.push('/shift-registrations')}/>}
+        {canConfigure && <Button secondary label="Cài đặt GPS chấm công" disabled={busy} onPress={()=>router.push('/attendance-locations')}/>}
         <Text accessibilityRole="header" style={{color:theme.text,fontSize:28,fontWeight:'800'}}>Chấm công</Text>
         <Card style={{gap:14}}>
           <Text style={{color:theme.text,fontSize:20,fontWeight:'700'}}>{query.data?.staff?.name||session!.user.name}</Text>
@@ -170,24 +169,26 @@ export function AttendanceScreen({historyOnly=false}:{historyOnly?:boolean}) {
           {copy(canReview?'Xem lịch sử của mình và nhân sự trong phạm vi cơ sở được cấp.':'Chỉ hiển thị lịch sử của tài khoản đang đăng nhập.')}
           {from>to&&<InlineError message="Ngày kết thúc phải bằng hoặc sau ngày bắt đầu."/>}
         </Card>
-        {query.data?.rows.some(row=>row.can_manage)&&<FilteredListExport kind="attendance" label="Tải Excel theo nhân sự" filters={new URLSearchParams({from,to,store}).toString()} disabled={query.isFetching||query.isError}/>}
+        {canExportAttendance(session!.user)&&Boolean(query.data?.total)&&<FilteredListExport kind="attendance" label="Tải Excel theo nhân sự" filters={new URLSearchParams({from,to,store}).toString()} disabled={query.isFetching||query.isError}/>}
         </>}
         {query.isError&&<StateView title="Chưa tải được chấm công" message={query.error.message} retry={()=>{void query.refetch();}}/>}
         {query.isPending&&from<=to&&<StateView title="Đang tải chấm công" loading/>}
       </View>}
       renderItem={({item:row})=><Card style={{gap:10}}>
         <Text style={{color:theme.text,fontSize:18,fontWeight:'700'}}>{row.staff_name}</Text>
-        {copy(row.store_name||'Chưa có cơ sở')}{copy(`Vào ca: ${dateTime(row.clock_in_at)}`)}{copy(row.clock_out_at?`Ra ca: ${dateTime(row.clock_out_at)}`:'Chưa chấm công ra')}
+        {copy(row.store_name||'Chưa có cơ sở')}{row.hr_note&&copy('Ghi chú nhân sự: '+row.hr_note)}{copy(`Vào ca: ${dateTime(row.clock_in_at)}`)}{copy(row.clock_out_at?`Ra ca: ${dateTime(row.clock_out_at)}`:'Chưa chấm công ra')}
         {row.shift_name&&copy('Ca '+row.shift_name)}{row.late_minutes!==null&&copy(row.late_minutes?`Đi muộn ${row.late_minutes} phút`:'Đúng giờ')}
         {typeof row.standard_credit==='number'&&copy(`Công quy định: ${row.standard_credit.toLocaleString('vi-VN')}`)}
         {row.early_leave_minutes!=null&&copy(row.early_leave_minutes?`Về sớm ${row.early_leave_minutes} phút`:'Không về sớm')}
         {copy(`Công thực tế: ${row.earned_credit!=null?row.earned_credit.toLocaleString('vi-VN',{maximumFractionDigits:4}):row.credit_on_other_row?'Gộp cùng ca':row.standard_credit==null?'Chưa đăng ký ca':'Chưa chốt'}${row.credit_aggregated?' · Tổng hợp cùng ca':''}`)}
+        {row.can_note&&<Button secondary label="Ghi chú nhân sự" onPress={()=>setNoting(row)}/>}
         {row.can_manage&&<Button secondary label="Sửa chấm công" onPress={()=>setEditing(row)}/>}
         <Button secondary label={`${evidence===String(row.id)?'Ẩn':'Xem'} ảnh và GPS #${row.id}`} onPress={()=>setEvidence(current=>current===String(row.id)?null:String(row.id))}/>
-        {evidence===String(row.id)&&(['in','out'] as const).map(side=>{const loc=side==='in'?row.in_location:row.out_location;const hasPhoto=side==='in'||row.has_out_photo!==false;const photoSource=hasPhoto?api!.supportPhoto('attendance',String(row.id),side):null;return loc?<View key={side} style={{gap:8}}><Text style={{color:theme.text,fontWeight:'700'}}>{side==='in'?'Vào ca':'Ra ca'}</Text>{photoSource?<Image cachePolicy="memory" source={{...photoSource,cacheKey:JSON.stringify([session!.user.id,session!.user.storeId,session!.user.allStores,session!.sessionId||session!.expiresAt,photoSource.uri])}} style={{width:'100%',aspectRatio:4/3,borderRadius:12}} contentFit="contain" accessibilityLabel={`Ảnh ${side==='in'?'vào':'ra'} ca #${row.id}`}/>:copy('Chưa có ảnh chấm công.')}{copy(attendanceLocationLabel(loc,side==='in'?row.in_nearest_store:row.out_nearest_store))}{loc.store_name&&copy(`Cơ sở đã chọn: ${loc.store_name}`)}{loc.note&&copy(`Ghi chú: ${loc.note}`)}{copy(`GPS ${loc.latitude.toFixed(6)}, ${loc.longitude.toFixed(6)} · sai số ${Math.round(loc.accuracy)} m`)}<Button secondary label="Mở vị trí trên Google Maps" onPress={()=>void Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${loc.latitude},${loc.longitude}`)}`)} /></View>:null;})}
+        {evidence===String(row.id)&&(['in','out'] as const).map(side=>{const loc=side==='in'?row.in_location:row.out_location;const hasPhoto=side==='in'||row.has_out_photo!==false;const photoSource=hasPhoto?api!.supportPhoto('attendance',String(row.id),side):null;return loc?<View key={side} style={{gap:8}}><Text style={{color:theme.text,fontWeight:'700'}}>{side==='in'?'Vào ca':'Ra ca'}</Text>{photoSource?<Image cachePolicy="memory" source={{...photoSource,cacheKey:JSON.stringify([session!.user.id,session!.user.storeId,session!.user.allStores,session!.sessionId||session!.expiresAt,photoSource.uri])}} style={{width:'100%',aspectRatio:4/3,borderRadius:12}} contentFit="contain" accessibilityLabel={`Ảnh ${side==='in'?'vào':'ra'} ca #${row.id}`}/>:copy('Chưa có ảnh chấm công.')}{copy(attendanceLocationLabel(loc,side==='in'?row.in_nearest_store:row.out_nearest_store))}{loc.store_name&&copy(`Cơ sở đã chọn: ${loc.store_name}`)}{loc.store_address&&copy('Địa chỉ cơ sở chấm công: '+loc.store_address)}{loc.note&&copy(`Ghi chú: ${loc.note}`)}{copy(`GPS ${loc.latitude.toFixed(6)}, ${loc.longitude.toFixed(6)} · sai số ${Math.round(loc.accuracy)} m`)}<Button secondary label="Mở vị trí trên Google Maps" onPress={()=>void Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${loc.latitude},${loc.longitude}`)}`)} /></View>:null;})}
       </Card>}
       ListEmptyComponent={historyOnly&&!query.isPending&&!query.isError?<Text style={{color:theme.muted,textAlign:'center',padding:20}}>Chưa có chấm công trong khoảng ngày đã chọn.</Text>:undefined}
       ListFooterComponent={historyOnly&&query.data&&query.data.total>50?<View style={{gap:10}}>{copy(`Trang ${query.data.page} · ${query.data.total} lần chấm công`)}<Button secondary label="Trang chấm công trước" disabled={page<=1||query.isFetching} onPress={()=>setPage(value=>value-1)}/><Button secondary label="Trang chấm công sau" disabled={page*50>=query.data!.total||query.isFetching} onPress={()=>setPage(value=>value+1)}/></View>:undefined}/>
+    {noting&&<AttendanceHrNoteEditor row={noting} onClose={()=>setNoting(null)} onSaved={()=>{setNoting(null);void query.refetch();}}/>}
     {editing&&<AttendanceEdit row={editing} onClose={()=>setEditing(null)} onReload={()=>{setEditing(null);void query.refetch();}}/>}
     {action&&<EditorSheet title={action==='in'?'Chấm công vào ca':'Chấm công ra ca'} onClose={()=>{if(!busy){clockSessionRef.current++;initialLocationRef.current=null;setLocating(false);setAction(null);if(!pending){photo?.dispose();setPhoto(null);setLocation(null);}}}}>
       <ScrollView contentContainerStyle={{padding:20,gap:16}}>

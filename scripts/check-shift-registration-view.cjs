@@ -20,4 +20,4 @@ assert.match(board, /Từ ngày/);assert.match(board, /Đến ngày/);assert.mat
 assert.match(board, /full-time/);assert.match(board, /part-time/);assert.match(board, /7h30/);
 assert.match(board, /rowSpan=\{group\.length\}/);
 assert.match(board, /registrationCredit\(cells\.get/);
-console.log('PASS: dedicated registration menu for signed-in users, HCNS-only editing, shared registration DB API, grouped staff grid and credits');
+console.log('PASS: dedicated registration menu for signed-in users, permission-based editing, shared registration DB API, grouped staff grid and credits');

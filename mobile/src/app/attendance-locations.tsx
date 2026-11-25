@@ -14,7 +14,7 @@ import { canConfigureAttendance } from '../../../shared/access-permissions';
 
 export default function Route() {
   const { api, session } = useSession();
-  if (!api || !session || !canConfigureAttendance(session.user)) return <StateView title="Chỉ HCNS được vào cài đặt chấm công" />;
+  if (!api || !session || !canConfigureAttendance(session.user)) return <StateView title="Tài khoản chưa có quyền cài đặt chấm công" />;
   return <AttendanceLocations key={`${api.origin}:${session.user.id}:${session.user.storeId}:${session.user.allStores}`} />;
 }
 

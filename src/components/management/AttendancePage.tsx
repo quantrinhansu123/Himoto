@@ -13,14 +13,14 @@ import { shiftCreditLabel, splitAttendanceShiftHours } from '@/lib/management/at
 import { buildAttendanceWorkbook } from '@/lib/management/attendance-workbook';
 import { downloadExcel } from '@/lib/management/excel-export';
 import { formatDateTime } from '@/lib/formatters';
-import { canConfigureAttendance, canReviewAttendance, isAdminAccount } from '@/lib/management/permissions';
+import { canConfigureAttendance, canExportAttendance, canManageShiftRegistration, canReviewAttendance, isAdminAccount } from '@/lib/management/permissions';
 import { WeeklyShiftRegistrationDialog } from './WeeklyShiftRegistrationDialog';
 import { BrowserLocationError, requestBrowserLocation, type BrowserLocation as Location } from '@/lib/management/browser-geolocation';
 
 import { attendanceLocationLabel, type AttendanceLocation, type AttendanceStoreOption, type NearestAttendanceStore } from '../../../shared/mobile-support';
 
 type InitialClockLocation = Location | Error;
-type Attendance = {id:number;staff_id:number|string;staff_name:string;store_name:string|null;store_from_profile:boolean;clock_in_at:string;clock_out_at:string|null;in_location:AttendanceLocation|null;out_location:AttendanceLocation|null;in_nearest_store?:NearestAttendanceStore|null;out_nearest_store?:NearestAttendanceStore|null;has_out_photo:boolean;has_store_location:boolean;in_distance_m:number|null;out_distance_m:number|null;shift_name:string|null;scheduled_in:string|null;scheduled_out:string|null;late_minutes:number|null;early_leave_minutes:number|null;standard_credit:number|null;earned_credit:number|null;credit_aggregated:boolean;credit_on_other_row:boolean;can_manage:boolean};
+type Attendance = {hr_note?:string|null;can_note?:boolean;id:number;staff_id:number|string;staff_name:string;store_name:string|null;store_from_profile:boolean;clock_in_at:string;clock_out_at:string|null;in_location:AttendanceLocation|null;out_location:AttendanceLocation|null;in_nearest_store?:NearestAttendanceStore|null;out_nearest_store?:NearestAttendanceStore|null;has_out_photo:boolean;has_store_location:boolean;in_distance_m:number|null;out_distance_m:number|null;shift_name:string|null;scheduled_in:string|null;scheduled_out:string|null;late_minutes:number|null;early_leave_minutes:number|null;standard_credit:number|null;earned_credit:number|null;credit_aggregated:boolean;credit_on_other_row:boolean;can_manage:boolean};
 type Summary = {stores:AttendanceStoreOption[];staff:{name:string;store_id:number|null;store_name:string|null}|null;open:{id:number;clock_in_at:string}|null;latest:{clock_in_at:string;clock_out_at:string|null}|null;shift:{shift_name:string;starts_at:string;ends_at:string}|null;shift_code:string|null;schedule_offset_minutes?:number;late_minutes:number|null;early_leave_minutes:number|null;server_now:string};
 type Report = {rows:Attendance[];total:number;page:number};
 async function responseData<T>(response:Response):Promise<T> {
@@ -55,6 +55,7 @@ function Evidence({row,side}:{row:Attendance;side:'in'|'out'}) {
           <small>Độ chính xác GPS ±{Math.round(location.accuracy)} m</small>
         </dd>}
         {location?.store_name && <><dt>Cơ sở đã chọn</dt><dd>{location.store_name}</dd></>}
+        {location?.store_address && <><dt>Địa chỉ cơ sở chấm công</dt><dd>{location.store_address}</dd></>}
         {location?.note && <><dt>Ghi chú</dt><dd>{location.note}</dd></>}
       </dl>
     </> : <p className="mg-attendance-evidence-empty">{missingCheckout}</p>}
@@ -136,7 +137,7 @@ export function AttendancePage() {
     : undefined;
   return <section className="mg-page mg-attendance-page"><div className="mg-page-content">
     {canConfigure && settingsOpen && <AttendanceLocationsDialog canEdit onClose={() => setSettingsOpen(false)} />}
-    {canConfigure && registrationOpen && <WeeklyShiftRegistrationDialog onClose={() => setRegistrationOpen(false)} onSaved={() => { setRegistrationOpen(false); refresh(); notify('Đã lưu đăng ký ca làm trong tuần.'); }} />}
+    {registrationOpen && <WeeklyShiftRegistrationDialog onClose={() => setRegistrationOpen(false)} onSaved={() => { setRegistrationOpen(false); refresh(); notify('Đã lưu đăng ký ca làm trong tuần.'); }} />}
     <div className="mg-page-heading">
       <div>
         <div className="mg-eyebrow">NHÂN SỰ</div>
@@ -146,12 +147,12 @@ export function AttendancePage() {
       <div className="mg-heading-actions mg-attendance-header-actions">
         {canConfigure && <button type="button" className="mg-button" onClick={() => setSettingsOpen(true)}><Settings size={16}/>Cài đặt</button>}
         <Link className="mg-button" href="/attendance/history"><History size={16}/>Lịch sử chấm công</Link>
-        {canConfigure && <button type="button" className="mg-button mg-attendance-register-action" onClick={() => setRegistrationOpen(true)}><CalendarDays size={16}/>Đăng ký ca trong tuần</button>}
+        {data?.staff?.store_id && <button type="button" className="mg-button mg-attendance-register-action" onClick={() => setRegistrationOpen(true)}><CalendarDays size={16}/>Đăng ký ca trong tuần</button>}
       </div>
     </div>
     <div className="mg-data-panel mg-attendance-dashboard">
       <div className="mg-attendance-filters"><p><MapPin size={16}/> Cơ sở chấm công: <strong>{loading?'Đang tải…':data?.staff?.store_name||'Chưa gắn cơ sở'}</strong></p>
-        {canConfigure && <Link className="mg-button" href="/shift-registration">Bảng đăng ký ca</Link>}
+        {canManageShiftRegistration(accessUser) && <Link className="mg-button" href="/shift-registration">Bảng đăng ký ca</Link>}
       </div>
       <p className="mg-attendance-hint">Có thể chọn cơ sở khác khi chấm công và ghi rõ lý do.</p>
       <div className="mg-attendance-clock-heading"><div><strong>{data?.staff?.name || 'Tài khoản chấm công'}</strong><p>{loading?'Đang kiểm tra ca…':data?.open?'Đang trong ca':data?.staff?'Chưa vào ca':error?'Không tải được trạng thái ca.':'Tài khoản chưa liên kết nhân viên đang hoạt động.'}</p></div><LiveVietnamClock serverNow={data?.server_now} onDayChanged={handleDayChanged}/></div>
@@ -173,7 +174,7 @@ export function AttendancePage() {
 
 export function AttendanceHistoryPage() {
   const {selectedStore,selectStore,dataset,ensureData,notify,accessUser} = useManagement();
-  const canViewRegistration = canConfigureAttendance(accessUser);
+  const canViewRegistration = canManageShiftRegistration(accessUser);
   const canReview = canReviewAttendance(accessUser);
   const historyStore = canReview ? selectedStore : 'all';
   const isAdmin = isAdminAccount(accessUser);
@@ -188,21 +189,9 @@ export function AttendanceHistoryPage() {
   async function exportAttendance() {
     const exportFrom = from || vietnamDate().slice(0, 7) + '-01';
     const exportTo = to || exportFrom;
-    const query = new URLSearchParams({from:exportFrom,to:exportTo,store:historyStore});
-    const rows: Attendance[] = [];
-    let total = 0;
-    for (let index=1; index===1 || rows.length<total; index++) {
-      query.set('page', String(index));
-      const result = await responseData<Report>(await fetch(`/api/auth/attendance?${query}`,{cache:'no-store'}));
-      if (index===1) total = result.total;
-      if (result.total!==total || result.page!==index || !result.rows.length) {
-        throw new Error('Danh sách chấm công đã thay đổi. Tải lại rồi xuất Excel.');
-      }
-      rows.push(...result.rows);
-    }
-    if (rows.length!==total || new Set(rows.map(row=>row.id)).size!==total) {
-      throw new Error('Chưa đọc đủ lịch sử chấm công. Tải lại rồi xuất Excel.');
-    }
+    const query = new URLSearchParams({from:exportFrom,to:exportTo,store:historyStore,export:'1'});
+    const {rows,total} = await responseData<Report>(await fetch('/api/auth/attendance?'+query,{cache:'no-store'}));
+    if (rows.length!==total) throw new Error('Chưa đọc đủ lịch sử chấm công.');
     const bytes = await buildAttendanceWorkbook(rows, exportFrom, exportTo);
     downloadExcel(bytes, `himoto-cham-cong-${exportFrom}-${exportTo}`);
     return rows.length;
@@ -225,6 +214,7 @@ export function AttendanceHistoryPage() {
     const actions: RowAction[] = [
       { key: 'view', label: 'Xem', icon: <Eye size={16} />, onSelect: () => setRecordDialog({ mode: 'view', row }) },
     ];
+    if (row.can_note) actions.push({key:'note',label:'Ghi chú nhân sự',icon:<Pencil size={16}/>,onSelect:()=>setRecordDialog({mode:'note',row})});
     if (isAdmin && row.can_manage) {
       actions.push(
         { key: 'edit', label: 'Sửa', icon: <Pencil size={16} />, onSelect: () => setRecordDialog({ mode: 'edit', row }) },
@@ -235,22 +225,22 @@ export function AttendanceHistoryPage() {
   };
   return <section className="mg-page mg-attendance-page"><div className="mg-page-content">
     {recordDialog && <AttendanceRecordDialog {...recordDialog} onClose={() => setRecordDialog(null)} onSaved={() => {
-      notify(recordDialog.mode==='delete'?'Đã xóa lượt chấm công.':'Đã cập nhật giờ chấm công.');
+      notify(recordDialog.mode==='delete'?'Đã xóa lượt chấm công.':recordDialog.mode==='note'?'Đã lưu ghi chú nhân sự.':'Đã cập nhật giờ chấm công.');
       setRecordDialog(null);
       refresh();
     }} />}
-    <div className="mg-page-heading"><div><div className="mg-eyebrow">NHÂN SỰ</div><h1>Lịch sử chấm công</h1></div><div className="mg-heading-actions"><Link className="mg-button" href="/attendance">Chấm công</Link>{isAdmin && <FilteredExcelButton disabled={loading||Boolean(error)||!data?.total} label="Tải Excel theo nhân sự" exportFile={exportAttendance}/>}</div></div>
+    <div className="mg-page-heading"><div><div className="mg-eyebrow">NHÂN SỰ</div><h1>Lịch sử chấm công</h1></div><div className="mg-heading-actions"><Link className="mg-button" href="/attendance">Chấm công</Link>{canExportAttendance(accessUser) && <FilteredExcelButton disabled={loading||Boolean(error)||!data?.total} label="Tải Excel theo nhân sự" exportFile={exportAttendance}/>}</div></div>
     <div className="mg-data-panel"><div className="mg-attendance-filters">{canReview&&<label>Cơ sở xem lịch sử<select aria-label="Cơ sở xem lịch sử chấm công" value={selectedStore} onChange={event=>{selectStore(event.target.value);setPage(1);}}><option value="all">Tất cả cơ sở được phép</option>{dataset?.stores.map(store=><option key={store.id} value={String(store.id)}>{store.name}</option>)}</select></label>}<label>Từ ngày<input aria-label="Từ ngày chấm công" type="date" value={from} onChange={event=>{setFrom(event.target.value);setPage(1);}}/></label><label>Đến ngày<input aria-label="Đến ngày chấm công" type="date" value={to} onChange={event=>{setTo(event.target.value);setPage(1);}}/></label><button type="button" className="mg-button" onClick={monthPreset}>Tháng này</button><span>{data?.total??'—'} lượt chấm công</span></div>
     {error?<p className="mg-field-error" role="alert">{error}</p>:loading?<p className="mg-table-state" role="status">Đang tải bảng chấm công…</p>:<>
       <div className="mg-attendance-mobile-list">{data?.rows.map(row=><article key={row.id} className="mg-attendance-history-card"><div className="mg-attendance-history-heading"><strong>{row.staff_name}</strong><small>#{row.id} · {new Date(row.clock_in_at).toLocaleDateString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})}</small></div><p>{row.store_name||'Chưa gắn cơ sở'} · {shiftLink(row)}{row.standard_credit!=null?' · '+shiftCreditLabel(row.standard_credit)+' công quy định':''}{row.scheduled_in?' · '+timeOnly(row.scheduled_in)+' – '+timeOnly(row.scheduled_out):''}</p><div className="mg-attendance-history-times"><span>Vào <b>{timeOnly(row.clock_in_at)}</b></span><span>Ra <b>{row.clock_out_at ? timeOnly(row.clock_out_at) : missingCheckout}</b></span><span className={row.late_minutes?'is-late':''}>Đi muộn <b>{lateLabel(row.late_minutes,row.shift_name)}</b></span><span className={row.early_leave_minutes?'is-late':''}>Về sớm <b>{earlyLabel(row.early_leave_minutes,row.clock_out_at,row.shift_name)}</b></span><span>Công thực tế <b>{attendanceCreditLabel(row)}</b>{row.credit_aggregated && ' · Tổng hợp cùng ca'}</span></div>{rowActions(row)}</article>)}{!data?.rows.length&&<p className="mg-table-state">Chưa có chấm công trong khoảng ngày đã chọn.</p>}</div>
-      <div className="mg-table-scroll mg-attendance-desktop-table" role="region" aria-label="Bảng chấm công" tabIndex={0}><table className="mg-table"><thead><tr>{['ID','Tên nhân viên','Ca làm','Giờ vào','Giờ ra','Đi muộn','Về sớm','Công thực tế','Thao tác'].map(label=><th scope="col" key={label}>{label}</th>)}</tr></thead><tbody>{data?.rows.map(row=><tr key={row.id}><td>#{row.id}</td><td><strong>{row.staff_name}</strong><small className="mg-attendance-store">{row.store_name||'Chưa gắn cơ sở'}</small></td><td>{shiftLink(row)}{row.standard_credit!=null&&<small className="mg-attendance-store">Công quy định: {shiftCreditLabel(row.standard_credit)}</small>}{row.scheduled_in&&<small className="mg-attendance-store">{timeOnly(row.scheduled_in)} – {timeOnly(row.scheduled_out)}</small>}</td><td>{formatDateTime(row.clock_in_at)}</td><td>{row.clock_out_at?formatDateTime(row.clock_out_at):missingCheckout}</td><td className={row.late_minutes?'is-late':''}>{lateLabel(row.late_minutes,row.shift_name)}</td><td className={row.early_leave_minutes?'is-late':''}>{earlyLabel(row.early_leave_minutes,row.clock_out_at,row.shift_name)}</td><td><strong>{attendanceCreditLabel(row)}</strong>{row.credit_aggregated && <small className="mg-attendance-store">Tổng hợp cùng ca</small>}</td><td>{rowActions(row)}</td></tr>)}{!data?.rows.length&&<tr><td colSpan={9}>Chưa có chấm công trong khoảng ngày đã chọn.</td></tr>}</tbody></table></div>
+      <div className="mg-table-scroll mg-attendance-desktop-table" role="region" aria-label="Bảng chấm công" tabIndex={0}><table className="mg-table"><thead><tr>{['ID','Tên nhân viên','Ca làm','Giờ vào','Giờ ra','Đi muộn','Về sớm','Công thực tế','Thao tác'].map(label=><th scope="col" key={label}>{label}</th>)}</tr></thead><tbody>{data?.rows.map(row=><tr key={row.id}><td>#{row.id}</td><td><strong>{row.staff_name}</strong><small className="mg-attendance-store">{row.store_name||'Chưa gắn cơ sở'}</small></td><td>{shiftLink(row)}{row.standard_credit!=null&&<small className="mg-attendance-store">Công quy định: {shiftCreditLabel(row.standard_credit)}</small>}{row.scheduled_in&&<small className="mg-attendance-store">{timeOnly(row.scheduled_in)} – {timeOnly(row.scheduled_out)}</small>}</td><td>{formatDateTime(row.clock_in_at)}{row.in_location?.store_address&&<small className="mg-attendance-store">{row.in_location.store_address}</small>}</td><td>{row.clock_out_at?formatDateTime(row.clock_out_at):missingCheckout}{row.out_location?.store_address&&<small className="mg-attendance-store">{row.out_location.store_address}</small>}</td><td className={row.late_minutes?'is-late':''}>{lateLabel(row.late_minutes,row.shift_name)}</td><td className={row.early_leave_minutes?'is-late':''}>{earlyLabel(row.early_leave_minutes,row.clock_out_at,row.shift_name)}</td><td><strong>{attendanceCreditLabel(row)}</strong>{row.credit_aggregated && <small className="mg-attendance-store">Tổng hợp cùng ca</small>}</td><td>{rowActions(row)}</td></tr>)}{!data?.rows.length&&<tr><td colSpan={9}>Chưa có chấm công trong khoảng ngày đã chọn.</td></tr>}</tbody></table></div>
     </>}
     {data&&data.total>50&&<div className="mg-attendance-pagination"><button className="mg-button" disabled={loading||data.page<=1} onClick={()=>setPage(data.page-1)}>Trước</button><span>Trang {data.page}/{Math.ceil(data.total/50)}</span><button className="mg-button" disabled={loading||data.page>=Math.ceil(data.total/50)} onClick={()=>setPage(data.page+1)}>Sau</button></div>}</div>
     <p className="mg-attendance-hint">Giờ chấm công theo máy chủ (giờ Việt Nam). Nhân viên xem lịch sử của mình; người có quyền nhân sự xem theo phạm vi cơ sở.</p>
   </div></section>;
 }
 
-type RecordMode = 'view' | 'edit' | 'delete';
+type RecordMode = 'view' | 'edit' | 'delete' | 'note';
 
 function attendanceInputTime(value: string | null) {
   return value ? new Date(Date.parse(value) + 7 * 3600000).toISOString().slice(0,16) : '';
@@ -270,8 +260,10 @@ function AttendanceRecordDialog({mode,row,onClose,onSaved}:{
   const [error,setError] = useState('');
   const lock = useRef(false);
   const edit = mode==='edit';
+  const noting = mode==='note';
+  const [hrNote,setHrNote] = useState(row.hr_note ?? '');
   const view = mode==='view';
-  const title = view?'Chi tiết chấm công':edit?'Sửa giờ chấm công':'Xóa lượt chấm công';
+  const title = view?'Chi tiết chấm công':edit?'Sửa giờ chấm công':noting?'Ghi chú nhân sự':'Xóa lượt chấm công';
   const formId = 'attendance-record-form';
 
   async function save(event:React.FormEvent<HTMLFormElement>) {
@@ -285,9 +277,9 @@ function AttendanceRecordDialog({mode,row,onClose,onSaved}:{
       const body = edit ? {...original,
         clock_in_at:editedAttendanceTime(clockIn,row.clock_in_at),
         clock_out_at:editedAttendanceTime(clockOut,row.clock_out_at),
-      } : original;
+      } : noting ? {id:row.id,hr_note:hrNote,original_hr_note:row.hr_note ?? null} : original;
       await responseData(await fetch('/api/auth/attendance',{
-        method:edit?'PATCH':'DELETE',
+        method:edit||noting?'PATCH':'DELETE',
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify(body),
       }));
@@ -305,8 +297,9 @@ function AttendanceRecordDialog({mode,row,onClose,onSaved}:{
       {edit ? <div className="mg-attendance-edit-times">
         <label>Giờ vào (Việt Nam)<input type="datetime-local" required value={clockIn} onChange={event=>setClockIn(event.target.value)} disabled={busy}/></label>
         <label>Giờ ra (Việt Nam)<input type="datetime-local" required={Boolean(row.clock_out_at)} value={clockOut} onChange={event=>setClockOut(event.target.value)} disabled={busy}/></label>
-      </div> : view ? <>
+      </div> : noting ? <label className="mg-field">Ghi chú nội bộ<textarea value={hrNote} maxLength={500} disabled={busy} onChange={event=>setHrNote(event.target.value)}/></label> : view ? <>
         <p>Cơ sở phụ trách <strong>{row.store_name || 'Chưa gắn cơ sở'}</strong>{row.store_from_profile && ' (theo hồ sơ nhân viên hiện tại)'}</p>
+        {row.hr_note && <p><strong>Ghi chú nhân sự</strong> · {row.hr_note}</p>}
         <div className="mg-attendance-evidence-pair">
           <Evidence row={row} side="in"/>
           <Evidence row={row} side="out"/>
@@ -319,8 +312,8 @@ function AttendanceRecordDialog({mode,row,onClose,onSaved}:{
     </form>
     <div className="mg-dialog-footer">
       <button type="button" className="mg-button" disabled={busy} onClick={onClose}>{view?'Đóng':'Hủy'}</button>
-      {!view && <button type="submit" form={formId} className={`mg-button ${edit?'mg-button-primary':'mg-button-danger'}`} disabled={busy}>
-        {busy?'Đang xử lý…':edit?'Lưu thay đổi':'Xác nhận xóa'}
+      {!view && <button type="submit" form={formId} className={`mg-button ${edit||noting?'mg-button-primary':'mg-button-danger'}`} disabled={busy}>
+        {busy?'Đang xử lý…':edit||noting?'Lưu thay đổi':'Xác nhận xóa'}
       </button>}
     </div>
   </Dialog>;

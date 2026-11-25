@@ -17,7 +17,7 @@ import {NextRequest as AttendanceRequest} from 'next/server';
 import {buildAttendanceWorkbook} from '@/lib/management/attendance-workbook';
 import {vietnamDate} from '@/lib/management/duty-roster';
 import type {AttendanceEntry} from '../../../shared/mobile-support';
-import {canManageDutyRoster,hasPermission} from '@/lib/management/permissions';
+import {canManageDutyRoster,canManageShiftRegistration,hasPermission} from '@/lib/management/permissions';
 import {readMobileDuties} from './mobile-duty-roster';
 import {readMobileReminderExportRows} from './mobile-debt-reminders';
 import {isMobileListExportKind} from '../../../shared/mobile-list-export';
@@ -46,7 +46,7 @@ export async function exportMobileList(user:SessionUser,kind:string,request:Next
     return{filename:`himoto-cham-cong-${exportFrom}-${exportTo}.xlsx`,mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',contentBase64:Buffer.from(bytes).toString('base64'),rowCount:rows.length};
   }
   if(kind==='shift-registrations'){
-    if(!hasPermission(user,'hr.read'))throw new MobileError('Không có quyền xuất bảng đăng ký ca.',403,'FORBIDDEN');
+    if(!canManageShiftRegistration(user))throw new MobileError('Không có quyền xuất bảng đăng ký ca.',403,'FORBIDDEN');
     if([...params.keys()].some(k=>!['from','to','store','search'].includes(k)||params.getAll(k).length!==1))throw new MobileError('Bộ lọc đăng ký ca không hợp lệ.');
     const from=params.get('from')||'',to=params.get('to')||'',store=params.get('store')||'all',search=params.get('search')||'';
     try{registrationDates(from,to);}catch(error){throw new MobileError((error as Error).message);}

@@ -1,7 +1,7 @@
 import 'server-only';
 import type { PoolClient } from 'pg';
 import type { SessionUser } from './management-session';
-import { canReviewAttendance, isAdminAccount } from '@/lib/management/permissions';
+import { canNoteAttendance, canReviewAttendance, isAdminAccount } from '@/lib/management/permissions';
 import { attendanceShift } from '@/lib/management/attendance-shifts';
 import { REGISTRATION_SHIFTS } from '@/lib/management/shift-registration';
 
@@ -22,11 +22,24 @@ function attendanceEditTime(value: unknown) {
 }
 
 export async function manageAttendance(db: Database, user: SessionUser, method: 'PATCH' | 'DELETE', input: unknown) {
-  if (!isAdminAccount(user)) throw new AttendanceError('Chỉ quản trị viên được sửa hoặc xóa chấm công.',403);
   if (!input || typeof input !== 'object' || !('id' in input) || !/^[1-9]\d{0,14}$/.test(String(input.id))) {
     throw new AttendanceError('Lượt chấm công không hợp lệ.');
   }
   const body = input as Record<string, unknown>;
+  if (method === 'PATCH' && Object.prototype.hasOwnProperty.call(body,'hr_note')) {
+    if (!canNoteAttendance(user)) throw new AttendanceError('Tài khoản chưa có quyền ghi chú nhân sự.',403);
+    if (Object.keys(body).some(key => !['id','hr_note','original_hr_note'].includes(key)) ||
+        typeof body.hr_note !== 'string' || body.hr_note.trim().length > 500 ||
+        (body.original_hr_note !== null && typeof body.original_hr_note !== 'string')) {
+      throw new AttendanceError('Ghi chú nhân sự không hợp lệ hoặc vượt quá 500 ký tự.');
+    }
+    const scope = attendanceScope(user);
+    const result = await db.query("UPDATE himoto.management_staff_attendance SET hr_note=NULLIF($2,''),hr_note_by=$3,hr_note_at=now() WHERE id=$1 AND ($4::boolean OR store_id=$5) AND hr_note IS NOT DISTINCT FROM $6::text",
+      [body.id,body.hr_note.trim(),user.id,scope.all,scope.store,body.original_hr_note]);
+    if (!result.rowCount) throw new AttendanceError('Lượt chấm công ngoài phạm vi hoặc ghi chú đã thay đổi. Hãy tải lại.',409);
+    return;
+  }
+  if (!isAdminAccount(user)) throw new AttendanceError('Chỉ quản trị viên được sửa hoặc xóa chấm công.',403);
   const current = (await db.query(`SELECT clock_in_at,clock_out_at,clock_timestamp() AS now
     FROM himoto.management_staff_attendance WHERE id=$1 FOR UPDATE`,[body.id])).rows[0];
   if (!current) throw new AttendanceError('Không tìm thấy lượt chấm công.',404);
@@ -102,7 +115,7 @@ export function attendancePhotoMime(bytes: Buffer) {
   throw new AttendanceError('Chọn ảnh JPEG, PNG hoặc WebP.');
 }
 export async function attendanceStaff(db: Database, user: SessionUser) {
-  const result = await db.query("SELECT p.id,p.full_name,p.store_id,s.store_name FROM himoto.staff_profiles p LEFT JOIN himoto.stores s ON s.id=p.store_id WHERE p.user_id=$1 AND p.status='active'", [user.id]);
+  const result = await db.query("SELECT p.id,p.full_name,p.store_id,s.store_name,s.store_address FROM himoto.staff_profiles p LEFT JOIN himoto.stores s ON s.id=p.store_id WHERE p.user_id=$1 AND p.status='active'", [user.id]);
   if (result.rows.length !== 1) return null;
   return result.rows[0];
 }
@@ -126,12 +139,14 @@ export async function recordAttendance(db: Database, user: SessionUser, action: 
   const otherStore = selectedStore !== null && selectedStore !== String(staff.store_id);
   if (otherStore && !note) throw new AttendanceError('Nhập lý do chấm công tại cơ sở khác.');
   let storeName = staff.store_name;
+  let storeAddress = staff.store_address;
   if (otherStore) {
-    const store = (await db.query("SELECT store_name FROM himoto.stores WHERE id=$1 AND status IN ('active','opening') FOR SHARE", [selectedStore])).rows[0];
+    const store = (await db.query("SELECT store_name,store_address FROM himoto.stores WHERE id=$1 AND status IN ('active','opening') FOR SHARE", [selectedStore])).rows[0];
     if (!store) throw new AttendanceError('Cơ sở chấm công không còn hoạt động.',409);
     storeName = store.store_name;
+    storeAddress = store.store_address;
   }
-  const evidence = JSON.stringify({...location,store_id:Number(selectedStore ?? staff.store_id),store_name:storeName,...(note && {note})});
+  const evidence = JSON.stringify({...location,store_id:Number(selectedStore ?? staff.store_id),store_name:storeName,store_address:storeAddress,...(note && {note})});
   const { now } = (await db.query('SELECT clock_timestamp() AS now')).rows[0];
   const opened = await db.query(`SELECT id FROM himoto.management_staff_attendance
     WHERE staff_id=$1 AND clock_out_at IS NULL AND ${ATTENDANCE_ON_LOCAL_DATE} FOR UPDATE`,[staff.id,now]);

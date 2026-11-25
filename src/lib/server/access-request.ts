@@ -1,6 +1,6 @@
 import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
-import { hasPermission, canSettleContract, type AccessPermission } from '@/lib/management/permissions';
+import { hasPermission, canSettleContract, canManageShiftRegistration, canLockShiftRegistration, type AccessPermission } from '@/lib/management/permissions';
 import { dataAccess } from './access-context';
 import { SESSION_COOKIE, sameOrigin, userFromSession, readSessionUser } from './management-session';
 import { failureResponse } from './public-failure';
@@ -14,7 +14,7 @@ export function requestPermission(path:string,method:string,action=''):AccessPer
   const read=method==='GET';
   if(path==='/api/auth/guide-faq')return null; // Authenticated shared guide; answer permission is checked in the handler.
   if(path.startsWith('/api/auth/attendance'))return null; // Self-service; handler enforces actor and HR branch scope.
-  if((path==='/api/auth/duty-roster' || path==='/api/auth/duty-roster/registrations')&&read)return null;
+  if(path==='/api/auth/duty-roster/registrations' || path==='/api/auth/duty-roster'&&read)return null;
   if(path.startsWith('/api/auth/shift-reports'))return 'contracts.read';
   if(path.startsWith('/api/auth/accounts'))return 'accounts.manage';
   if(path==='/api/auth/password')return null;
@@ -107,9 +107,10 @@ export function withAccessRequest<C>(handler:(request:NextRequest,context:C)=>Pr
       // only, allow assigned HR users to work across branches instead of
       // silently filtering stores and staff to their account's home branch.
       const dutyRoster=request.nextUrl.pathname.startsWith('/api/auth/duty-roster');
+      const allDutyStores = dutyRoster && (request.nextUrl.pathname !== '/api/auth/duty-roster/registrations' || !canManageShiftRegistration(user) || canLockShiftRegistration(user));
       const crossStoreRead = request.method === 'GET' && user.scope_all_read === true && !user.scope_all &&
         crossStoreReadPath.test(request.nextUrl.pathname) && !/\/(?:refresh|backups|import|telegram)(?:\/|$)/.test(request.nextUrl.pathname);
-      return await dataAccess.run({...user,store_id:dutyRoster?null:user.store_id??null,scope_all:dutyRoster||user.scope_all===true||crossStoreRead,cross_store_read:crossStoreRead,operation:dutyRoster?'duty_roster':operation,transfer_vehicle_id},()=>handler(request,context));
+      return await dataAccess.run({...user,store_id:allDutyStores?null:user.store_id??null,scope_all:allDutyStores||user.scope_all===true||crossStoreRead,cross_store_read:crossStoreRead,operation:dutyRoster?'duty_roster':operation,transfer_vehicle_id},()=>handler(request,context));
     } catch (error) {
       return failureResponse('Không thực hiện được thao tác.', error);
     }

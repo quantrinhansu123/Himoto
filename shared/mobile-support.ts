@@ -1,6 +1,6 @@
 import type { GuideFaq } from './guide-faq';
 
-export type AttendanceLocation={latitude:number;longitude:number;accuracy:number;timestamp:number;store_name?:string;note?:string};
+export type AttendanceLocation={latitude:number;longitude:number;accuracy:number;timestamp:number;store_name?:string;store_address?:string|null;note?:string};
 export type AttendanceStoreOption={id:number;name:string};
 export type NearestAttendanceStore={store_name:string;distance_m:number};
 export function attendanceLocationLabel(location: AttendanceLocation | null, nearest?: NearestAttendanceStore | null) {
@@ -13,8 +13,9 @@ export function attendanceLocationLabel(location: AttendanceLocation | null, nea
     : `${meters.toLocaleString('vi-VN')} m`;
   return `Địa điểm cách cơ sở gần nhất (${nearest.store_name}) ${distance}`;
 }
-export type AttendanceEntry={in_nearest_store?:NearestAttendanceStore|null;out_nearest_store?:NearestAttendanceStore|null;id:number|string;staff_id:number|string;staff_name:string;store_name:string|null;clock_in_at:string;clock_out_at:string|null;in_location:AttendanceLocation;out_location:AttendanceLocation|null;shift_name:string|null;scheduled_in:string|null;scheduled_out:string|null;late_minutes:number|null;early_leave_minutes?:number|null;standard_credit?:number|null;earned_credit?:number|null;credit_aggregated?:boolean;credit_on_other_row?:boolean;has_out_photo?:boolean;has_store_location?:boolean;in_distance_m?:number|null;out_distance_m?:number|null;store_from_profile?:boolean;can_manage?:boolean};
+export type AttendanceEntry={hr_note?:string|null;can_note?:boolean;in_nearest_store?:NearestAttendanceStore|null;out_nearest_store?:NearestAttendanceStore|null;id:number|string;staff_id:number|string;staff_name:string;store_name:string|null;clock_in_at:string;clock_out_at:string|null;in_location:AttendanceLocation;out_location:AttendanceLocation|null;shift_name:string|null;scheduled_in:string|null;scheduled_out:string|null;late_minutes:number|null;early_leave_minutes?:number|null;standard_credit?:number|null;earned_credit?:number|null;credit_aggregated?:boolean;credit_on_other_row?:boolean;has_out_photo?:boolean;has_store_location?:boolean;in_distance_m?:number|null;out_distance_m?:number|null;store_from_profile?:boolean;can_manage?:boolean};
 export type AttendanceEdit={id:number|string;original_in:string;original_out:string|null;clock_in_at?:string;clock_out_at?:string|null};
+export type AttendanceHrNote={id:number|string;hr_note:string;original_hr_note:string|null};
 export type AttendanceSummary={stores?:AttendanceStoreOption[];staff:{name:string;store_id?:number|null;store_name?:string|null}|null;open:{id:number|string;clock_in_at:string}|null;latest:{clock_in_at:string;clock_out_at:string|null}|null;shift:{shift_name:string;starts_at:string;ends_at:string}|null;shift_code?:string|null;schedule_offset_minutes?:number;late_minutes:number|null;early_leave_minutes?:number|null;server_now:string;rows:AttendanceEntry[];total:number;page:number};
 export type AttendanceReceipt={id:number;replayed?:boolean};
 export type AttendanceOverview=Omit<AttendanceSummary,'rows'|'total'|'page'>;
@@ -41,5 +42,6 @@ export function isMobileGuideFaq(v:unknown):v is MobileGuideFaq {
 }
 
 function attendanceDetails(row:Record<string,unknown>){
- return ['early_leave_minutes','standard_credit','earned_credit','in_distance_m','out_distance_m'].every(key=>row[key]===undefined||row[key]===null||typeof row[key]==='number'&&Number.isFinite(row[key])&&row[key]>=0)&&['credit_aggregated','credit_on_other_row','has_out_photo','has_store_location','store_from_profile','can_manage'].every(key=>row[key]===undefined||typeof row[key]==='boolean');
+ if (row.hr_note != null && !text(row.hr_note)) return false;
+ return ['early_leave_minutes','standard_credit','earned_credit','in_distance_m','out_distance_m'].every(key=>row[key]===undefined||row[key]===null||typeof row[key]==='number'&&Number.isFinite(row[key])&&row[key]>=0)&&['credit_aggregated','credit_on_other_row','has_out_photo','has_store_location','store_from_profile','can_manage','can_note'].every(key=>row[key]===undefined||typeof row[key]==='boolean');
 }

@@ -1,9 +1,13 @@
+import type { AttendanceLocation } from '../../../shared/mobile-support';
 import { formatDateTime } from '@/lib/formatters';
 import { addDays, vietnamDate } from './duty-roster';
 import { addFilteredExcelSheet } from './excel-export';
 
 type AttendanceRecord = {
   id: number;
+  in_location?: AttendanceLocation | null;
+  out_location?: AttendanceLocation | null;
+  hr_note?: string | null;
   staff_id: number | string;
   staff_name: string;
   store_name: string | null;
@@ -15,6 +19,7 @@ type AttendanceRecord = {
   earned_credit: number | null;
 };
 
+const gps = (location?: AttendanceLocation | null) => location ? location.latitude.toFixed(6)+', '+location.longitude.toFixed(6) : null;
 const weekdays = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
 const timeFormat = new Intl.DateTimeFormat('vi-VN', {
   timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
@@ -99,10 +104,13 @@ export async function buildAttendanceWorkbook(records: AttendanceRecord[], from:
   }
 
   addFilteredExcelSheet(book, 'Chi tiết', [
-    'ID', 'Nhân viên', 'Cơ sở', 'Ca làm', 'Giờ vào', 'Giờ ra', 'Số phút đi muộn', 'Số phút về sớm', 'Công thực tế',
+    'ID', 'Nhân viên', 'Cơ sở', 'Ca làm', 'Giờ vào', 'Giờ ra', 'Số phút đi muộn', 'Số phút về sớm', 'Công thực tế', 'Địa chỉ cơ sở vào ca', 'Địa chỉ cơ sở ra ca', 'GPS vào ca', 'GPS ra ca', 'Ghi chú vào ca', 'Ghi chú ra ca', 'Ghi chú nhân sự',
   ], records.map(record => [
     record.id, record.staff_name, record.store_name, record.shift_name, formatDateTime(record.clock_in_at),
     record.clock_out_at ? formatDateTime(record.clock_out_at) : null, record.late_minutes, record.early_leave_minutes, record.earned_credit,
+    record.in_location?.store_address, record.out_location?.store_address,
+    gps(record.in_location), gps(record.out_location),
+    record.in_location?.note, record.out_location?.note, record.hr_note,
   ]));
   return new Uint8Array(await book.xlsx.writeBuffer());
 }

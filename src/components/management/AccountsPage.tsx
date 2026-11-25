@@ -17,6 +17,7 @@ const permissionGroups = [
   {title:'Khách hàng',permissions:['customers.read','customers.write']},
   {title:'Xe & kho',permissions:['vehicles.read','vehicles.transfer','vehicles.receive','vehicles.write']},
   {title:'Nhân sự',permissions:['hr.read','hr.write']},
+  {title:'Chấm công và đăng ký ca',permissions:['attendance.review','attendance.export','attendance.note','attendance.settings','shift_registration.manage']},
   {title:'Tài chính & đối soát',permissions:['finance.read','finance.write','shift.review']},
   {title:'Hệ thống',permissions:['settings.write']},
 ] as const;

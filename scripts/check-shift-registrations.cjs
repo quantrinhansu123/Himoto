@@ -22,11 +22,16 @@ async function main() {
   assert.equal(server.parseRegistration({...base,shift_code:null,revision:'2'}).shift_code,null);
   const access = load(path.resolve('src/lib/server/access-request'));
   assert.equal(access.requestPermission('/api/auth/duty-roster/registrations','GET'),null);
-  assert.equal(access.requestPermission('/api/auth/duty-roster/registrations','PUT'),'hr.write');
-  assert.equal(access.requestPermission('/api/auth/duty-roster/registrations','PATCH'),'hr.write');
-  const { canManageShiftRegistration } = load(path.resolve('src/lib/management/permissions'));
+  assert.equal(access.requestPermission('/api/auth/duty-roster/registrations','PUT'),null);
+  assert.equal(access.requestPermission('/api/auth/duty-roster/registrations','PATCH'),null);
+  const { canLockShiftRegistration, canManageShiftRegistration } = load(path.resolve('src/lib/management/permissions'));
   assert.equal(canManageShiftRegistration({access_role:'hr', permissions:['hr.write']}), true);
-  for (const account of [{access_role:'hr', permissions:['hr.read']}, {access_role:'custom', permissions:['hr.write']}, {access_role:'admin'}]) {
+  const delegated = {access_role:'branch_manager',permissions:['shift_registration.manage']};
+  assert.equal(canManageShiftRegistration(delegated), true);
+  assert.equal(canLockShiftRegistration(delegated), false);
+  assert.equal(canLockShiftRegistration({...delegated,scope_all:true}),true);
+  assert.equal(canManageShiftRegistration({access_role:'admin'}),true);
+  for (const account of [{access_role:'hr', permissions:['hr.read']}, {access_role:'custom', permissions:['hr.write']}]) {
     assert.equal(canManageShiftRegistration(account), false);
   }
   assert.equal(access.requestPermission('/api/auth/attendance/shift-registration','GET'),null);
@@ -67,7 +72,7 @@ async function main() {
     await c.query(`CREATE TEMP TABLE qa_registration_staff_shift_registration_week_locks(week_start date PRIMARY KEY,locked_by bigint) ON COMMIT DROP;
       CREATE TEMP TABLE qa_registration_staff_profiles(id bigint,full_name text,position text,store_id bigint,status text) ON COMMIT DROP;
       INSERT INTO qa_registration_staff_profiles VALUES(1,'QA Active','PT',23,'active'),(2,'QA Inactive','PT',23,'inactive'),(3,'QA No store','PT',null,'active');
-      CREATE TEMP TABLE qa_registration_stores(id bigint,store_name text,status text) ON COMMIT DROP;
+      CREATE TEMP TABLE qa_registration_stores(id bigint,store_name text,status text,store_address text) ON COMMIT DROP;
       INSERT INTO qa_registration_stores VALUES(23,'QA Store','opening'),(24,'QA Closed','inactive');
       CREATE TEMP TABLE qa_registration_staff_shift_registrations(staff_id bigint,work_date date,store_id bigint,shift_code text,revision bigint DEFAULT 1,created_by bigint,updated_by bigint,created_at timestamptz DEFAULT now(),updated_at timestamptz DEFAULT now(),PRIMARY KEY(staff_id,work_date)) ON COMMIT DROP;
       CREATE TEMP TABLE qa_registration_staff_shift_registration_history(staff_id bigint,work_date date,store_id bigint,previous_code text,shift_code text,revision bigint,actor_id bigint) ON COMMIT DROP`);

@@ -15,7 +15,7 @@ import { ConfirmEdit } from '@/components/editor-sheet';
 import { DateField } from '@/components/date-field';
 import { FilteredListExport } from '@/components/filtered-list-export';
 
-import { canManageShiftRegistration } from '../../../shared/access-permissions';
+import { canLockShiftRegistration, canManageShiftRegistration } from '../../../shared/access-permissions';
 
 function Board() {
   const { api, session } = useSession(), theme = useTheme(), cache = useQueryClient(), running = useRef(false);
@@ -25,6 +25,7 @@ function Board() {
   const query = useQuery({ queryKey: ['shift-registrations', session!.user.id, range.from,range.to], queryFn: ({ signal }) => api!.registrationRange(range.from,range.to, signal), retry: false });
   usePreventRemove(busy, () => {});
   const dates = useMemo(() => registrationDates(range.from,range.to), [range.from, range.to]), data = query.data, selectedDay = dates.includes(day) ? day : dates[0];
+  const canLock = canLockShiftRegistration({...session!.user,scope_all:session!.user.allStores});
   const writable = canManageShiftRegistration(session!.user), locked = busy || query.isFetching || query.isError || uncertain;
   const selectedWeek=dutyWeekStart(selectedDay);
   const weekLocked=data?.locked_weeks?.includes(selectedWeek) ?? false;
@@ -82,7 +83,7 @@ function Board() {
       <ChoiceField label="Cơ sở" value={store} searchable choices={[{ value: 'all', label: 'Tất cả cơ sở' }, ...(data?.stores || []).map(s => ({ value: String(s.id), label: s.name })), { value: 'none', label: 'Chưa có cơ sở' }]} onChange={setStore} />
       <FormField label="Tìm nhân viên" placeholder="Họ tên, chức vụ…" value={search} onChangeText={setSearch} maxLength={120} />
       {data && <Text style={{color:theme.muted}}>Tuần {selectedWeek.split('-').reverse().join('/')} – {dutyAddDays(selectedWeek,6).split('-').reverse().join('/')}{weekLocked?' · Đã khóa':''}</Text>}
-      {writable && <Button secondary label={weekLocked?'Mở khóa tuần':'Khóa tuần'} disabled={!data||locked} onPress={()=>void toggleWeek()} />}
+      {canLock && <Button secondary label={weekLocked?'Mở khóa tuần':'Khóa tuần'} disabled={!data||locked} onPress={()=>void toggleWeek()} />}
       {writable && <FilteredListExport kind="shift-registrations" filters={new URLSearchParams({from:range.from,to:range.to,store,search}).toString()} disabled={locked||!staff.length} />}
       <Button secondary label="Làm mới bảng" loading={query.isFetching} disabled={busy} onPress={() => void reload()} />
       {!!error && <InlineError message={error} />}
