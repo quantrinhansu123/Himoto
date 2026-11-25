@@ -17,7 +17,7 @@ import { canConfigureAttendance, canExportAttendance, canManageShiftRegistration
 import { WeeklyShiftRegistrationDialog } from './WeeklyShiftRegistrationDialog';
 import { BrowserLocationError, requestBrowserLocation, type BrowserLocation as Location } from '@/lib/management/browser-geolocation';
 
-import { attendanceLocationLabel, type AttendanceLocation, type AttendanceStoreOption, type NearestAttendanceStore } from '../../../shared/mobile-support';
+import { attendanceLocationLabel, nearestAttendanceStoreOption, type AttendanceLocation, type AttendanceStoreOption, type NearestAttendanceStore } from '../../../shared/mobile-support';
 
 type InitialClockLocation = Location | Error;
 type Attendance = {hr_note?:string|null;can_note?:boolean;id:number;staff_id:number|string;staff_name:string;store_name:string|null;store_from_profile:boolean;clock_in_at:string;clock_out_at:string|null;in_location:AttendanceLocation|null;out_location:AttendanceLocation|null;in_nearest_store?:NearestAttendanceStore|null;out_nearest_store?:NearestAttendanceStore|null;has_out_photo:boolean;has_store_location:boolean;in_distance_m:number|null;out_distance_m:number|null;shift_name:string|null;scheduled_in:string|null;scheduled_out:string|null;late_minutes:number|null;early_leave_minutes:number|null;standard_credit:number|null;earned_credit:number|null;credit_aggregated:boolean;credit_on_other_row:boolean;can_manage:boolean};
@@ -406,7 +406,9 @@ function ClockCapture({action,homeStore,stores,initialLocation,onClose,onSaved}:
         : locationError ? <p className="mg-field-error" role="alert">{permissionDenied
           ? showLocationHelp ? `Lần kiểm tra ${deniedRetries}: trình duyệt vẫn chặn vị trí.` : 'Chưa có quyền vị trí. Bấm thử lại để yêu cầu trình duyệt hoặc xem cách bật quyền.'
           : locationError.message}</p>
-        : <p role="status">Đã lấy được vị trí.</p>}
+        : clockLocation && !(clockLocation instanceof Error) ? <p role="status">
+          {attendanceLocationLabel(clockLocation, nearestAttendanceStoreOption(clockLocation, stores))}
+        </p> : null}
       <button type="button" className="mg-button" disabled={busy} onClick={onClose}>Đóng</button>
       {locationError && !busy
         ? <button type="button" className="mg-button mg-button-primary" disabled={locating} onClick={()=>void retryLocation()}>

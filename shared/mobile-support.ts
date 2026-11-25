@@ -1,8 +1,44 @@
 import type { GuideFaq } from './guide-faq';
 
 export type AttendanceLocation={latitude:number;longitude:number;accuracy:number;timestamp:number;store_name?:string;store_address?:string|null;note?:string};
-export type AttendanceStoreOption={id:number;name:string};
+export type AttendanceStoreOption={id:number;name:string;latitude?:number|null;longitude?:number|null};
 export type NearestAttendanceStore={store_name:string;distance_m:number};
+type Coordinates = { latitude: number; longitude: number };
+
+export function nearestAttendanceStore(punch: Coordinates | null, stores: {latitude?: number | null; longitude?: number | null; store_name: string}[]) {
+  let nearest: {store_name: string; distance_m: number} | null = null;
+  for (const store of stores) {
+    if (store.latitude == null || store.longitude == null) continue;
+    const distance = distanceMeters(punch, {latitude: store.latitude, longitude: store.longitude});
+    if (distance !== null && (nearest === null || distance < nearest.distance_m)) {
+      nearest = {store_name: store.store_name, distance_m: distance};
+    }
+  }
+  return nearest;
+}
+
+export function distanceMeters(punch: Coordinates | null, store: Coordinates | null) {
+  if (!punch || !store) return null;
+  const valid = ({latitude,longitude}: Coordinates) =>
+    Number.isFinite(latitude) && Math.abs(latitude) <= 90 &&
+    Number.isFinite(longitude) && Math.abs(longitude) <= 180;
+  if (!valid(punch) || !valid(store)) return null;
+  const radians = (degrees: number) => degrees * Math.PI / 180;
+  const latitudeDelta = radians(punch.latitude - store.latitude);
+  const longitudeDelta = radians(punch.longitude - store.longitude);
+  const haversine = Math.sin(latitudeDelta / 2) ** 2 +
+    Math.cos(radians(punch.latitude)) * Math.cos(radians(store.latitude)) * Math.sin(longitudeDelta / 2) ** 2;
+  return 2 * 6371000 * Math.asin(Math.sqrt(Math.min(1,haversine)));
+}
+
+export function nearestAttendanceStoreOption(location: AttendanceLocation, stores: AttendanceStoreOption[]) {
+  return nearestAttendanceStore(location, stores.map(store => ({
+    store_name: store.name,
+    latitude: store.latitude,
+    longitude: store.longitude,
+  })));
+}
+
 export function attendanceLocationLabel(location: AttendanceLocation | null, nearest?: NearestAttendanceStore | null) {
   if (!location) return 'Chưa ghi nhận GPS';
   if (!nearest) return 'Chưa có cơ sở được cấu hình tọa độ để đối chiếu';

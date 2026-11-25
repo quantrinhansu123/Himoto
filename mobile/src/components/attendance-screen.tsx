@@ -17,7 +17,7 @@ import {supportFormData} from '@/lib/support-form-data';
 import {splitAttendanceShiftHours} from '../../../shared/attendance-shifts';
 import {dutyToday} from '../../../shared/mobile-duty-roster';
 import {canConfigureAttendance,canExportAttendance,canManageShiftRegistration,canReviewAttendance} from '../../../shared/access-permissions';
-import {attendanceLocationLabel,type AttendanceLocation,type AttendanceEntry} from '../../../shared/mobile-support';
+import {attendanceLocationLabel,nearestAttendanceStoreOption,type AttendanceLocation,type AttendanceEntry} from '../../../shared/mobile-support';
 import {AttendanceEdit,AttendanceHrNoteEditor} from './attendance-edit';
 import {FilteredListExport} from './filtered-list-export';
 import {dateTime,useTheme} from '@/theme';
@@ -54,6 +54,7 @@ export function AttendanceScreen({historyOnly=false}:{historyOnly?:boolean}) {
   const canConfigure=canConfigureAttendance(session!.user);
   const [noting,setNoting]=useState<AttendanceEntry|null>(null);
   const [editing,setEditing]=useState<AttendanceEntry|null>(null);
+  const captureLocation = pending?.location ?? location;
   const query=useQuery({queryKey:['attendance',session!.user.id,session!.user.storeId,canReview,historyOnly,from,to,historyStore,page],queryFn:async({signal})=>historyOnly?api!.attendance(new URLSearchParams({from,to,store:historyStore,page:String(page)}).toString(),signal):{...await api!.attendanceOverview(signal),rows:[] as AttendanceEntry[],total:0,page:1},enabled:!!api&&(!historyOnly||from<=to)});
   const homeStore=String(query.data?.staff?.store_id ?? '');
   const chosenStore=punchStore||homeStore;
@@ -196,10 +197,11 @@ export function AttendanceScreen({historyOnly=false}:{historyOnly?:boolean}) {
         {(pending?.photo||photo)&&<Image cachePolicy="none" source={{uri:(pending?.photo||photo)!.uri}} style={{width:'100%',aspectRatio:4/3,borderRadius:12}} contentFit="contain" accessibilityLabel="Ảnh chấm công vừa chụp"/>}
         <Button secondary label={photo?'Chụp lại ảnh hiện tại':'Chụp ảnh hiện tại'} disabled={busy||!!pending} onPress={()=>{void run(async()=>{const controller=new AbortController();camera.current=controller;const next=await captureAttendancePhoto(controller.signal);if(next){if(!alive.current){next.dispose();return;}photo?.dispose();setPhoto(next);}});}}/>
         <Button secondary label={locating?'Đang lấy vị trí GPS…':location?'Lấy lại GPS':'Lấy vị trí GPS'} disabled={busy||locating||!!pending} loading={locating&&!busy} onPress={()=>{void run(async()=>{setLocating(true);try{const next=await locateAttendance();if(alive.current)setLocation(next);}finally{if(alive.current)setLocating(false);}});}}/>
-        {(pending?.location||location)&&<View style={{gap:6}}>
-          {copy(`Đã lấy GPS · sai số khoảng ${Math.round((pending?.location||location)!.accuracy)} m`)}
+        {captureLocation&&<View style={{gap:6}}>
+          {copy(attendanceLocationLabel(captureLocation, nearestAttendanceStoreOption(captureLocation, query.data?.stores ?? [])))}
+          {copy(`Đã lấy GPS · sai số khoảng ${Math.round(captureLocation.accuracy)} m`)}
           <Button secondary label="Xem vị trí hiện tại trên Google Maps" onPress={()=>{
-            const coords=(pending?.location||location);
+            const coords=captureLocation;
             if(coords)void Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${coords.latitude},${coords.longitude}`)}`);
           }}/>
         </View>}

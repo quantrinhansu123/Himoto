@@ -1,7 +1,8 @@
+import { nearestAttendanceStore } from '../../../shared/mobile-support';
 import { NextRequest, NextResponse } from 'next/server';
 import type { SessionUser } from '@/lib/server/management-session';
 import { ownerDatabase } from '@/lib/server/himoto-database';
-import { ATTENDANCE_ON_LOCAL_DATE, ATTENDANCE_SCHEDULE_OFFSET, ATTENDANCE_SHIFT_JOIN, SPLIT_SHIFT_MORNING_END, compareRegisteredAttendance, AttendanceError, attendanceDistanceMeters, nearestAttendanceStore, attendanceScope, attendanceStaff, attendancePhotoMime, manageAttendance, parseAttendanceLocation, recordAttendance } from '@/lib/server/attendance';
+import { ATTENDANCE_ON_LOCAL_DATE, ATTENDANCE_SCHEDULE_OFFSET, ATTENDANCE_SHIFT_JOIN, SPLIT_SHIFT_MORNING_END, compareRegisteredAttendance, AttendanceError, attendanceDistanceMeters, attendanceScope, attendanceStaff, attendancePhotoMime, manageAttendance, parseAttendanceLocation, recordAttendance } from '@/lib/server/attendance';
 import { failureResponse } from '@/lib/server/public-failure';
 import { vietnamDate } from '@/lib/management/duty-roster';
 import { canExportAttendance, canNoteAttendance, isAdminAccount } from '@/lib/management/permissions';
@@ -58,7 +59,10 @@ export async function handleAttendance(request: NextRequest, user: SessionUser) 
         server_now:now.toISOString(),
       };
       if (params.get('view') === 'summary') {
-        const stores = staff ? (await client.query("SELECT id,store_name FROM himoto.stores WHERE status IN ('active','opening') OR id=$1 ORDER BY store_name,id",[staff.store_id])).rows.map(row => ({id:Number(row.id),name:String(row.store_name)})) : [];
+        const stores = staff ? (await client.query(`
+          SELECT s.id,s.store_name,l.latitude::float8,l.longitude::float8
+          FROM himoto.stores s LEFT JOIN himoto.management_attendance_locations l ON l.store_id=s.id
+          WHERE s.status IN ('active','opening') OR s.id=$1 ORDER BY s.store_name,s.id`,[staff.store_id])).rows.map(row => ({id:Number(row.id),name:String(row.store_name),latitude:row.latitude,longitude:row.longitude})) : [];
         await client.query('COMMIT');
         return NextResponse.json({status:'success',data:{...summary,stores}},{headers:{'Cache-Control':'no-store'}});
       }
