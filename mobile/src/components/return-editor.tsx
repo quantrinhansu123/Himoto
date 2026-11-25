@@ -221,7 +221,7 @@ function ReturnForm({ id }: { id: string }) {
         </Card>
         <Card style={{ gap: 14 }}>
           <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 18, fontWeight: '700' }}>Hoàn tiền thuê</Text>
-          <Text style={{ color: theme.muted, fontSize: 13.5, lineHeight: 20 }}>Khoản giảm sớm có thể hoàn trước các khoản thu mới: {money(fees.after.rentalRefundable)}. Chỉ hoàn trong credit hợp lệ và tiền đã thu dư.</Text>
+          <Text style={{ color: theme.muted, fontSize: 13.5, lineHeight: 20 }}>Khoản giảm sớm có thể hoàn trước các khoản thu mới: {money(fees.after.rentalRefundable)}. Khoản hoàn vượt mức đối chiếu sẽ được lưu vào Bất thường HĐ.</Text>
           <ChoiceField label="Ghi hoàn tiền thuê" value={rentalRefund ? 'yes' : 'no'} choices={[{ value: 'no', label: 'Chưa ghi hoàn thuê' }, { value: 'yes', label: 'Đã thực tế hoàn thuê' }]} disabled={locked} onChange={v => { setRentalRefund(v === 'yes' ? defaultMoney() : null); clearReview(); }} />
           {rentalRefund && moneyFields(rentalRefund, setRentalRefund, 'Hoàn thuê', true)}
         </Card>

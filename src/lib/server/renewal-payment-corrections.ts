@@ -92,7 +92,7 @@ export async function updateRenewalPayment(db: Pick<PoolClient, 'query'>, orderI
     if (previous.request_hash !== hash) throw new ContractPaymentError('Mã lần sửa đã dùng cho nội dung khác. Tải lại phiếu để kiểm tra.',409);
     return readPaymentContext(db,orderId);
   }
-  if (['draft','cancelled'].includes(order.order_status)) throw new ContractPaymentError('Không sửa thanh toán của hợp đồng nháp hoặc đã hủy.',409);
+  if (order.order_status==='draft') throw new ContractPaymentError('Hợp đồng nháp cần sửa trong form lập hợp đồng.',409);
   const versions: RenewalVersion[] = Array.isArray(composer.versions) ? [...composer.versions] : [];
   const withoutReceipt = input.renewal_version !== undefined;
   const version = versions.find(v => v.kind === 'renewal' && Number(v.version) === input.renewal_version);
@@ -169,7 +169,7 @@ export async function updateRenewalPayment(db: Pick<PoolClient, 'query'>, orderI
   const feeEditable = withoutReceipt
     ? context.renewals?.find(row => row.version === input.renewal_version)?.fee_editable
     : old?.renewal_fee_editable;
-  if (amountChanged && (!feeEditable || idx < 0)) throw new ContractPaymentError('Chỉ sửa phí của kỳ gia hạn đã đối chiếu khi xe còn đang thuê.',409);
+  if (amountChanged && (!feeEditable || idx < 0)) throw new ContractPaymentError('Cần đối chiếu kỳ gia hạn trước khi sửa phí.',409);
   const delta = newAmount - currentAmount;
   if (amountChanged && (![currentAmount,Number(order.total),Number(order.total)+delta].every(n=>Number.isSafeInteger(n)&&n>=0&&n<=MAX_PAYMENT_AMOUNT))) throw new ContractPaymentError('Tiền hợp đồng hiện tại chưa hợp lệ để sửa phí gia hạn.',409);
   const newCollected=input.collected_amount===undefined?Number(receipt.value):Number(input.collected_amount);
@@ -177,8 +177,7 @@ export async function updateRenewalPayment(db: Pick<PoolClient, 'query'>, orderI
   const newPaidAt=input.paid_at||(receipt.created_at ? new Date(receipt.created_at).toISOString() : null);
   const dateChanged=Boolean(input.paid_at && newPaidAt && Date.parse(newPaidAt)!==new Date(receipt.created_at).getTime());
   const receiptChanged=collectedDelta!==0||dateChanged;
-  if(receiptChanged && receipt.status!=='approved')throw new ContractPaymentError('Không sửa số tiền hoặc ngày của phiếu đã hủy.',409);
-  if(!withoutReceipt && collectedDelta && (order.pid==null || !Number.isSafeInteger(Number(order.pid)+collectedDelta)||Number(order.pid)+collectedDelta<0))throw new ContractPaymentError('Không đối chiếu được tổng tiền đã thu.',409);
+  if(!withoutReceipt && receipt.status==='approved' && collectedDelta && (order.pid==null || !Number.isSafeInteger(Number(order.pid)+collectedDelta)||Number(order.pid)+collectedDelta<0))throw new ContractPaymentError('Không đối chiếu được tổng tiền đã thu.',409);
   const affectedTransactionIds=input.transaction_id ? [input.transaction_id] : [];
 
   if (newBefore !== currentBefore || newReturn !== currentReturn) {
@@ -239,7 +238,7 @@ export async function updateRenewalPayment(db: Pick<PoolClient, 'query'>, orderI
     const itemId = receipt.renewal_payload.item_id;
     if (itemId) {
       const item=(await db.query('SELECT rent_at,return_at,total_renewal_amount,completed_at FROM himoto.order_vehicle_details WHERE id=$1 AND order_id=$2 AND deleted_at IS NULL FOR UPDATE',[itemId,orderId])).rows[0];
-      if (!item || amountChanged && (withoutReceipt && item.completed_at || Number(item.total_renewal_amount||0)+delta<0)) throw new ContractPaymentError('Không đối chiếu được xe và phí gia hạn đã ghi nhận.',409);
+      if (!item || amountChanged && (Number(item.total_renewal_amount||0)+delta<0)) throw new ContractPaymentError('Không đối chiếu được xe và phí gia hạn đã ghi nhận.',409);
       if(periodChanged && item.rent_at && Date.parse(newBefore)<new Date(item.rent_at).getTime())throw new ContractPaymentError('Kỳ gia hạn không thể bắt đầu trước ngày nhận xe.',409);
       // Editing an older period must not move the bike back from a later renewal.
       const moveDeadline=periodChanged && receipt.status==='approved' && idx>=0 && !item.completed_at && new Date(item.return_at).getTime()===Date.parse(currentReturn!);

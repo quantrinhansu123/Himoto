@@ -56,7 +56,6 @@ export async function updateIssuedContract(db:Database,id:number,actor:number,bo
   await updateContractProfile(db,id,actor,{revision:input.revision,profile:contractProfile(draft),contract_number:draft.contract_number,notes:input.notes,status:input.status},{allowIncomplete:true,overwrite:true});
   const o = (await db.query('SELECT *,xmin::text AS revision FROM himoto.orders WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',[id])).rows[0];
   const payload = structuredClone(o.draft_payload||{}), composer = payload.management_composer||{}, previous = composer.draft||{};
-  if(composer.lifecycle?.payment_closure)throw new ContractProfileError('Hợp đồng đã đóng qua Thanh toán. Sửa hồ sơ riêng hoặc ghi nhận thu hồi xe; không sửa lại toàn bộ xe và khoản tiền đã chốt.',409);
   const lines = (await db.query('SELECT * FROM himoto.order_vehicle_details WHERE order_id=$1 AND deleted_at IS NULL ORDER BY id FOR UPDATE',[id])).rows;
   const datesChanged = dateTimeInput(o.rent_at)!==draft.start_date || dateTimeInput(o.return_at)!==draft.end_date;
   const returnChanged = draft.backfill!==undefined && draft.backfill.returned_at!==previous.backfill?.returned_at;
@@ -64,7 +63,7 @@ export async function updateIssuedContract(db:Database,id:number,actor:number,bo
   const added = ids.filter(vehicle=>!lines.some(line=>Number(line.vehicle_id)===vehicle));
   const selected = (await db.query(`SELECT * FROM ${contractVehicleReadSource()} WHERE id=ANY($1::bigint[]) ORDER BY id`,[ids])).rows;
   if(selected.length!==ids.length) throw new ContractProfileError('Không tìm thấy xe đã chọn.',404);
-  const historical = ['completed','cancelled','reserved','cancel_pending_settlement'].includes(String(o.order_status));
+  const historical = Boolean(composer.lifecycle?.payment_closure) || ['completed','cancelled','reserved','cancel_pending_settlement'].includes(String(o.order_status));
   // Serialize inventory changes with the same locks used by issuing contracts.
   const locked = usesScopedDatabase()
     ? (await db.query('SELECT * FROM himoto.lock_vehicles_for_contract($1::bigint[])',[ids])).rows

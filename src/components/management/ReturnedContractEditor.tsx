@@ -66,7 +66,7 @@ export function ReturnedContractEditor({itemId,initialStep='edit',onClose,onSave
         {loading?<p role="status"><LoaderCircle size={16} className="mg-spin"/> Đang tải hồ sơ và các phiếu thu/hoàn…</p>:context&&<>
           <div className="mg-return-correction-steps" aria-label="Các bước sửa và gửi"><button type="button" className={`mg-button${step==='edit'?' is-active':''}`} onClick={()=>setStep('edit')}>1. Sửa hồ sơ</button><button type="button" className={`mg-button${step==='telegram'?' is-active':''}`} disabled={dirty||photosPending||saving} onClick={()=>setStep('telegram')}>2. Kiểm tra & gửi Telegram</button></div>
           {step==='telegram'?<ContractTelegramPanel key={`${context.revision}-${photoVersion}`} id={context.order_id} returnItemIds={context.lines.map(l=>l.item_id)} eventKey={context.event_key} onlyEventKey/>:<>
-            <p>Sửa giờ trả, phí và tiền thuê đã thu trong lượt này.</p>
+            <p>Sửa giờ trả, phí, tiền thuê đã thu và tiền hoàn do trả sớm trong lượt này.</p>
             {context.payment.all_returned&&<button type="button" className="mg-button" disabled={saving||dirty||photosPending}
               title={dirty||photosPending?'Lưu hồ sơ và ảnh đang chỉnh trước khi bổ sung hoàn cọc.':undefined} onClick={onDepositRefund}>Bổ sung hoàn cọc</button>}
             {context.blocked_reason&&<p className="mg-error-message" role="alert">{context.blocked_reason}</p>}

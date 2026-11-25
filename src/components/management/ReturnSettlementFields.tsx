@@ -72,9 +72,7 @@ export function ReturnSettlementFields({orderId,itemIds,photoVersion=0,lateFee,r
     : Number(refundRow.amount)>limits.refund
       ? `Số tiền hoàn cọc vượt cọc còn giữ ${formatMoney(limits.refund)} (vượt ${formatMoney(Number(refundRow.amount)-limits.refund)}). Tiền thuê trả sớm ghi ở mục «Đã hoàn tiền thuê do trả sớm».` : '';
   const rentalRefundAmountError=!rentalRefundRow?.enabled?'':!/^\d{1,13}$/.test(rentalRefundRow.amount||'')||Number(rentalRefundRow.amount)<=0
-    ? 'Nhập số tiền thuê thực tế đã hoàn lớn hơn 0đ.'
-    : Number(rentalRefundRow.amount)>rentalRefundable
-      ? `Số tiền hoàn thuê vượt tiền trả sớm thực tế được hoàn ${formatMoney(rentalRefundable)}. Khoản giảm chỉ được hoàn khi tiền thuê đã thu dư.` : '';
+    ? 'Nhập số tiền thuê thực tế đã hoàn lớn hơn 0đ.' : '';
   const rentalRefundAccountReady=Boolean(context&&paymentAccounts(context,rentalRefundMethod).some(account=>account.id===Number(rentalRefundRow?.account_id)));
   const rentalRefundReady=!rentalRefundRow?.enabled||(!rentalRefundAmountError&&rentalRefundAccountReady&&refundRecipientReady);
   const refundAccountReady=Boolean(context&&paymentAccounts(context,refundMethod).some(account=>account.id===Number(refundRow?.account_id)));
@@ -125,15 +123,16 @@ export function ReturnSettlementFields({orderId,itemIds,photoVersion=0,lateFee,r
     <ContractWorkflowGuide workflow="return" company={context.history.some(row=>!row.deposit&&row.type==='in'&&row.method.includes('công ty'))} early={early} late={late}/>
     <p>Chỉ chọn khoản đã thực nhận hoặc đã hoàn cho khách. Mỗi khoản tạo một phiếu thu/chi cùng lượt xác nhận. Số tiền gợi ý chỉ tham khảo — nhập đúng số khách đã trả, không bắt khớp.</p>
     <details className="mg-return-options"><summary>Sửa thời điểm thu / hoàn</summary><div className="mg-field"><label htmlFor={`return-${orderId}-paid-at`}>Thời điểm thực tế thu / hoàn (24h)</label><DateTime24Controls id={`return-${orderId}-paid-at`} label="Thời điểm thực tế thu / hoàn" value={paidAt} onChange={setPaidAt}/></div></details>
-    {(['late_fee','repair_fee','rental_debt','refund','rental_refund'] as const).filter(kind=>limits[kind]>0||kind==='rental_refund'&&(earlyDiscount>0||rows.rental_refund!==undefined)).map(kind=>{
+    {(['late_fee','repair_fee','rental_debt','refund','rental_refund'] as const).filter(kind=>limits[kind]>0||kind==='rental_refund').map(kind=>{
       const row=rows[kind],method=row?.method||'transfer',accounts=paymentAccounts(context,method),blocked=kind==='refund'&&!refundAllowed,isPayout=kind==='refund'||kind==='rental_refund';
       const amountError=kind==='refund'?refundAmountError:kind==='rental_refund'?rentalRefundAmountError:'';
       const suggestOnly=kind==='late_fee'||kind==='repair_fee'||kind==='rental_debt';
       return <fieldset key={kind} disabled={disabled}><legend>{kind==='refund'?'Cọc còn giữ':kind==='rental_refund'?'Tiền thuê được hoàn do trả sớm':kind==='late_fee'?'Phí quá hạn':kind==='repair_fee'?'Phí sửa chữa':'Công nợ tiền thuê'}{suggestOnly?` · gợi ý ${formatMoney(limits[kind])}`:`: ${formatMoney(limits[kind])}`}</legend>
         {suggestOnly&&<p className="mg-composer-hint" role="status">Gợi ý {formatMoney(limits[kind])} — có thể sửa theo số khách đã trả; không bắt khớp.</p>}
         {kind==='refund'&&<label className="mg-checkbox"><input type="radio" name={`return-${orderId}-refund-decision`} checked={refundDeferred} onChange={()=>{setRefundDeferred(true);update('refund',{enabled:false});}}/>Chưa hoàn cọc — trả xe ngay, tổng chờ kế toán hoàn {formatMoney(pendingReturnRefund(context.deposit_held,rentalRefundable-rentalRefundSelected,outstanding))}</label>}
-        <label className="mg-checkbox"><input type={kind==='refund'?'radio':'checkbox'} name={kind==='refund'?`return-${orderId}-refund-decision`:undefined} disabled={blocked||kind==='rental_refund'&&!rentalRefundable&&!row?.enabled} title={kind==='refund'?refundBlockReason||undefined:undefined} checked={Boolean(row?.enabled)&&!blocked} onChange={event=>{if(kind==='refund')setRefundDeferred(false);update(kind,{enabled:event.target.checked});}}/>{labels[kind]}</label>
-        {kind==='rental_refund'&&<p className="mg-composer-hint">{rentalRefundable>0?'Ghi riêng tiền thuê đã hoàn, cộng với hoàn cọc thành tổng tiền trả khách. Chưa hoàn thì để trống; có thể ghi phiếu chi sau.':'Khoản giảm trả sớm đang cấn trừ tiền thuê chưa thu hoặc phí phát sinh; chưa có tiền thuê thu dư để hoàn.'}</p>}
+        <label className="mg-checkbox"><input type={kind==='refund'?'radio':'checkbox'} name={kind==='refund'?`return-${orderId}-refund-decision`:undefined} disabled={blocked} title={kind==='refund'?refundBlockReason||undefined:undefined} checked={Boolean(row?.enabled)&&!blocked} onChange={event=>{if(kind==='refund')setRefundDeferred(false);update(kind,{enabled:event.target.checked});}}/>{labels[kind]}</label>
+        {kind==='rental_refund'&&row?.enabled&&Number(row.amount)>rentalRefundable&&<p role="status">Khoản vượt {formatMoney(Number(row.amount)-rentalRefundable)} sẽ được lưu vào Bất thường HĐ.</p>}
+        {kind==='rental_refund'&&<p className="mg-composer-hint">{rentalRefundable>0?'Ghi riêng tiền thuê đã hoàn, cộng với hoàn cọc thành tổng tiền trả khách. Chưa hoàn thì để trống; có thể ghi phiếu chi sau.':'Mức đối chiếu hiện là 0 đ. Nếu đã hoàn, khoản chi sẽ được ghi vào Bất thường HĐ.'}</p>}
         {kind==='refund'&&<>
           {refundBlockReason&&<p className="mg-field-error" role="status">{refundBlockReason}</p>}
           {refundDecisionMissing&&<p role="status">{refundBlockReason

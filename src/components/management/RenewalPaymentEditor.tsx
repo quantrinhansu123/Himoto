@@ -155,7 +155,7 @@ export function RenewalPaymentEditor({ orderId, eventKey, receiptId, receiptIds,
         {!loading && (receipt || renewal) && <>
           {receipt ? <p className="mg-field-wide">Phiếu #{receipt.id} · <strong>{formatMoney(receipt.amount)}</strong><br/>{receipt.method} · {receipt.account || 'Chưa rõ tài khoản'}</p>
             : <p className="mg-field-wide">Kỳ này chưa có phiếu thu. Nhập số tiền thực tế đã thu để lập phiếu, hoặc để trống nếu khách chưa thanh toán.</p>}
-          {receipt?.status==='cancelled' && <p className="mg-field-wide mg-field-error">Phiếu này đã hủy, không tính vào tiền đã thu. Kiểm tra kỳ gia hạn và phiếu thu đang có hiệu lực trước khi sửa.</p>}
+          {receipt?.status==='cancelled' && <p className="mg-field-wide mg-field-error">Phiếu này đã hủy, không tính vào tiền đã thu. Có thể sửa dữ liệu lịch sử của phiếu.</p>}
           <fieldset className="mg-renewal-period mg-field-wide" disabled={uncertain}>
             <div className="mg-field">
               <label htmlFor={`renewal-start-${fieldId}`}>Từ ngày giờ gia hạn</label>
@@ -175,9 +175,9 @@ export function RenewalPaymentEditor({ orderId, eventKey, receiptId, receiptIds,
             </p>
           )}
           {collecting && <label className="mg-field-wide">Ngày giờ thực hiện / thu tiền<DateTime24Controls id={`renewal-paid-${fieldId}`} label="Ngày giờ thực hiện / thu tiền" value={paidAt} onChange={setPaidAt}/></label>}
-          <label className="mg-field-wide">Số tiền thực tế đã thu (VNĐ)<input aria-label="Số tiền thực tế đã thu" inputMode="numeric" value={collectedAmount} disabled={uncertain||receipt?.status==='cancelled'} onChange={event=>setCollectedAmount(event.target.value.replace(/\D/g,''))}/></label>
+          <label className="mg-field-wide">Số tiền thực tế đã thu (VNĐ)<input aria-label="Số tiền thực tế đã thu" inputMode="numeric" value={collectedAmount} disabled={uncertain} onChange={event=>setCollectedAmount(event.target.value.replace(/\D/g,''))}/></label>
           <label className="mg-field-wide">Phí gia hạn (VNĐ)<input aria-label="Phí gia hạn (VNĐ)" inputMode="numeric" value={amount} disabled={uncertain || !feeEditable} onChange={event=>setAmount(event.target.value.replace(/\D/g,''))}/></label>
-          <p className="mg-field-wide">Phí gia hạn là tiền phải thu; số tiền thực tế đã thu là khoản khách đã thanh toán. Sửa ngày và khoản đã thu sẽ cập nhật sổ quỹ, công nợ và doanh thu theo ngày đã chọn.{!feeEditable&&' Kỳ này không cho sửa phí tại đây.'}</p>
+          <p className="mg-field-wide">Phí gia hạn là tiền phải thu; số tiền thực tế đã thu là khoản khách đã thanh toán. Với phiếu đang hiệu lực, thay đổi sẽ cập nhật sổ quỹ, công nợ và doanh thu.{!feeEditable&&' Kỳ này không cho sửa phí tại đây.'}</p>
 
           <label className="mg-field-wide">Hình thức thanh toán mới<select aria-label="Hình thức thanh toán mới" disabled={uncertain || !collecting} value={method} onChange={event => {
             const next = event.target.value as PaymentMethod, nextAccounts = context ? paymentAccounts(context,next) : [];

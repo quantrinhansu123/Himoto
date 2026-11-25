@@ -151,7 +151,7 @@ export function DataTable({ config, columns, rows, offset, sortKey, sortDirectio
     if (isContract && onPrint) actions.push({ key: 'print', label: 'Điền và in hợp đồng', icon: <Printer size={16} />, onSelect: () => onPrint(row) });
     if(isContract&&onQr&&row.status!=='cancelled')actions.push({key:'qr',label:'Nhập phiếu chi',icon:<Wallet size={16}/>,onSelect:()=>onQr(row)});
     if(isContract&&onReminder&&isRemindableContract(row))actions.push({key:'reminder',label:'Nhắc nợ',icon:<MessageCircle size={16}/>,onSelect:()=>onReminder(row)});
-    if (isContract && onPayment && !['draft', 'cancelled'].includes(row.status)) actions.push({ key: 'payment', label: 'Thanh toán', icon: <Wallet size={16} />, onSelect: () => onPayment(row) });
+    if (isContract && onPayment && row.status!=='draft') actions.push({ key: 'payment', label: 'Thanh toán', icon: <Wallet size={16} />, onSelect: () => onPayment(row) });
     if (isContract && onHandover) {
       const handoverBlock = row.status === 'deposit_contract' && !canFinalizeRentalContract(accessUser, row.rental_type)
         ? 'Tài khoản chưa có quyền giao xe cho loại hợp đồng này.'

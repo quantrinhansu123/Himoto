@@ -21,6 +21,8 @@ import { contractEvidenceSlots } from '@/lib/management/contract-photos';
 import { validBackfillTime } from '@/lib/management/contract-backfill';
 import { addRentalDuration } from '@/lib/management/rental-time';
 import { canCollectContractDebt, canOperateAcrossStores, canSettleContract } from '@/lib/management/permissions';
+import { ReceiptCorrectionsEditor } from './ReceiptCorrectionsEditor';
+import { canEditIssuedContract } from '@/lib/management/contract-profile';
 import { ContractSettlementDialog } from './ContractSettlementDialog';
 
 const groupAmount = (value: string) => value.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
@@ -28,15 +30,18 @@ const defaultNote = (purpose: PaymentPurpose, code: string) => purpose==='deposi
 const vietnamText = (value: string) => formatDateTime(value);
 
 export function ContractPaymentDialog({ id, initialPurpose = 'debt', backfill=false, onClose, onPaymentSaved }: { id: number; initialPurpose?: PaymentPurpose;backfill?:boolean; onClose: () => void; onPaymentSaved?: () => void }) {
-  const {accessUser}=useManagement();
+  const {accessUser,can}=useManagement();
   const [other,setOther]=useState(false);
+  const [editingReceipts,setEditingReceipts]=useState(false);
   const [settlementRequested,setSettlementRequested]=useState(false);
+  const onEditReceipts = canEditIssuedContract(accessUser) || can('finance.write') ? () => setEditingReceipts(true) : undefined;
+  if (editingReceipts) return <ReceiptCorrectionsEditor key={id} id={id} onClose={()=>setEditingReceipts(false)} onSaved={()=>{setEditingReceipts(false);onPaymentSaved?.();}}/>;
   const collectionAllStores = canOperateAcrossStores(accessUser, 'finance.write');
   const maySettle = initialPurpose==='debt' && !backfill && canSettleContract(accessUser);
   if(maySettle&&!other&&(!collectionAllStores||settlementRequested))return <ContractSettlementDialog id={id} onClose={onClose} onSaved={onPaymentSaved} onOther={()=>setOther(true)}/>;
-  return <LegacyContractPaymentDialog id={id} initialPurpose={other?'extra':initialPurpose} backfill={backfill} onClose={onClose} onPaymentSaved={onPaymentSaved} onOpenSettlement={collectionAllStores&&maySettle?()=>{setOther(false);setSettlementRequested(true);}:undefined}/>;
+  return <LegacyContractPaymentDialog id={id} initialPurpose={other?'extra':initialPurpose} backfill={backfill} onClose={onClose} onPaymentSaved={onPaymentSaved} onEditReceipts={onEditReceipts} onOpenSettlement={collectionAllStores&&maySettle?()=>{setOther(false);setSettlementRequested(true);}:undefined}/>;
 }
-function LegacyContractPaymentDialog({ id, initialPurpose = 'debt', backfill=false, onClose, onPaymentSaved, onOpenSettlement }: { id: number; initialPurpose?: PaymentPurpose;backfill?:boolean; onClose: () => void; onPaymentSaved?: () => void; onOpenSettlement?: () => void }) {
+function LegacyContractPaymentDialog({ id, initialPurpose = 'debt', backfill=false, onClose, onPaymentSaved, onOpenSettlement, onEditReceipts }: { id: number; initialPurpose?: PaymentPurpose;backfill?:boolean; onClose: () => void; onPaymentSaved?: () => void; onOpenSettlement?: () => void; onEditReceipts?: () => void }) {
   const { acceptContractPayment, notify, selectStore,accessUser } = useManagement();
   const router = useRouter();
   const collectionAllStores = canOperateAcrossStores(accessUser, 'finance.write') && !accessUser?.scope_all;
@@ -136,7 +141,7 @@ function LegacyContractPaymentDialog({ id, initialPurpose = 'debt', backfill=fal
   const refundInScope = !collectionAllStores || accessStoreId===context?.store_id;
   const refundAllowed = Boolean(refundInScope && context && canAddExtraReceipt(context.status) && context.deposit_held > 0);
   const rentalRefund=purpose==='rental_refund';
-  const rentalRefundAllowed=Boolean(refundInScope&&context&&canAddExtraReceipt(context.status)&&(context.rental_refundable||0)>0);
+  const rentalRefundAllowed=Boolean(refundInScope&&context&&canAddExtraReceipt(context.status));
   const refund = purpose === 'deposit_refund'||rentalRefund;
   const refundLimit=rentalRefund?context?.rental_refundable||0:context?.deposit_held||0;
   const depositAllowed=Boolean(context&&!context.completed_from_hold&&canAddExtraReceipt(context.status)&&(context.deposit_remaining??0)>0);
@@ -196,8 +201,8 @@ function LegacyContractPaymentDialog({ id, initialPurpose = 'debt', backfill=fal
         : purpose==='deposit'?{purpose:'deposit'}:purpose === 'extra' ? { purpose: 'extra' } : rentalRefund?{purpose:'rental_refund'}:refund ? { purpose: 'deposit_refund' } : {}) };
     if (!pending && purpose === 'renewal' && (!renewalLines.length || !days || renewalLines.some(line => !line.return_at || !/^\d{1,13}$/.test(line.amount || '0')))) { setError('Chọn ít nhất một xe, số ngày gia hạn và tiền gia hạn từng xe.'); return; }
     if (!pending && (!canCollect || !/^[1-9]\d{0,12}$/.test(effectiveAmount) || (purpose === 'debt' && (context.remaining === null || Number(effectiveAmount) > context.remaining))
-        || (purpose==='deposit'&&Number(effectiveAmount)>(context.deposit_remaining??0)) || (refund && Number(effectiveAmount) > refundLimit) || !accounts.some(account => account.id === input.account_id))) {
-      setError(rentalRefund?'Số tiền hoàn vượt tiền thuê được phép hoàn; kiểm tra tài khoản chi.':refund ? 'Số tiền trả cọc không được vượt tiền cọc đang giữ; chọn tài khoản chi.' : 'Kiểm tra số tiền còn thiếu và tài khoản nhận.'); return;
+        || (purpose==='deposit'&&Number(effectiveAmount)>(context.deposit_remaining??0)) || (refund && !rentalRefund && Number(effectiveAmount) > refundLimit) || !accounts.some(account => account.id === input.account_id))) {
+      setError(rentalRefund?'Kiểm tra số tiền hoàn và tài khoản chi.':refund ? 'Số tiền trả cọc không được vượt tiền cọc đang giữ; chọn tài khoản chi.' : 'Kiểm tra số tiền còn thiếu và tài khoản nhận.'); return;
     }
     if (!pending && !refund && input.method !== 'cash' && !transferReview&&!backfill) {
       try {
@@ -268,7 +273,7 @@ function LegacyContractPaymentDialog({ id, initialPurpose = 'debt', backfill=fal
             {purpose === 'extra' && <p className="mg-field-wide">Khoản thu thêm (phụ thu, phí phát sinh…) được cộng vào tiền hợp đồng và tổng đã thu, ghi thành phiếu Thu trong Sổ quỹ / Sổ két. Công nợ còn thiếu không đổi.</p>}
             {purpose==='deposit'&&<p className="mg-field-wide">Thu phần cọc còn thiếu theo hợp đồng, tối đa {formatMoney(context.deposit_remaining||0)}. Tiền cọc được tách riêng, không làm giảm nợ tiền thuê.</p>}
             {refund && !rentalRefund && <p className="mg-field-wide">Trả lại tiền cọc cho khách: ghi phiếu Chi trong Sổ quỹ / Sổ két, không làm thay đổi tiền thuê và công nợ. Tối đa {formatMoney(context.deposit_held)}.</p>}
-            {rentalRefund&&<p className="mg-field-wide">Chỉ ghi nhận sau khi đã hoàn tiền thuê cho khách. Khoản này trừ doanh thu vào ngày giờ chi, không trừ tiền cọc. Tối đa {formatMoney(refundLimit)} theo tiền đã thu dư và mức giảm trả sớm.</p>}
+            {rentalRefund&&<p className="mg-field-wide">Chỉ ghi nhận sau khi đã hoàn tiền thuê cho khách. Khoản này trừ doanh thu vào ngày giờ chi, không trừ tiền cọc. Mức đối chiếu {formatMoney(refundLimit)}. Khoản vượt mức được lưu vào Bất thường HĐ.</p>}
             {purpose === 'renewal' ? <label>Tổng tiền gia hạn (VNĐ)<input aria-label="Số tiền thu (VNĐ)" value={groupAmount(effectiveAmount)} readOnly placeholder="Chọn xe và nhập tiền" /></label>
             : <label>{refund ? 'Số tiền chi (VNĐ)' : 'Số tiền thu (VNĐ)'}<input aria-label="Số tiền thu (VNĐ)" inputMode="numeric" pattern="[1-9][0-9.]{0,16}" maxLength={17} required value={groupAmount(amount)} onChange={event => changeAmount(event.currentTarget)} onKeyDown={event => {
               const input = event.currentTarget, position = input.selectionStart;
@@ -306,6 +311,8 @@ function LegacyContractPaymentDialog({ id, initialPurpose = 'debt', backfill=fal
             const sum = receipts.filter(receipt => receipt.status === 'approved').reduce((total, receipt) => total + receipt.amount, 0);
             return <section key={type} className={type === 'out' ? 'is-expense' : 'is-income'}>
               <h4>{type === 'out' ? 'Phiếu Chi' : 'Phiếu Thu'} ({receipts.length}) · Đã duyệt: {type === 'out' ? '−' : ''}{formatMoney(sum)}</h4>
+              {type==='in'&&onEditReceipts&&receipts.some(receipt=>receipt.status==='approved'&&!receipt.renewal)&&
+                <button type="button" className="mg-button" disabled={locked||loading||deleting} onClick={onEditReceipts}>Sửa khoản đã thu</button>}
               {receipts.length ? <ul className="mg-payment-history">{receipts.map(receipt => <li key={receipt.id} className={type === 'out' ? 'is-expense' : undefined}>
                 <strong>#{receipt.id}{receipt.deposit ? (type === 'out' ? ' · Trả cọc' : ' · Tiền cọc') : ''} · {type === 'out' ? '−' : ''}{formatMoney(receipt.amount)}</strong>
                 {receipt.status === 'cancelled' && <span className="mg-field-error">Đã hủy · Không tính vào tổng đã duyệt</span>}

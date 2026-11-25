@@ -111,16 +111,16 @@ export async function readReturnSettlementPreview(client:Pick<PoolClient,'query'
     if(![total,paid,totals.income,totals.totalIncrease].every(bounded))throw conflict('Tổng thu hoặc phí quyết toán vượt giới hạn.');
     payments.push({...row,label,totalIncrease:impact.totalIncrease});
   }
+  const remainingBeforeRentalRefund=Math.max(total-paid,0);
   const rentalRefund=input.settlement.rental_refund;
   if(rentalRefund){
-    const amount=Number(rentalRefund.amount),label=account(rentalRefund),limit=Math.max(Math.min(priorCredit,paid-total),0);
-    if(amount>limit)throw conflict('Số tiền hoàn vượt khoản giảm thuê trả sớm và tiền thực tế đã thu dư.');
-    paid-=amount;totals.rentalRefund=amount;payments.push({...rentalRefund,kind:'rental_refund',label,totalIncrease:0});
+    const amount=Number(rentalRefund.amount),label=account(rentalRefund);
+    paid=Math.max(paid-amount,0);totals.rentalRefund=amount;payments.push({...rentalRefund,kind:'rental_refund',label,totalIncrease:0});
   }
   const depositRefund=input.settlement.refund;
   if(depositRefund){
     const amount=Number(depositRefund.amount),label=account(depositRefund);
-    if(!fees.after.closesRental||paid<total)throw conflict('Chỉ hoàn cọc khi đã nhận đủ xe và thu đủ công nợ.');
+    if(!fees.after.closesRental||remainingBeforeRentalRefund>0)throw conflict('Chỉ hoàn cọc khi đã nhận đủ xe và thu đủ công nợ.');
     if(amount>deposit)throw conflict('Số tiền hoàn vượt cọc đang giữ.');
     deposit-=amount;totals.depositRefund=amount;payments.push({...depositRefund,kind:'deposit_refund',label,totalIncrease:0});
   }

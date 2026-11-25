@@ -13,10 +13,11 @@ async function main(){
   const atomic=async work=>{await c.query('SAVEPOINT action');try{return await dataAccess.run(user,work);}catch(e){await c.query('ROLLBACK TO SAVEPOINT action');throw e;}finally{await c.query('RELEASE SAVEPOINT action');}};
   try{
     await c.query('BEGIN');await c.query(`CREATE SCHEMA ${schema};GRANT USAGE ON SCHEMA ${schema} TO himoto_scoped`);
-    for(const t of ['orders','order_vehicle_details','vehicles','transactions','management_contract_payments','management_contract_notifications'])await c.query(`CREATE TABLE ${schema}.${t}(LIKE himoto.${t} INCLUDING DEFAULTS);GRANT SELECT,UPDATE ON ${schema}.${t} TO himoto_scoped`);
+    for(const t of ['orders','order_vehicle_details','vehicles','stores','customers','transactions','management_contract_payments','management_contract_notifications'])await c.query(`CREATE TABLE ${schema}.${t}(LIKE himoto.${t} INCLUDING DEFAULTS);GRANT SELECT,UPDATE ON ${schema}.${t} TO himoto_scoped`);
     await c.query(`REVOKE UPDATE ON ${schema}.transactions,${schema}.vehicles,${schema}.management_contract_notifications FROM himoto_scoped;
       CREATE FUNCTION ${schema}.access_store(target numeric) RETURNS boolean LANGUAGE sql STABLE AS $$SELECT himoto.access_store(target)$$;
       CREATE FUNCTION ${schema}.access_actor() RETURNS bigint LANGUAGE sql STABLE AS $$SELECT himoto.access_actor()$$;
+      CREATE FUNCTION ${schema}.access_order_store(target bigint) RETURNS boolean LANGUAGE sql STABLE AS $$SELECT himoto.access_store(target)$$;
       ALTER TABLE ${schema}.orders ENABLE ROW LEVEL SECURITY;
       CREATE POLICY own_orders ON ${schema}.orders TO himoto_scoped USING(himoto.access_store(store_id)) WITH CHECK(himoto.access_store(store_id));
       CREATE FUNCTION ${schema}.vehicle_history_conflict_ids(targets bigint[],excluded bigint,started timestamptz,ended timestamptz) RETURNS TABLE(vehicle_id bigint)
@@ -25,6 +26,7 @@ async function main(){
         AND d.rent_at<ended AND COALESCE(d.completed_at,d.return_at)>started$$;
       GRANT EXECUTE ON FUNCTION ${schema}.vehicle_history_conflict_ids(bigint[],bigint,timestamptz,timestamptz) TO himoto_scoped;`);
     await c.query(fs.readFileSync('docs/sql/2026-10-29-contract-vehicle-owner-labels.sql','utf8').replaceAll('himoto.',schema+'.').replaceAll('pg_catalog,himoto','pg_catalog,'+schema).replace(/^BEGIN;|^COMMIT;/gm,''));
+    await c.query(fs.readFileSync('docs/sql/2026-11-12-bounded-contract-vehicles.sql','utf8').replaceAll('himoto.',schema+'.').replaceAll('pg_catalog,himoto','pg_catalog,'+schema).replace(/^BEGIN;|^COMMIT;/gm,''));
     const renewal={kind:'renewal',version:2,created_at:'2026-01-02T03:00:00Z',item_id:101,vehicle_id:100,before_return_at:'2026-01-02T03:00:00Z',return_at:'2026-01-03T03:00:00Z',amount:250000,before_total:250000,total:500000};
     await c.query(`INSERT INTO ${schema}.orders(id,store_id,contract_number,order_type,order_status,total,pid,total_rental_fees,draft_payload)
       VALUES(1,32,'QA-CORRECT','daily','renting','500000',500000,250000,$1),(2,33,'QA-FOREIGN','daily','completed','0',0,0,'{}')`,[JSON.stringify({management_composer:{draft:{start_date:'2026-01-01T10:00',end_date:'2026-01-03T10:00'},versions:[renewal]}})]);

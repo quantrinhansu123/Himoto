@@ -51,6 +51,7 @@ export function isMobileReturnSettlementPreview(v:unknown):v is MobileReturnSett
     ...(v.settlement.refund?[{...v.settlement.refund,kind:'deposit_refund'}]:[])];
   if(v.payments.length!==expected.length)return false;
   let total=v.fees.after.totalAmount,paid=v.fees.after.rentalPaid,deposit=v.fees.after.depositHeld,overpayment=false;
+  let remainingBeforeRentalRefund: number | undefined;
   const sums={income:0,rentalRefund:0,depositRefund:0,totalIncrease:0};
   for(let i=0;i<expected.length;i++){
     const row=v.payments[i],input=expected[i];
@@ -60,7 +61,7 @@ export function isMobileReturnSettlementPreview(v:unknown):v is MobileReturnSett
     const increase=income&&remaining>0&&amount>remaining?amount-remaining:0;
     if(row.totalIncrease!==increase)return false;
     if(income){overpayment ||=amount>remaining;total+=increase;paid+=amount;sums.income+=amount;sums.totalIncrease+=increase;}
-    else if(row.kind==='rental_refund'){paid-=amount;sums.rentalRefund+=amount;}
+    else if(row.kind==='rental_refund'){remainingBeforeRentalRefund=remaining;paid=Math.max(paid-amount,0);sums.rentalRefund+=amount;}
     else{deposit-=amount;sums.depositRefund+=amount;}
   }
   const after=v.after,fees=v.fees.after,remaining=Math.max(total-paid,0);
@@ -69,7 +70,7 @@ export function isMobileReturnSettlementPreview(v:unknown):v is MobileReturnSett
     money(total)&&money(paid)&&money(deposit)&&after.totalAmount===total&&after.rentalPaid===paid&&after.depositHeld===deposit&&after.rentalRemaining===remaining&&
     money(after.rentalRefundable)&&after.rentalRefundable<=Math.max(paid-total,0)&&after.remainingItems===fees.remainingItems&&after.closesRental===fees.closesRental&&
     after.depositRefundEligible===(fees.closesRental&&remaining===0&&deposit>0)&&after.status===(fees.closesRental?(remaining===0?'completed':'wait_payment'):fees.status)&&
-    (sums.depositRefund===0||fees.closesRental&&remaining===0);
+    (sums.depositRefund===0||fees.closesRental&&(remainingBeforeRentalRefund??remaining)===0);
 }
 
 // Bind the request as well as the response: never display another fee selection

@@ -123,14 +123,12 @@ export async function readPaymentContext(client: Database, id: number, options?:
   const rentalRefunded=historyTotals?Number(historyTotals.rental_refunded):history.rows.filter(row=>row.type==='out'&&row.name==='order:rental_refund'&&row.tx_status==='approved').reduce((sum,row)=>sum+Number(row.amount),0);
   const rentalRefundable=total===null||paid===null||!Number.isSafeInteger(earlyDiscount)||!Number.isSafeInteger(rentalRefunded)?0:Math.max(Math.min(earlyDiscount-rentalRefunded,paid-total),0);
   const items = await client.query(`SELECT d.id,d.vehicle_id,v.name,v.license,
-      ${dailyPriceSql()} AS daily_price,d.return_at,d.total_renewal_amount,d.xmin::text AS revision
+      ${dailyPriceSql()} AS daily_price,d.return_at,d.total_renewal_amount,d.completed_at,d.xmin::text AS revision
     FROM himoto.order_vehicle_details d LEFT JOIN ${contractVehicleLabelSource('ARRAY[$1::bigint]')} v ON v.id=d.vehicle_id JOIN himoto.orders o ON o.id=d.order_id
-    WHERE d.order_id=$1 AND d.deleted_at IS NULL AND d.completed_at IS NULL ORDER BY d.id`, [id]);
+    WHERE d.order_id=$1 AND d.deleted_at IS NULL ORDER BY d.id`, [id]);
   const composer = order.draft_payload?.management_composer;
   const renewals: RenewalVersion[] = Array.isArray(composer?.versions) ? composer.versions : [];
-  const canEditRenewalFee = !plan && !composer?.installment_plan && !composer?.lifecycle?.hold_completion
-    && !composer?.lifecycle?.payment_closure && !composer?.lifecycle?.bad_debt_closure
-    && ['renting','overdue','wait_payment'].includes(String(order.status));
+  const canEditRenewalFee = !plan && !composer?.installment_plan;
   return { id: Number(order.id), code: String(order.code), status: String(order.status), store_id: Number(order.store_id), revision: String(order.revision),
     hold_active:Boolean(order.draft_payload?.management_composer?.lifecycle?.active_hold),completed_from_hold:Boolean(order.draft_payload?.management_composer?.lifecycle?.hold_completion),
     total_amount: total, paid_amount: paid, remaining: total === null || paid === null ? null : Math.max(total - paid, 0), ...(billing ? {billing, billing_base_total: baseTotal} : {}),
@@ -141,7 +139,7 @@ export async function readPaymentContext(client: Database, id: number, options?:
     company_paid_amount: historyTotals?Number(historyTotals.company_paid):company.reduce((sum, row) => sum + Number(row.amount), 0), company_payment_count: historyTotals?Number(historyTotals.company_count):company.length,
     ...(options?{history_page:historyPage,history_pages:historyPages,history_total:historyTotal}:{}),
     end_date: order.end_date instanceof Date ? order.end_date.toISOString() : order.end_date == null ? null : String(order.end_date),
-    items: items.rows.map(row => ({ id: Number(row.id), vehicle_id: Number(row.vehicle_id), name: String(row.name || ''), license: String(row.license || ''), revision: String(row.revision),
+    items: items.rows.filter(row=>!row.completed_at).map(row => ({ id: Number(row.id), vehicle_id: Number(row.vehicle_id), name: String(row.name || ''), license: String(row.license || ''), revision: String(row.revision),
       return_at: row.return_at instanceof Date ? row.return_at.toISOString() : row.return_at == null ? null : String(row.return_at), renewal_amount: row.total_renewal_amount == null ? 0 : money(row.total_renewal_amount),
       daily_price: row.daily_price == null ? null : money(row.daily_price) })),
     accounts: accounts.rows.map(row => ({ ...row, id: Number(row.id), store_id: Number(row.store_id) })),
@@ -155,7 +153,7 @@ export async function readPaymentContext(client: Database, id: number, options?:
       revision: row.revision == null ? undefined : String(row.revision), account_id: Number(row.cash_id ?? row.bank_id) || undefined,
       payment_method: row.bank_id != null || Number(row.payment_method)===2 ? row.bank_owner_type === 'company' ? 'company_transfer' as const : 'transfer' as const : row.cash_id != null || Number(row.payment_method)===1 ? 'cash' as const : undefined,
       status: row.tx_status,
-      renewal_fee_editable: row.tx_status === 'approved' && !plan && ['renting','overdue','wait_payment'].includes(String(order.status)) && Boolean(row.renewal_payload && items.rows.some(item=>Number(item.id)===Number(row.renewal_payload.item_id)) && order.draft_payload?.management_composer?.versions?.some((v:RenewalVersion)=>v?.kind==='renewal'&&Number(v.version)===Number(row.renewal_payload.version)&&sameRenewalPeriod(v,row.renewal_payload))),
+      renewal_fee_editable: row.tx_status === 'approved' && canEditRenewalFee && Boolean(row.renewal_payload && items.rows.some(item=>Number(item.id)===Number(row.renewal_payload.item_id)) && order.draft_payload?.management_composer?.versions?.some((v:RenewalVersion)=>v?.kind==='renewal'&&Number(v.version)===Number(row.renewal_payload.version)&&sameRenewalPeriod(v,row.renewal_payload))),
       renewal: row.renewal_payload || null })) };
 }
 
@@ -191,10 +189,10 @@ export async function recordContractPayment(client: Database, id: number, actorI
   if(locked.rows[0].draft_payload?.management_composer?.lifecycle?.active_hold&&extra)throw new ContractPaymentError('Hợp đồng đang bảo lưu; không cộng phí mới. Chỉ ghi nhận thanh toán khoản đã phát sinh trước bảo lưu.',409);
   let context = await readPaymentContext(client, id, options);
   const amount = Number(input.amount);
+  const rentalRefundLimit = context.rental_refundable ?? 0;
   if (refund) {
     if (!canAddExtraReceipt(context.status)) throw new ContractPaymentError('Không trả cọc cho hợp đồng nháp hoặc đã hủy.', 409);
-    const refundable=rentalRefund?context.rental_refundable??0:context.deposit_held;
-    if (amount > refundable) throw new ContractPaymentError(rentalRefund?'Số tiền hoàn vượt tiền thuê được giảm do trả sớm và thực tế đã thu dư.':`Số tiền trả cọc vượt tiền cọc đang giữ (${context.deposit_held.toLocaleString('vi-VN')} đ).`, 409);
+    if (!rentalRefund && amount > context.deposit_held) throw new ContractPaymentError(`Số tiền trả cọc vượt tiền cọc đang giữ (${context.deposit_held.toLocaleString('vi-VN')} đ).`, 409);
   } else if(deposit){
     if(!canAddExtraReceipt(context.status)||amount>(context.deposit_remaining??0))throw new ContractPaymentError('Số tiền cọc bổ sung vượt phần cọc còn thiếu theo hợp đồng.',409);
   } else {
@@ -274,6 +272,12 @@ export async function recordContractPayment(client: Database, id: number, actorI
       renewal ? 'order:renewal' : extra ? 'order:extra' : deposit?'order:deposit':rentalRefund?'order:rental_refund':refund ? DEPOSIT_REFUND_NAME : batterySwap ? 'order:battery_swap' : 'order:payment',
       singleItem ? 'line_item_id' : 'order', singleItem ?? id, singleItem, refund ? 'out' : 'in']);
   const transactionId = Number(transaction.rows[0].id);
+  if (rentalRefund && amount > rentalRefundLimit) {
+    await client.query(`INSERT INTO himoto.management_contract_anomalies
+      (transaction_id,order_id,store_id,actor_id,contract_code,kind,occurred_at,amount,expected_amount)
+      VALUES($1,$2,$3,$4,$5,'early_rental_refund_overage',$6,$7,$8)`,
+    [transactionId,id,context.store_id,actorId,context.code,`${input.paid_at}:00+07:00`,amount,rentalRefundLimit]);
+  }
   if (renewal) {
     for (const line of lines) await extendContractVehicleLine(client, id, line.item_id, String(line.item_revision), `${line.return_at}:00+07:00`, Number(line.amount));
     await client.query(`UPDATE himoto.orders SET pid=pid+$2,total=(total::numeric+$2)::text,

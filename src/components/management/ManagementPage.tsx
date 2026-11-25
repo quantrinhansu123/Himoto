@@ -40,6 +40,7 @@ import { isOwnershipCustomerSourceStore } from '@/lib/management/contract-billin
 import { useSelectedVehicleGps } from './SelectedVehicleGps';
 import { contractVehicleIds,contractGpsFields } from './ContractMonitoringCells';
 import { CONTRACT_STATUS_TABS, contractActiveRentalCount, contractOverdueCount } from '@/lib/management/contract-tabs';
+import { ContractAnomaliesPanel } from './ContractAnomaliesPanel';
 import { ContractStatusTotals } from './ContractStatusTotals';
 import { RecordTotal } from './RecordTotal';
 import { FilterCombobox, type FilterOption } from './FilterCombobox';
@@ -441,6 +442,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
       {kind==='contracts'&&!listScope&&!loading&&!error&&table.data?.recentDays!=null&&<div className="mg-billing-reminder" role="status" aria-label="Phạm vi thời gian hợp đồng"><p>Đang xem đầy đủ hợp đồng đang mở và lịch sử {table.data.recentDays} ngày gần đây.</p><button type="button" className="mg-button" onClick={()=>{setHistoryAll(true);setPage(1);}}>Xem toàn bộ lịch sử</button></div>}
 
       <div className="mg-data-panel">
+        {kind==='contracts'&&!listScope&&source==='api'&&can('contracts.read')&&<ContractAnomaliesPanel/>}
         {kind==='contracts'&&!draftsOnly&&!vatOnly&&!paymentDueOnly&&!overdueOnly&&<ContractStatusTotals counts={statusCounts} total={tabCount} loading={statisticsLoading}/>}
         <div className="mg-status-tabs" aria-label="Lọc theo trạng thái" aria-busy={statisticsLoading}>{contractTabs ? <>
           {CONTRACT_STATUS_TABS.map(tab => <button type="button" key={tab.value} className={query.status === tab.value ? 'is-active' : ''} aria-pressed={query.status === tab.value} onClick={() => updateQuery({ status: tab.value,overdueBucket:undefined,overdueDays:'' })}>{tab.label}<span>{statisticsLoading?'—':tab.value==='renting'?contractActiveRentalCount(statusCounts):tab.value==='overdue'?contractOverdueCount(statusCounts):tab.value?statusCounts.get(tab.value)||0:tabCount}</span></button>)}
