@@ -17,8 +17,9 @@ import { isAdminAccount } from '@/lib/management/permissions';
 import { WeeklyShiftRegistrationDialog } from './WeeklyShiftRegistrationDialog';
 import { BrowserLocationError, requestBrowserLocation, type BrowserLocation as Location } from '@/lib/management/browser-geolocation';
 
+type NearestStore = {store_name:string;distance_m:number};
 type InitialClockLocation = Location | Error;
-type Attendance = {id:number;staff_id:number|string;staff_name:string;store_name:string|null;store_from_profile:boolean;clock_in_at:string;clock_out_at:string|null;in_location:Location;out_location:Location|null;has_out_photo:boolean;has_store_location:boolean;in_distance_m:number|null;out_distance_m:number|null;in_gps_alert?:boolean;out_gps_alert?:boolean;shift_name:string|null;scheduled_in:string|null;scheduled_out:string|null;late_minutes:number|null;early_leave_minutes:number|null;standard_credit:number|null;earned_credit:number|null;credit_aggregated:boolean;credit_on_other_row:boolean;can_manage:boolean};
+type Attendance = {in_nearest_store?:NearestStore|null;out_nearest_store?:NearestStore|null;id:number;staff_id:number|string;staff_name:string;store_name:string|null;store_from_profile:boolean;clock_in_at:string;clock_out_at:string|null;in_location:Location;out_location:Location|null;has_out_photo:boolean;has_store_location:boolean;in_distance_m:number|null;out_distance_m:number|null;in_gps_alert?:boolean;out_gps_alert?:boolean;shift_name:string|null;scheduled_in:string|null;scheduled_out:string|null;late_minutes:number|null;early_leave_minutes:number|null;standard_credit:number|null;earned_credit:number|null;credit_aggregated:boolean;credit_on_other_row:boolean;can_manage:boolean};
 type Summary = {staff:{name:string;store_id:number|null;store_name:string|null}|null;open:{id:number;clock_in_at:string}|null;latest:{clock_in_at:string;clock_out_at:string|null}|null;shift:{shift_name:string;starts_at:string;ends_at:string}|null;shift_code:string|null;late_minutes:number|null;early_leave_minutes:number|null;server_now:string};
 type Report = {rows:Attendance[];total:number;page:number};
 async function responseData<T>(response:Response):Promise<T> {
@@ -32,6 +33,7 @@ function Evidence({row,side}:{row:Attendance;side:'in'|'out'}) {
   const label = entering?'Vào ca':'Ra ca';
   const timestamp = entering?row.clock_in_at:row.clock_out_at;
   const location = entering?row.in_location:row.out_location;
+  const nearest = entering ? row.in_nearest_store : row.out_nearest_store;
   const distance = entering?row.in_distance_m:row.out_distance_m;
   const gpsAlert = entering?row.in_gps_alert:row.out_gps_alert;
   const hasPhoto = entering || row.has_out_photo;
@@ -47,6 +49,9 @@ function Evidence({row,side}:{row:Attendance;side:'in'|'out'}) {
       <dl>
         <dt>Vị trí chấm công</dt>
         <dd>{location ? <>
+          <strong>{nearest
+            ? `Cơ sở gần nhất: ${nearest.store_name} · ${Math.round(nearest.distance_m).toLocaleString('vi-VN')} m`
+            : 'Chưa có cơ sở được cấu hình tọa độ để đối chiếu'}</strong>
           <a href={`https://www.google.com/maps?q=${location.latitude},${location.longitude}`} target="_blank" rel="noopener noreferrer">
             <MapPin size={14}/> {location.latitude.toFixed(6)}, {location.longitude.toFixed(6)}
           </a>

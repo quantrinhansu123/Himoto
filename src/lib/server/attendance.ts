@@ -66,6 +66,22 @@ export function parseAttendanceLocation(value: string) {
 type Coordinates = { latitude: number; longitude: number };
 
 export function attendanceDistanceMeters(punch: Coordinates | null, store: Coordinates | null) {
+  const distance = distanceMeters(punch, store);
+  return distance === null ? null : Math.round(distance);
+}
+
+export function nearestAttendanceStore(punch: Coordinates | null, stores: (Coordinates & {store_name: string})[]) {
+  let nearest: {store_name: string;distance_m: number} | null = null;
+  for (const store of stores) {
+    const distance = distanceMeters(punch, store);
+    if (distance !== null && (nearest === null || distance < nearest.distance_m)) {
+      nearest = {store_name:store.store_name,distance_m:distance};
+    }
+  }
+  return nearest;
+}
+
+function distanceMeters(punch: Coordinates | null, store: Coordinates | null) {
   if (!punch || !store) return null;
   const valid = ({latitude,longitude}: Coordinates) =>
     Number.isFinite(latitude) && Math.abs(latitude) <= 90 &&
@@ -76,7 +92,7 @@ export function attendanceDistanceMeters(punch: Coordinates | null, store: Coord
   const longitudeDelta = radians(punch.longitude - store.longitude);
   const haversine = Math.sin(latitudeDelta / 2) ** 2 +
     Math.cos(radians(punch.latitude)) * Math.cos(radians(store.latitude)) * Math.sin(longitudeDelta / 2) ** 2;
-  return Math.round(2 * 6371000 * Math.asin(Math.sqrt(Math.min(1,haversine))));
+  return 2 * 6371000 * Math.asin(Math.sqrt(Math.min(1,haversine)));
 }
 
 export function attendancePhotoMime(bytes: Buffer) {

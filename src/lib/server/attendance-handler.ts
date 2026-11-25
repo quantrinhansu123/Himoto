@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { SessionUser } from '@/lib/server/management-session';
 import { ownerDatabase } from '@/lib/server/himoto-database';
-import { ATTENDANCE_ON_LOCAL_DATE, ATTENDANCE_SHIFT_JOIN, SPLIT_SHIFT_MORNING_END, compareRegisteredAttendance, AttendanceError, attendanceDistanceMeters, attendanceScope, attendanceStaff, attendancePhotoMime, manageAttendance, parseAttendanceLocation, recordAttendance } from '@/lib/server/attendance';
+import { ATTENDANCE_ON_LOCAL_DATE, ATTENDANCE_SHIFT_JOIN, SPLIT_SHIFT_MORNING_END, compareRegisteredAttendance, AttendanceError, attendanceDistanceMeters, nearestAttendanceStore, attendanceScope, attendanceStaff, attendancePhotoMime, manageAttendance, parseAttendanceLocation, recordAttendance } from '@/lib/server/attendance';
 import { failureResponse } from '@/lib/server/public-failure';
 import { vietnamDate } from '@/lib/management/duty-roster';
 import { isAdminAccount } from '@/lib/management/permissions';
@@ -99,6 +99,11 @@ export async function handleAttendance(request: NextRequest, user: SessionUser) 
       )
       SELECT * FROM punches WHERE ($7::bigint IS NULL OR display_store_id=$7)
       ORDER BY clock_in_at DESC,id DESC LIMIT $10 OFFSET $8`,[...args,(currentPage-1)*50,SPLIT_SHIFT_MORNING_END,exporting?50000:50])).rows;
+      const locations = !exporting && rows.length ? (await client.query<{store_name:string;latitude:number;longitude:number}>(`
+        SELECT s.store_name,l.latitude::float8,l.longitude::float8
+        FROM himoto.management_attendance_locations l JOIN himoto.stores s ON s.id=l.store_id
+        WHERE l.latitude IS NOT NULL AND l.longitude IS NOT NULL AND s.status IN ('active','opening')
+        ORDER BY s.id`)).rows : [];
       await client.query('COMMIT');
       const canManage = isAdminAccount(user);
       return NextResponse.json({status:'success',data:{
@@ -122,6 +127,10 @@ export async function handleAttendance(request: NextRequest, user: SessionUser) 
           const inGpsAlert = canManage && ((inDistance !== null && inDistance > GPS_ALERT_RADIUS_METERS) || inAccuracy > GPS_ALERT_RADIUS_METERS);
           const outGpsAlert = canManage && Boolean(row.clock_out_at) && ((outDistance !== null && outDistance > GPS_ALERT_RADIUS_METERS) || outAccuracy > GPS_ALERT_RADIUS_METERS);
           return {...row,
+            ...(!exporting && {
+              in_nearest_store:nearestAttendanceStore(row.in_location,locations),
+              out_nearest_store:nearestAttendanceStore(row.out_location,locations),
+            }),
             can_manage:canManage,
             has_store_location:canManage ? storeLocation !== null : false,
             in_distance_m:canManage ? inDistance : null,
