@@ -35,7 +35,7 @@ export async function handleAttendance(request: NextRequest, user: SessionUser) 
       const valid = (value:string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0,10) === value;
       const store = params.get('store') || 'all', page = Number(params.get('page') || 1);
       const exporting=params.get('export')==='1';
-      if(exporting&&!isAdminAccount(user))throw new AttendanceError('Chỉ quản trị viên được xuất lịch sử chấm công.',403);
+      if(exporting&&!scope.reviewer)throw new AttendanceError('Tài khoản chưa có quyền xuất lịch sử chấm công.',403);
       if (!valid(from)||!valid(to)||from>to||Date.parse(to)-Date.parse(from)>93*86400000||store!=='all'&&!/^[1-9]\d{0,14}$/.test(store)||!Number.isSafeInteger(page)||page<1||page>100000) throw new AttendanceError('Chọn khoảng ngày tối đa 93 ngày và cơ sở hợp lệ.');
       await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
       const staff = await attendanceStaff(client,user);

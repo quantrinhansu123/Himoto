@@ -181,7 +181,7 @@ export function AttendancePage() {
 
 export function AttendanceHistoryPage() {
   const {selectedStore,selectStore,dataset,ensureData,notify,can,accessUser} = useManagement();
-  const canViewRegistration = can('hr.read');
+  const canReadHr = can('hr.read');
   const isAdmin = isAdminAccount(accessUser);
   useEffect(()=>{void ensureData(['stores']).catch(()=>{});},[ensureData]);
   useEffect(()=>{setPage(1);},[selectedStore]);
@@ -194,18 +194,8 @@ export function AttendanceHistoryPage() {
   async function exportAttendance() {
     const exportFrom = from || vietnamDate().slice(0, 7) + '-01';
     const exportTo = to || exportFrom;
-    const query = new URLSearchParams({from:exportFrom,to:exportTo,store:selectedStore});
-    const rows: Attendance[] = [];
-    let total = 0;
-    for (let index=1; index===1 || rows.length<total; index++) {
-      query.set('page', String(index));
-      const result = await responseData<Report>(await fetch(`/api/auth/attendance?${query}`,{cache:'no-store'}));
-      if (index===1) total = result.total;
-      if (result.total!==total || result.page!==index || !result.rows.length) {
-        throw new Error('Danh sách chấm công đã thay đổi. Tải lại rồi xuất Excel.');
-      }
-      rows.push(...result.rows);
-    }
+    const query = new URLSearchParams({from:exportFrom,to:exportTo,store:selectedStore,export:'1'});
+    const {rows,total} = await responseData<Report>(await fetch(`/api/auth/attendance?${query}`,{cache:'no-store'}));
     if (rows.length!==total || new Set(rows.map(row=>row.id)).size!==total) {
       throw new Error('Chưa đọc đủ lịch sử chấm công. Tải lại rồi xuất Excel.');
     }
@@ -221,7 +211,7 @@ export function AttendanceHistoryPage() {
   },[from,to,selectedStore,page,retry]);
   const shiftLink = (row:Attendance) => {
     const label = row.shift_name==='O'?'Nghỉ':row.shift_name||'Chưa đăng ký ca';
-    if (!canViewRegistration) return label;
+    if (!canReadHr) return label;
     const date = vietnamDate(new Date(row.clock_in_at));
     const query = new URLSearchParams({date,staff:String(row.staff_id)});
     return <Link className="mg-attendance-registration-link" href={`/shift-registration?${query}`}
@@ -245,7 +235,7 @@ export function AttendanceHistoryPage() {
       setRecordDialog(null);
       refresh();
     }} />}
-    <div className="mg-page-heading"><div><div className="mg-eyebrow">NHÂN SỰ</div><h1>Lịch sử chấm công</h1></div><div className="mg-heading-actions"><Link className="mg-button" href="/attendance">Chấm công</Link>{isAdmin && <FilteredExcelButton disabled={loading||Boolean(error)||!data?.total} label="Tải Excel theo nhân sự" exportFile={exportAttendance}/>}</div></div>
+    <div className="mg-page-heading"><div><div className="mg-eyebrow">NHÂN SỰ</div><h1>Lịch sử chấm công</h1></div><div className="mg-heading-actions"><Link className="mg-button" href="/attendance">Chấm công</Link>{canReadHr && <FilteredExcelButton disabled={loading||Boolean(error)||!data?.total} label="Tải Excel theo nhân sự" exportFile={exportAttendance}/>}</div></div>
     <div className="mg-data-panel"><div className="mg-attendance-filters"><label>Cơ sở xem lịch sử<select aria-label="Cơ sở xem lịch sử chấm công" value={selectedStore} onChange={event=>{selectStore(event.target.value);setPage(1);}}><option value="all">Tất cả cơ sở được phép</option>{dataset?.stores.map(store=><option key={store.id} value={String(store.id)}>{store.name}</option>)}</select></label><label>Từ ngày<input aria-label="Từ ngày chấm công" type="date" value={from} onChange={event=>{setFrom(event.target.value);setPage(1);}}/></label><label>Đến ngày<input aria-label="Đến ngày chấm công" type="date" value={to} onChange={event=>{setTo(event.target.value);setPage(1);}}/></label><button type="button" className="mg-button" onClick={monthPreset}>Tháng này</button><span>{data?.total??'—'} lượt chấm công</span></div>
     {error?<p className="mg-field-error" role="alert">{error}</p>:loading?<p className="mg-table-state" role="status">Đang tải bảng chấm công…</p>:<>
       <div className="mg-attendance-mobile-list">{data?.rows.map(row=><article key={row.id} className="mg-attendance-history-card"><div className="mg-attendance-history-heading"><strong>{row.staff_name}</strong><small>#{row.id} · {new Date(row.clock_in_at).toLocaleDateString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})}</small></div><p>{row.store_name||'Chưa gắn cơ sở'} · {shiftLink(row)}{row.standard_credit!=null?' · '+shiftCreditLabel(row.standard_credit)+' công quy định':''}{row.scheduled_in?' · '+timeOnly(row.scheduled_in)+' – '+timeOnly(row.scheduled_out):''}{row.can_manage&&(row.in_gps_alert||row.out_gps_alert)&&<span style={{marginLeft:8,color:'#b91c1c',fontWeight:700}}>⚠ Lệch vị trí GPS (&gt;200m)</span>}</p><div className="mg-attendance-history-times"><span>Vào <b>{timeOnly(row.clock_in_at)}</b></span><span>Ra <b>{row.clock_out_at ? timeOnly(row.clock_out_at) : missingCheckout}</b></span><span className={row.late_minutes?'is-late':''}>Đi muộn <b>{lateLabel(row.late_minutes,row.shift_name)}</b></span><span className={row.early_leave_minutes?'is-late':''}>Về sớm <b>{earlyLabel(row.early_leave_minutes,row.clock_out_at,row.shift_name)}</b></span><span>Công thực tế <b>{attendanceCreditLabel(row)}</b>{row.credit_aggregated && ' · Tổng hợp cùng ca'}</span></div>{rowActions(row)}</article>)}{!data?.rows.length&&<p className="mg-table-state">Chưa có chấm công trong khoảng ngày đã chọn.</p>}</div>
