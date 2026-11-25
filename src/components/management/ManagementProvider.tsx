@@ -65,7 +65,9 @@ export function ManagementProvider({ children, canPayContracts = false,user=null
   const contractAutofill = useMemo(() => createApiAutofillRepository('/api'), []);
   const fleetPage=pathname==='/vehicles'||pathname.startsWith('/vehicles/transfers')||pathname==='/gps';
   const customerPage=pathname==='/customers';
-  const directoryPage=fleetPage||customerPage;
+  const leaderContractsPage=pagedKind==='contracts'&&user?.scope_all_contracts_read===true&&can('contracts.read');
+  const directoryPage=fleetPage||customerPage||leaderContractsPage;
+  const [leaderContractStore,setLeaderContractStore]=useState('all');
   const [branchStore, setBranchStore] = useState(user?.store_id?String(user.store_id):'all');
   const [fleetStore,setFleetStore]=useState('all');
   const [customerStore,setCustomerStore]=useState('all');
@@ -74,12 +76,13 @@ export function ManagementProvider({ children, canPayContracts = false,user=null
   const [fleetStoresVersion,setFleetStoresVersion]=useState(0);
   const [fleetStoresLoadedVersion,setFleetStoresLoadedVersion]=useState(-1);
   const error=[resourceError,directoryPage?fleetStoresError:''].filter(Boolean).join(' ');
-  const selectedStore=customerPage?customerStore:fleetPage?fleetStore:branchStore;
+  const selectedStore=customerPage?customerStore:fleetPage?fleetStore:leaderContractsPage?leaderContractStore:branchStore;
   const selectStore=useCallback((id:string)=>{
     if(customerPage)setCustomerStore(id);
     else if(fleetPage)setFleetStore(id);
+    else if(leaderContractsPage)setLeaderContractStore(id);
     else setBranchStore(user&&!user.scope_all&&!user.scope_all_read&&user.store_id?String(user.store_id):id);
-  },[customerPage,fleetPage,user]);
+  },[customerPage,fleetPage,leaderContractsPage,user]);
   useEffect(()=>{
     if(!directoryPage||(fleetStores&&fleetStoresLoadedVersion===fleetStoresVersion))return;const controller=new AbortController();setFleetStoresError('');
     void fetch('/api/auth/store-directory',{signal:controller.signal,cache:'no-store'}).then(async response=>{

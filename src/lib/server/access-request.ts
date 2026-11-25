@@ -116,8 +116,10 @@ export function withAccessUser<C>(handler:(request:NextRequest,context:C,user:Se
       // only, allow assigned HR users to work across branches instead of
       // silently filtering stores and staff to their account's home branch.
       const dutyRoster=request.nextUrl.pathname.startsWith('/api/auth/duty-roster');
-      const crossStoreRead = request.method === 'GET' && user.scope_all_read === true && !user.scope_all &&
-        crossStoreReadPath.test(request.nextUrl.pathname) && !/\/(?:refresh|backups|import|telegram)(?:\/|$)/.test(request.nextUrl.pathname);
+      const leaderContractRead = user.scope_all_contracts_read === true && permission === 'contracts.read' &&
+        /^\/api\/auth\/order\/car-rental(?:\/|$)/.test(request.nextUrl.pathname);
+      const crossStoreRead = request.method === 'GET' && !user.scope_all &&
+        (leaderContractRead || user.scope_all_read === true && crossStoreReadPath.test(request.nextUrl.pathname)) && !/\/(?:refresh|backups|import|telegram)(?:\/|$)/.test(request.nextUrl.pathname);
       return await dataAccess.run({...user,store_id:dutyRoster?null:user.store_id??null,scope_all:dutyRoster||user.scope_all===true||crossStoreRead,cross_store_read:crossStoreRead,operation:dutyRoster?'duty_roster':operation,transfer_vehicle_id},()=>
         withCrossStoreOperation(crossStoreOperation(request.nextUrl.pathname,request.method),()=>handler(request,context,user)));
     } catch (error) {

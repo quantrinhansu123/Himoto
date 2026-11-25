@@ -1,8 +1,9 @@
 import "server-only";
 import type { PoolClient } from "pg";
-import type { PermissionAccount } from "@/lib/management/permissions";
+import { isAdminAccount, type PermissionAccount } from "@/lib/management/permissions";
 import { AccountAccessError } from "./account-management";
 import { syncStaffAccount, requireStaffAccountScope } from "./staff-accounts";
+import { hasLeaderPosition } from "../../../shared/staff-positions";
 import { staffProfileValues, validateStaffProfile, type StaffProfileInput } from "../../../shared/staff-profile";
 
 export function parseStaffProfile(body: unknown, creating: boolean): StaffProfileInput {
@@ -17,9 +18,12 @@ export async function saveDatabaseStaff(client: Pick<PoolClient, "query">, actor
   const { name, phone, email, position, status, store_id: storeId } = input;
   requireStaffAccountScope(actor, storeId);
   await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", ["management-accounts"]);
-  const before = id ? (await client.query("SELECT store_id,status FROM himoto.staff_profiles WHERE id=$1 FOR UPDATE", [id])).rows[0] : null;
+  const before = id ? (await client.query("SELECT store_id,status,position FROM himoto.staff_profiles WHERE id=$1 FOR UPDATE", [id])).rows[0] : null;
   if (id && !before) throw new AccountAccessError("Không tìm thấy nhân sự cần cập nhật.", 404);
   if (before) requireStaffAccountScope(actor, before.store_id);
+  if (!isAdminAccount(actor) && hasLeaderPosition(before?.position) !== hasLeaderPosition(position)) {
+    throw new AccountAccessError("Chỉ quản trị viên được thêm hoặc bỏ chức vụ Leader.", 403);
+  }
   if (storeId !== null && !(await client.query("SELECT 1 FROM himoto.stores WHERE id=$1", [storeId])).rowCount) throw new AccountAccessError("Cơ sở đã chọn không còn tồn tại.");
   let code: string | undefined;
   if (!id) {

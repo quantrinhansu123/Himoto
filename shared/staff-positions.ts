@@ -38,6 +38,7 @@ export const STAFF_DEPARTMENTS = [
 ];
 
 export const staffRoles = (position: unknown) => normalizeStaffPosition(position).split(' / ').filter(Boolean);
+export const hasLeaderPosition = (position: unknown) => staffRoles(position).includes('Leader');
 /** Positions allowed on the contract "NVKD ghi nhận doanh số" field (company-wide). */
 export function hasSalesCommissionRole(position: unknown) {
   return staffRoles(position).some(role => role === 'NVKD' || role === 'TPKD' || /^PKD\s*\d*$/i.test(role));

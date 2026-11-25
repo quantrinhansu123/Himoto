@@ -4,10 +4,10 @@ import { FormEvent, useRef, useState } from 'react';
 import { Check, LoaderCircle, Pencil, Trash2 } from 'lucide-react';
 import { bulkDelete } from '@/lib/management/bulk-delete';
 import { STAFF_STATUSES } from '@/lib/management/config';
-import { normalizeStaffPosition, staffPositionSuggestions, STAFF_POSITION_SEARCH_ALIASES } from '@/lib/management/staff-positions';
+import { hasLeaderPosition, normalizeStaffPosition, staffPositionSuggestions, staffRoles } from '@/lib/management/staff-positions';
 import { ManagementRow } from '@/lib/management/types';
 import { Dialog } from './Dialog';
-import { SuggestionInput } from './SuggestionInput';
+import { isAdminAccount } from '@/lib/management/permissions';
 import { useManagement } from './ManagementProvider';
 import type { IssuedAccountCredentials } from '@/lib/management/accounts';
 import { AccountCredentialsDialog } from './AccountCredentialsDialog';
@@ -27,7 +27,10 @@ async function saveStaff(id: number | null, body: Record<string, unknown>) {
 
 interface Props { row: ManagementRow | null; mode: StaffDialogMode; stores: ManagementRow[]; defaultStoreId?: string; onClose: () => void; onChanged: (created?: { name: string; code: string }) => void | Promise<void>; onSwitch?: (mode: StaffDialogMode) => void }
 export function StaffDialog({ row, mode, stores, defaultStoreId = '', onClose, onChanged, onSwitch }: Props) {
-  const { dataset } = useManagement();
+  const { dataset, accessUser } = useManagement();
+  const canChangeLeader = isAdminAccount(accessUser);
+  const [newPosition, setNewPosition] = useState('');
+  const [addedPositions, setAddedPositions] = useState<string[]>([]);
   const creating = mode === 'create' || !row;
   const [draft, setDraft] = useState({ name: String(row?.name || ''), phone: String(row?.phone || ''), email: String(row?.email || ''), position: normalizeStaffPosition(row?.position),
     store_id: row ? row.store_id == null ? '' : String(row.store_id) : defaultStoreId,
@@ -47,6 +50,23 @@ export function StaffDialog({ row, mode, stores, defaultStoreId = '', onClose, o
     catch (cause) { setError(cause instanceof Error ? cause.message : 'Không thực hiện được thao tác.'); }
     finally { busy.current = false; setSaving(false); }
   }
+  function positionWithNewTitle() {
+    return normalizeStaffPosition([draft.position, newPosition].join(' / '));
+  }
+  function addPosition() {
+    const position = positionWithNewTitle();
+    if (position.length > 191) {
+      setErrors(current => ({ ...current, position: 'Chức vụ tối đa 191 ký tự.' }));
+      return;
+    }
+    if (!canChangeLeader && hasLeaderPosition(position) !== hasLeaderPosition(draft.position)) {
+      setErrors(current => ({ ...current, position: 'Chỉ quản trị viên được thêm chức vụ Leader.' }));
+      return;
+    }
+    change('position', position);
+    setAddedPositions(current => [...new Set([...current, ...staffRoles(newPosition)])]);
+    setNewPosition('');
+  }
   function submit(event: FormEvent) {
     event.preventDefault();
     if (accountBusy) return;
@@ -54,9 +74,12 @@ export function StaffDialog({ row, mode, stores, defaultStoreId = '', onClose, o
     if (!draft.name.trim()) next.name = 'Nhập họ và tên.';
     if (!/^\+?\d{9,13}$/.test(draft.phone.replace(/[\s.()-]/g, ''))) next.phone = 'Số điện thoại cần 9–13 chữ số.';
     if (draft.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.email.trim())) next.email = 'Email chưa hợp lệ.';
+    const position = positionWithNewTitle();
+    if (position.length > 191) next.position = 'Chức vụ tối đa 191 ký tự.';
+    if (!canChangeLeader && hasLeaderPosition(position) !== hasLeaderPosition(row?.position)) next.position = 'Chỉ quản trị viên được thêm hoặc bỏ chức vụ Leader.';
     setErrors(next);
     if (Object.keys(next).length) return;
-    const body = { name: draft.name.trim(), phone: draft.phone.trim(), email: draft.email.trim(), position: normalizeStaffPosition(draft.position), store_id: draft.store_id ? Number(draft.store_id) : null, status: draft.status };
+    const body = { name: draft.name.trim(), phone: draft.phone.trim(), email: draft.email.trim(), position, store_id: draft.store_id ? Number(draft.store_id) : null, status: draft.status };
     void run(async () => {
       if (!creating) { const saved=await saveStaff(row.id, body);if(saved?.credentials)return {name:body.name,code:row.code,credentials:saved.credentials};return; }
       const created = await saveStaff(null, { ...body, joined_at: draft.joined_at });
@@ -66,7 +89,9 @@ export function StaffDialog({ row, mode, stores, defaultStoreId = '', onClose, o
   if(issued)return <AccountCredentialsDialog value={issued} onClose={onClose}/>;
    const close = () => { if (!busy.current && !accountBusy) onClose(); };
   const title = creating ? 'Thêm nhân sự' : mode === 'view' ? 'Hồ sơ nhân sự' : mode === 'edit' ? 'Sửa nhân sự' : 'Xóa nhân sự';
-  const positions = staffPositionSuggestions((dataset?.staff || []).map(person => person.position));
+  const selectedPositions = staffRoles(draft.position);
+  const positions = staffPositionSuggestions([...staffRoles(row?.position), ...selectedPositions, ...addedPositions,
+    ...(dataset?.staff || []).flatMap(person => staffRoles(person.position))]);
   const field = (key: 'name' | 'phone' | 'email', label: string, type = 'text', required = false) => <div className="mg-field"><label htmlFor={`staff-${key}`}>{label}{required && <span aria-hidden="true"> *</span>}</label>
     <input id={`staff-${key}`} type={type} value={draft[key]} maxLength={191} disabled={saving} aria-invalid={Boolean(errors[key])} onChange={event => change(key, event.target.value)} />{errors[key] && <p className="mg-field-error">{errors[key]}</p>}</div>;
   return <Dialog title={title} subtitle={creating ? 'Mã nhân sự được hệ thống tự cấp sau khi lưu' : `${row.code} · ${row.name}`} onClose={close}>
@@ -76,7 +101,24 @@ export function StaffDialog({ row, mode, stores, defaultStoreId = '', onClose, o
       <div className="mg-dialog-footer"><button type="button" className="mg-button" onClick={onClose}>Đóng</button><button type="button" className="mg-button mg-button-primary" onClick={() => onSwitch?.('edit')}><Pencil size={16} />Chỉnh sửa</button></div></>}
     {(creating || mode === 'edit') && <form noValidate onSubmit={submit}><div className="mg-dialog-body"><div className="mg-form-grid">
       {field('name', 'Họ và tên', 'text', true)}{field('phone', 'Số điện thoại', 'tel', true)}{field('email', 'Email', 'email')}
-      <div className="mg-field"><label htmlFor="staff-position">Chức vụ</label><SuggestionInput id="staff-position" value={draft.position} suggestions={positions} searchAliases={STAFF_POSITION_SEARCH_ALIASES} disabled={saving} placeholder="Chọn gợi ý hoặc gõ chức vụ mới" onChange={value => change('position', value)} /><small>NVKD (Nhân viên kinh doanh), PT, TPKD, QL PTKD… dùng chung cách viết cho mọi cơ sở. Kiêm nhiệm: ngăn cách bằng dấu /.</small></div>
+      <fieldset className="mg-staff-position-field">
+        <legend>Chức vụ</legend>
+        <div className="mg-staff-position-options">{positions.map(position => <label key={position}>
+          <input type="checkbox" checked={selectedPositions.includes(position)} disabled={saving || position === 'Leader' && !canChangeLeader}
+            onChange={event => change('position', (event.target.checked ? [...selectedPositions, position] : selectedPositions.filter(item => item !== position)).join(' / '))} />
+          {position}
+        </label>)}</div>
+        <div className="mg-field">
+          <label htmlFor="staff-position-new">Chức vụ mới</label>
+          <div className="mg-staff-position-add">
+            <input id="staff-position-new" value={newPosition} maxLength={191} disabled={saving} aria-invalid={Boolean(errors.position)}
+              onChange={event => { setNewPosition(event.target.value); setErrors(current => ({ ...current, position: '' })); }}
+              onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing && newPosition.trim()) { event.preventDefault(); addPosition(); } }} />
+            <button type="button" className="mg-button" disabled={saving || !newPosition.trim()} onClick={addPosition}>Thêm</button>
+          </div>
+          {errors.position && <p className="mg-field-error" role="alert">{errors.position}</p>}
+        </div>
+      </fieldset>
       <div className="mg-field"><label htmlFor="staff-store">Cơ sở</label><select id="staff-store" value={draft.store_id} disabled={saving} aria-describedby={!creating?'staff-store-hint':undefined} onChange={event => change('store_id', event.target.value)}><option value="">Chưa phân bổ</option>{stores.map(store => <option key={store.id} value={store.id}>{store.name}</option>)}</select>{!creating&&<small id="staff-store-hint">Tài khoản theo một cơ sở sẽ tự chuyển quyền truy cập sang cơ sở mới khi lưu. Tài khoản toàn cơ sở giữ nguyên phạm vi.</small>}</div>
       <div className="mg-field"><label htmlFor="staff-status">Trạng thái</label><select id="staff-status" value={draft.status || 'active'} disabled={saving} onChange={event => change('status', event.target.value)} aria-describedby={creating ? 'staff-status-hint' : undefined}>{STAFF_STATUSES.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select>{creating && <small id="staff-status-hint">Mặc định: Bình thường.</small>}</div>
       {creating && <div className="mg-field"><label htmlFor="staff-joined-at">Ngày vào làm</label><input id="staff-joined-at" type="date" value={draft.joined_at} disabled={saving} onChange={event => change('joined_at', event.target.value)} /></div>}

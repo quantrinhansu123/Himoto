@@ -97,10 +97,12 @@ function vehicleOverdueDays(row: ManagementRow, now: number) {
 function OptionalTools({collapsed,label,children}:{collapsed:boolean;label:string;children:ReactNode}){return collapsed?<details className="mg-monitor-tools"><summary>{label}</summary>{children}</details>:<div className="mg-controls-inline">{children}</div>;}
 
 function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueOnly = false, ownershipOnly = false, paymentDueOnly = false }: { kind: ManagementKind; draftsOnly?: boolean; vatOnly?: boolean; overdueOnly?: boolean; ownershipOnly?: boolean; paymentDueOnly?: boolean }) {
+  const { dataset, loading:datasetLoading, refreshing:datasetRefreshing, error:datasetError, resources, source, canSaveContractDrafts, canPayContracts, can, accessUser, selectedStore, selectStore, reload:reloadDataset, ensureData, invalidateData, notify, deleteCustomer, deleteStore, setCustomerBlacklist } = useManagement();
+  const leaderContracts = kind === 'contracts' && accessUser?.scope_all_contracts_read === true && can('contracts.read');
   const searchParams = useSearchParams();
   const searchFromUrl = kind === 'contracts' ? searchParams.get('search') || '' : '';
   const requestedStatus = kind === 'contracts' ? searchParams.get('status') || '' : '';
-  const defaultContractStatus=kind==='contracts'&&!draftsOnly&&!vatOnly&&!overdueOnly&&!ownershipOnly&&!paymentDueOnly&&!searchFromUrl&&!searchParams.get('customer_id')&&!searchParams.get('contract_id')?'draft':'';
+  const defaultContractStatus=kind==='contracts'&&!leaderContracts&&!draftsOnly&&!vatOnly&&!overdueOnly&&!ownershipOnly&&!paymentDueOnly&&!searchFromUrl&&!searchParams.get('customer_id')&&!searchParams.get('contract_id')?'draft':'';
   const statusFromUrl = requestedStatus==='all'?'':MANAGEMENT_CONFIG.contracts.statuses.some(option=>option.value===requestedStatus)?requestedStatus:defaultContractStatus;
   const [query, setQuery] = useState<TableQuery>(()=>({...EMPTY_QUERY,search:searchFromUrl,status:statusFromUrl,...(overdueOnly?{status:statusFromUrl||'overdue'}:{})}));
   const compactContracts=kind==='contracts';
@@ -123,7 +125,6 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const fullConfig = draftsOnly ? { ...baseConfig, title: 'Hợp đồng nháp', description: 'Hợp đồng đang nhập hoặc đang sửa. Mở bản nháp để tiếp tục và lưu cập nhật.' } : vatOnly ? { ...baseConfig, title: 'Hợp đồng VAT', description: 'Hợp đồng có khoản thu vào tài khoản công ty. Theo dõi thanh toán và chuẩn bị chứng từ VAT.', columns: [...baseConfig.columns, ...VAT_CONTRACT_COLUMNS] } : overdueOnly ? { ...baseConfig, title: 'Hợp đồng quá hạn', description: 'Thời gian trễ của xe chưa trả; phí tạm tính theo giá ngày và 20.000đ/giờ, chốt theo thực tế khi trả xe. Tiền thuê còn thiếu chưa gồm phí tạm tính, không trừ cọc.', columns: [baseConfig.columns[0], ...overdueColumns, ...baseConfig.columns.slice(1)] } : ownershipOnly ? { ...baseConfig, title: 'Hợp đồng thuê sở hữu', description: 'Hợp đồng thuộc cơ sở thuê sở hữu hoặc loại Thuê sở hữu / Thuê sở hữu( cd). Bản nháp và loại sở hữu được ưu tiên lên đầu danh sách.', columns: baseConfig.columns.map(column => column.key === 'contract_type_name' ? { ...column, hidden: false } : column) } : baseConfig;
   const contractConfig=compactContracts?compactContractConfig(fullConfig,columnMode):fullConfig;
   const config=collectionNotes?{...contractConfig,columns:[...contractConfig.columns,{key:'collection_notes',label:'Ghi chú tình trạng khách',sortable:false}]}:contractConfig;
-  const { dataset, loading:datasetLoading, refreshing:datasetRefreshing, error:datasetError, resources, source, canSaveContractDrafts, canPayContracts, can, accessUser, selectedStore, selectStore, reload:reloadDataset, ensureData, invalidateData, notify, deleteCustomer, deleteStore, setCustomerBlacklist } = useManagement();
   const paged = true;
   const router = useRouter();
   const customerId = kind === 'contracts' ? searchParams.get('customer_id') : null;
@@ -151,7 +152,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const [openedAt, setOpenedAt] = useState(() => Date.now());
   const ownershipStoreIds = useMemo(() => new Set((dataset?.stores || EMPTY_ROWS).filter(store => isOwnershipCustomerSourceStore(store)).map(store => store.id)), [dataset?.stores]);
   const listScope=draftsOnly?'drafts':vatOnly?'vat':overdueOnly?'overdue':ownershipOnly?'ownership':paymentDueOnly?'due':'';
-  const recentWindow=!historyAll&&kind==='contracts'&&!listScope&&!query.search.trim()&&!query.startDate&&!query.endDate&&!query.filters.customer_id&&!query.filters.id;
+  const recentWindow=!historyAll&&!leaderContracts&&kind==='contracts'&&!listScope&&!query.search.trim()&&!query.startDate&&!query.endDate&&!query.filters.customer_id&&!query.filters.id;
   const staffSearch = kind === 'staff' && Boolean(query.search.trim());
   const tableStore = staffSearch && (accessUser?.scope_all || accessUser?.scope_all_read) ? 'all' : selectedStore;
   const tableInput:ManagementTableInput={kind,query,store:tableStore,scope:listScope,page,size:pageSize,sort:sort.key,direction:sort.direction,...(recentWindow?{recentDays:3}:{})};
@@ -440,7 +441,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
       {kind==='contracts'&&!listScope&&!loading&&!error&&table.data?.recentDays!=null&&<div className="mg-billing-reminder" role="status" aria-label="Phạm vi thời gian hợp đồng"><p>Đang xem đầy đủ hợp đồng đang mở và lịch sử {table.data.recentDays} ngày gần đây.</p><button type="button" className="mg-button" onClick={()=>{setHistoryAll(true);setPage(1);}}>Xem toàn bộ lịch sử</button></div>}
 
       <div className="mg-data-panel">
-        {kind==='contracts'&&!draftsOnly&&!vatOnly&&!paymentDueOnly&&!overdueOnly&&<ContractStatusTotals counts={statusCounts} loading={statisticsLoading}/>}
+        {kind==='contracts'&&!draftsOnly&&!vatOnly&&!paymentDueOnly&&!overdueOnly&&<ContractStatusTotals counts={statusCounts} total={tabCount} loading={statisticsLoading}/>}
         <div className="mg-status-tabs" aria-label="Lọc theo trạng thái" aria-busy={statisticsLoading}>{contractTabs ? <>
           {CONTRACT_STATUS_TABS.map(tab => <button type="button" key={tab.value} className={query.status === tab.value ? 'is-active' : ''} aria-pressed={query.status === tab.value} onClick={() => updateQuery({ status: tab.value,overdueBucket:undefined,overdueDays:'' })}>{tab.label}<span>{statisticsLoading?'—':tab.value==='renting'?contractActiveRentalCount(statusCounts):tab.value==='overdue'?contractOverdueCount(statusCounts):tab.value?statusCounts.get(tab.value)||0:tabCount}</span></button>)}
           {query.status && !CONTRACT_STATUS_TABS.some(tab => tab.value === query.status) && <button type="button" className="is-active" aria-pressed="true">{optionLabel(config,'status',query.status)}<span>{statisticsLoading?'—':statusCounts.get(query.status)||0}</span></button>}

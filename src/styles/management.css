@@ -944,6 +944,12 @@
   scrollbar-width: thin;
   scrollbar-color: var(--mg-slate-300) var(--mg-slate-50);
 }
+.mg-staff-position-field { grid-column:1/-1; min-width:0; margin:0; padding:0; border:0; }
+.mg-staff-position-field legend { margin-bottom:8px; font-weight:600; }
+.mg-staff-position-options { display:flex; flex-wrap:wrap; gap:6px 16px; margin-bottom:12px; }
+.mg-staff-position-options label { display:inline-flex; align-items:center; gap:6px; min-height:32px; }
+.mg-staff-position-add { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+.mg-staff-position-add input { flex:1 1 180px; min-width:0; }
 .mg-table-mobile-hint { display: none; }
 .mg-mobile-records { display: none; }
 .mg-table {
