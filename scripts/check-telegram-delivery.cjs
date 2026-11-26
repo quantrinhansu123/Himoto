@@ -53,6 +53,13 @@ async function main(){
       await assert.rejects(delivery.telegramCall('qa-only','sendMediaGroup',new FormData(),async()=>Response.json({ok:true,result:[{message_id:1}]}),2),e=>e.message==='TELEGRAM_INVALID_RESPONSE'&&!e.definiteFailure);
       await assert.rejects(delivery.telegramCall('qa-only','sendPhoto',new FormData(),async()=>Response.json({ok:true,result:{message_id:0}})),e=>e.message==='TELEGRAM_INVALID_RESPONSE'&&!e.definiteFailure);
       await assert.rejects(delivery.telegramCall('qa-only','sendPhoto',new FormData(),async()=>Response.json({ok:false,error_code:400},{status:400})),e=>e.message==='TELEGRAM_400'&&e.definiteFailure);
+      assert.equal(delivery.migratedTelegramChatId(-1001234567890),'-1001234567890');
+      assert.equal(delivery.migratedTelegramChatId(-1001234567890.5),undefined);
+      assert.equal(delivery.migratedTelegramChatId('-9007199254740993'),undefined);
+      await assert.rejects(delivery.telegramCall('qa-only','sendPhoto',new FormData(),async()=>Response.json({
+        ok:false,error_code:400,description:'Bad Request: group chat was upgraded to a supergroup chat',
+        parameters:{migrate_to_chat_id:-1001234567890}
+      },{status:400})),e=>e.message==='TELEGRAM_400'&&e.definiteFailure&&e.migrateToChatId==='-1001234567890');
       let attempts=0;await assert.rejects(delivery.telegramCall('qa-only','sendPhoto',new FormData(),async()=>{attempts++;throw timeout();}));assert.equal(attempts,1);
     }finally{AbortSignal.timeout=originalTimeout;}
     checks.push('Video has 180s, other media 120s and text 30s; body-read timeouts and malformed/partial success responses remain uncertain; confirmed API errors are distinguished; no POST automatically retries');

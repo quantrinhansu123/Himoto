@@ -97,6 +97,31 @@ module.exports=async function checkRecovery(db,c,schema,notices){
     const routing=await queue({...payload,photos:remote});attempts=0;
     await notices.dispatchContractNotifications(async()=>{attempts++;return rejected('Bad Request: message thread not found');},1,db,[3]);
     assert.equal(attempts,1);assert.equal((await row(routing)).status,'failed');
+    const oldChat='-100000000001',newChat='-100000000099';
+    const migrated=await queue({...payload,photos:[photos[0]]}),migrationCalls=[];
+    await notices.dispatchContractNotifications(async(url,options)=>{
+      const chat=options.body instanceof FormData?options.body.get('chat_id'):JSON.parse(options.body).chat_id;
+      migrationCalls.push(chat);
+      if(chat===oldChat)return Response.json({ok:false,error_code:400,
+        description:'Bad Request: group chat was upgraded to a supergroup chat',
+        parameters:{migrate_to_chat_id:Number(newChat)}},{status:400});
+      assert.equal(chat,newChat);
+      return Response.json({ok:true,result:{message_id:seq++}});
+    },3,db,[3]);
+    const moved=await row(migrated);
+    assert.equal(moved.status,'sent');assert.deepEqual(migrationCalls,[oldChat,newChat,newChat]);
+    assert.equal(moved.delivery_target.chat_id,newChat);
+    assert(moved.delivery_review.some(review=>review.outcome==='chat_migrated'&&review.to_chat_id===newChat));
+    assert.equal((await c.query(`SELECT chat_id FROM ${schema}.management_store_telegram WHERE store_id=23`)).rows[0].chat_id,newChat);
+    const partialMigration=await queue({...payload,photos:photos.slice(0,11)});let partialCalls=0;
+    await notices.dispatchContractNotifications(async()=>{
+      if(++partialCalls===1)return Response.json({ok:true,result:photos.slice(0,10).map(()=>({message_id:seq++}))});
+      return Response.json({ok:false,error_code:400,parameters:{migrate_to_chat_id:-100000000100}},{status:400});
+    },1,db,[3]);
+    assert.equal((await row(partialMigration)).status,'failed');
+    assert.equal((await row(partialMigration)).message_ids.length,10);
+    assert.equal((await c.query(`SELECT chat_id FROM ${schema}.management_store_telegram WHERE store_id=23`)).rows[0].chat_id,newChat);
+    await c.query(`UPDATE ${schema}.management_store_telegram SET chat_id=$1 WHERE store_id=23`,[oldChat]);
     const flood=await queue({...payload,photos:[photos[0]]});let floodCalls=0;
     await notices.dispatchContractNotifications(async()=>{floodCalls++;return Response.json({ok:false,error_code:429,description:'Fixture flood control',parameters:{retry_after:37}});},1,db,[3]);
     const deferred=await row(flood);assert.equal(deferred.status,'pending');assert.equal(deferred.error_code,'DELIVERY_CONTINUE');assert.equal(deferred.delivery_review.at(-1).retry_after,37);assert.deepEqual(deferred.message_ids,[]);
@@ -127,6 +152,7 @@ module.exports=async function checkRecovery(db,c,schema,notices){
     'Persisted rejection diagnostics include method, offset and sanitized description without signed URLs or bot tokens',
     'A worker killed during its first or later Telegram POST remains uncertain and never automatically replays an in-flight request',
     'Network timeouts and unrelated routing errors never trigger upload fallback or an automatic replay',
-    'A confirmed Telegram 429 reserves the topic for retry_after, cannot send early and automatically continues once the lease expires'
+    'A confirmed Telegram 429 reserves the topic for retry_after, cannot send early and automatically continues once the lease expires',
+    'Telegram group migration updates the stored destination and safely resends an unacknowledged notice; partial deliveries remain blocked'
   ];
 };
