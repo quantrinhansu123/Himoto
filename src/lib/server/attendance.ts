@@ -2,7 +2,7 @@ import 'server-only';
 import { distanceMeters } from '../../../shared/mobile-support';
 import type { PoolClient } from 'pg';
 import type { SessionUser } from './management-session';
-import { canNoteAttendance, canReviewAttendance, isAdminAccount } from '@/lib/management/permissions';
+import { canNoteAttendance, canViewOtherAttendance, isAdminAccount } from '@/lib/management/permissions';
 import { attendanceShift } from '@/lib/management/attendance-shifts';
 import { REGISTRATION_SHIFTS } from '@/lib/management/shift-registration';
 
@@ -11,7 +11,7 @@ export const ATTENDANCE_ON_LOCAL_DATE = "(clock_in_at AT TIME ZONE 'Asia/Ho_Chi_
 export class AttendanceError extends Error { constructor(message: string, public status = 400) { super(message); } }
 export function attendanceScope(user: SessionUser) {
   // These queries use the owner connection, so every read includes this explicit scope.
-  return { reviewer: canReviewAttendance(user), all: isAdminAccount(user) || user.scope_all === true, store: user.store_id ?? null };
+  return { reviewer: canViewOtherAttendance(user), all: isAdminAccount(user) || user.scope_all === true, store: user.store_id ?? null };
 }
 function attendanceEditTime(value: unknown) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value)) {
@@ -42,7 +42,8 @@ export async function manageAttendance(db: Database, user: SessionUser, method: 
   }
   if (!isAdminAccount(user)) throw new AttendanceError('Chỉ quản trị viên được sửa hoặc xóa chấm công.',403);
   const current = (await db.query(`SELECT clock_in_at,clock_out_at,clock_timestamp() AS now
-    FROM himoto.management_staff_attendance WHERE id=$1 FOR UPDATE`,[body.id])).rows[0];
+    FROM himoto.management_staff_attendance WHERE id=$1 AND (actor_id=$2 OR $3::boolean) FOR UPDATE`,
+    [body.id,user.id,canViewOtherAttendance(user)])).rows[0];
   if (!current) throw new AttendanceError('Không tìm thấy lượt chấm công.',404);
   if (current.clock_in_at.toISOString() !== body.original_in || (current.clock_out_at?.toISOString() ?? null) !== body.original_out) {
     throw new AttendanceError('Lượt chấm công đã thay đổi. Đóng cửa sổ và tải lại trước khi thử lại.',409);

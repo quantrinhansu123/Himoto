@@ -4791,6 +4791,7 @@
 .mg-attendance-filters input { min-height:40px; min-width:0; border:1px solid #dce5ef; border-radius:7px; padding:6px 10px; font:inherit; }
 .mg-attendance-filters > span { margin-left:auto; color:#64748b; font-size:12px; padding-bottom:10px; }
 .mg-attendance-store,.mg-attendance-evidence small { display:block; color:#64748b; font-size:11px; margin-top:4px; }
+.mg-attendance-punch-note { display:block; margin-top:4px; overflow-wrap:anywhere; white-space:pre-wrap; }
 .mg-attendance-page a.mg-attendance-registration-link { color:#285f97; text-decoration:underline; text-underline-offset:2px; }
 .mg-attendance-evidence { display:grid; align-content:start; gap:8px; min-width:0; padding:12px; border:1px solid #e2e8f0; border-radius:10px; font-size:13px; }
 .mg-attendance-evidence h3 { margin:0; font-size:15px; }
@@ -4807,6 +4808,7 @@
 .mg-attendance-capture img { max-height:160px; }
 .mg-attendance-capture-footer { flex-wrap:wrap; }
 .mg-attendance-capture-footer > p { flex-basis:100%; margin:0; }
+.mg-attendance-photo-actions { display:flex; align-items:center; gap:8px; flex-basis:100%; }
 .mg-attendance-capture-note { flex-basis:100%; min-width:0; }
 @media (max-width:768px) {
   .mg-attendance-capture-dialog[open] { display:flex; flex-direction:column; overflow:hidden; }

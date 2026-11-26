@@ -2,11 +2,11 @@ const assert = require('node:assert/strict'), fs = require('node:fs'), path = re
 require('@next/env').loadEnvConfig(process.cwd(),false,{info(){},error(){}});
 const {load,root} = require('./lib/load-typescript.cjs');
 const {ownerDatabase} = load(path.join(root,'lib/server/himoto-database'));
-const {ATTENDANCE_SCHEDULE_OFFSET,ATTENDANCE_SHIFT_JOIN,compareRegisteredAttendance,recordAttendance,manageAttendance,parseAttendanceLocation,attendanceDistanceMeters,nearestAttendanceStore,attendancePhotoMime,attendanceScope} = load(path.join(root,'lib/server/attendance'));
-const {attendanceLocationLabel} = load(path.resolve(root,'../shared/mobile-support'));
+const {ATTENDANCE_SCHEDULE_OFFSET,ATTENDANCE_SHIFT_JOIN,compareRegisteredAttendance,recordAttendance,manageAttendance,parseAttendanceLocation,attendanceDistanceMeters,attendancePhotoMime,attendanceScope} = load(path.join(root,'lib/server/attendance'));
+const {attendanceLocationLabel,nearestAttendanceStore} = load(path.resolve(root,'../shared/mobile-support'));
 const {setRegistrationWeekLock,lockedRegistrationWeeks} = load(path.join(root,'lib/server/shift-registration'));
 const {saveSelfRegistrationWeek} = load(path.join(root,'lib/server/self-shift-registration'));
-const {canManageShiftRegistration} = load(path.resolve(root,'../shared/access-permissions'));
+const {canExportAttendance,canManageShiftRegistration} = load(path.resolve(root,'../shared/access-permissions'));
 const {requestPermission} = load(path.join(root,'lib/server/access-request'));
 async function main() {
   const location = parseAttendanceLocation(JSON.stringify({latitude:21.03,longitude:105.85,accuracy:15,timestamp:Date.now()}));
@@ -28,8 +28,15 @@ async function main() {
   for (const access_role of ['branch_staff','ownership_staff','branch_manager','ownership_manager']) {
     assert.equal(attendanceScope({id:1,access_role,permissions:['hr.read'],store_id:2,store_kind:'lease_to_own',scope_all:false}).reviewer,false);
   }
-  assert.deepEqual(attendanceScope({id:1,access_role:'hr',permissions:['hr.read'],store_id:2}),{reviewer:true,all:false,store:2});
-  assert.equal(attendanceScope({id:1,access_role:'admin'}).reviewer,true);
+  const hr = {id:1,access_role:'hr',permissions:['hr.read'],store_id:2};
+  assert.equal(attendanceScope(hr).reviewer,false);
+  assert.deepEqual(attendanceScope({...hr,has_hr_position:true}),{reviewer:true,all:false,store:2});
+  for (const account of [{id:1,access_role:'admin'},{id:1,permissions:['attendance.review','attendance.export','attendance.note']}]) {
+    assert.equal(attendanceScope(account).reviewer,false);
+    assert.equal(canExportAttendance(account),false);
+    assert.equal(attendanceScope({...account,has_hr_position:true}).reviewer,true);
+    assert.equal(canExportAttendance({...account,has_hr_position:true}),true);
+  }
   const compare = (code, clockIn, clockOut) => compareRegisteredAttendance(
     {work_date:'2026-11-05',shift_code:code}, clockIn, clockOut,
   );
@@ -100,12 +107,13 @@ async function main() {
     assert.equal((await recordAttendance(db,user,'in',into,photo,location)).replayed,true);
     await assert.rejects(recordAttendance(db,user,'in','33333333-3333-4333-8333-333333333333',photo,location),e=>e.status===409);
     await assert.rejects(recordAttendance(db,user,'out',into,photo,location),e=>e.status===409);
-    assert.equal((await recordAttendance(db,user,'out',out,photo,location)).id,first.id);
+    assert.equal((await recordAttendance(db,user,'out',out,photo,location,'2','  Ghi chú ra ca  ')).id,first.id);
     assert.equal((await recordAttendance(db,user,'out',out,photo,location)).replayed,true);
     await assert.rejects(recordAttendance(db,user,'out','44444444-4444-4444-8444-444444444444',photo,location),e=>e.status===409);
     const row=(await client.query('SELECT * FROM qa_attendance')).rows[0];
     assert(row.clock_out_at>=row.clock_in_at);assert.equal(row.staff_name,staff.full_name);assert(row.in_photo.equals(photo));assert(row.out_photo.equals(photo));
     assert.equal(row.in_location.store_name,'Other');assert.equal(row.in_location.note,'Support shift');assert.equal(row.out_location.store_name,'Home');assert.equal(row.in_location.store_address,'Other address');assert.equal(row.out_location.store_address,'Home address');
+    assert.equal(row.out_location.note,'Ghi chú ra ca');
     const week='2026-11-16', days=[{work_date:week,shift_code:'S',revision:null}];
     await setRegistrationWeekLock(db,user.id,{week,locked:true});
     assert.deepEqual(await lockedRegistrationWeeks(db,'2026-11-17','2026-11-19'),[week]);
@@ -126,7 +134,7 @@ async function main() {
     const original = {id:first.id,original_in:row.clock_in_at.toISOString(),original_out:row.clock_out_at.toISOString()};
     const note = {id:first.id,hr_note:' Đã xác minh ',original_hr_note:null};
     await assert.rejects(manageAttendance(db,user,'PATCH',note),e=>e.status===403);
-    const noteWriter = {...manager,permissions:['attendance.note']};
+    const noteWriter = {...manager,has_hr_position:true,permissions:['attendance.note']};
     await assert.rejects(manageAttendance(db,{...noteWriter,store_id:3},'PATCH',note),e=>e.status===409);
     await manageAttendance(db,noteWriter,'PATCH',note);
     await assert.rejects(manageAttendance(db,noteWriter,'PATCH',note),e=>e.status===409);

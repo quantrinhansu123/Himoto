@@ -21,7 +21,7 @@ const navigation: (NavLink | NavGroup)[] = [
   { href: '/operations', label: 'Thao tác nhanh', kind: 'operations', icon: House },
   { id: 'personnel', label: 'Nhân sự', icon: UsersRound, links: [
     { href: '/attendance', label: 'Chấm công', kind: 'attendance', icon: AlarmClock },
-    { href: '/shift-registration', label: 'Đăng ký ca', kind: 'shift-registration', icon: CalendarDays },
+    { href: '/shift-registration', label: 'Đăng ký ca', kind: 'shift-registration', icon: CalendarDays, hidden: true },
     { href: '/attendance/history', label: 'Lịch sử chấm công', kind: 'attendance', icon: History, hidden: true },
     { href: '/duty-roster', label: 'Lịch trực cơ sở', kind: 'duty-roster', icon: CalendarDays, hidden: true },
   ] },

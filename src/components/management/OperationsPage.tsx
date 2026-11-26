@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import { AlarmClock, CalendarPlus, FilePlus2, RefreshCw, RotateCcw, History, BatteryCharging } from 'lucide-react';
+import { AlarmClock, CalendarDays, CalendarPlus, FilePlus2, RefreshCw, RotateCcw, History, BatteryCharging } from 'lucide-react';
 import { useManagement } from './ManagementProvider';
 import { useCallback,useEffect,useState } from 'react';
 import { ReloadButton, useReloadAction } from './ReloadButton';
@@ -8,6 +8,8 @@ import { useRouter } from 'next/navigation';
 import { mapApiRow } from '@/lib/management/repository';
 const actions = [
   {href:'/attendance',label:'Chấm công',description:'Vào ca hoặc ra ca.',icon:AlarmClock},
+  {href:'/duty-roster',label:'Lịch trực cơ sở',description:'Xem lịch trực theo tuần tại cơ sở.',icon:CalendarDays},
+  {href:'/shift-registration',label:'Đăng ký ca',description:'Xem lịch và đăng ký ca làm theo tuần.',icon:CalendarPlus},
   {href:'/contracts/battery',label:'Thuê pin / sạc',description:'Quản lý hợp đồng pin và sạc.',icon:BatteryCharging},
   {href:'/contracts?action=new',label:'Làm hợp đồng',description:'Chọn khách, xe và ghi nhận tiền.',icon:FilePlus2},
   {href:'/contracts?action=return',label:'Trả xe',description:'Tìm biển số hoặc hợp đồng để nhận trả.',icon:RotateCcw},

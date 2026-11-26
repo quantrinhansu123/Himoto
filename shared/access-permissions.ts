@@ -10,6 +10,7 @@ export type PermissionAccount = {
   store_id?: number | null;
   store_kind?: string | null;
   scope_all?: boolean;
+  has_hr_position?: boolean;
 };
 
 export const ACCESS_PERMISSIONS = ['contracts.read','contracts.draft','contracts.finalize','contracts.renew','contracts.return','contracts.delete','contracts.settle','customers.read','customers.write','vehicles.read','vehicles.transfer','vehicles.receive','vehicles.write','hr.read','hr.write','finance.read','finance.write','shift.review','attendance.review','attendance.export','attendance.note','attendance.settings','shift_registration.manage','settings.write','accounts.manage'] as const;
@@ -89,7 +90,11 @@ export function canViewStaffDirectory(account: PermissionAccount | null | undefi
 }
 
 export function canReviewAttendance(account: PermissionAccount | null | undefined) {
-  return isAdminAccount(account) || canNoteAttendance(account) || canExportAttendance(account) || account?.permissions?.includes('attendance.review') === true || ((account?.access_role ?? account?.role) === 'hr' && hasPermission(account, 'hr.read'));
+  return isAdminAccount(account) || hasAttendanceNoteGrant(account) || account?.permissions?.some(permission => permission === 'attendance.export' || permission === 'attendance.review') === true || ((account?.access_role ?? account?.role) === 'hr' && hasPermission(account, 'hr.read'));
+}
+
+export function canViewOtherAttendance(account: PermissionAccount | null | undefined) {
+  return account?.has_hr_position === true && canReviewAttendance(account);
 }
 
 export function canManageDutyRoster(account: PermissionAccount | null | undefined) {
@@ -117,10 +122,13 @@ function hasHrWriteRole(account: Pick<PermissionAccount, 'access_role' | 'role' 
   return (account?.access_role ?? account?.role) === 'hr' && account?.permissions?.includes('hr.write') === true;
 }
 export function canExportAttendance(account: PermissionAccount | null | undefined) {
-  return isAdminAccount(account) || account?.permissions?.includes('attendance.export') === true;
+  return account?.has_hr_position === true && (isAdminAccount(account) || account.permissions?.includes('attendance.export') === true);
+}
+function hasAttendanceNoteGrant(account: PermissionAccount | null | undefined) {
+  return hasHrWriteRole(account) || account?.permissions?.includes('attendance.note') === true;
 }
 export function canNoteAttendance(account: PermissionAccount | null | undefined) {
-  return isAdminAccount(account) || hasHrWriteRole(account) || account?.permissions?.includes('attendance.note') === true;
+  return account?.has_hr_position === true && (isAdminAccount(account) || hasAttendanceNoteGrant(account));
 }
 export function canConfigureAttendance(account: PermissionAccount | null | undefined) {
   return hasHrWriteRole(account) || hasPermission(account,'attendance.settings');

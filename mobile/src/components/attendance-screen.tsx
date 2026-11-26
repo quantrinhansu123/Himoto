@@ -16,7 +16,7 @@ import type {RecordMediaPhoto} from '@/lib/record-media-photo';
 import {supportFormData} from '@/lib/support-form-data';
 import {splitAttendanceShiftHours} from '../../../shared/attendance-shifts';
 import {dutyToday} from '../../../shared/mobile-duty-roster';
-import {canConfigureAttendance,canExportAttendance,canManageShiftRegistration,canReviewAttendance} from '../../../shared/access-permissions';
+import {canConfigureAttendance,canExportAttendance,canManageShiftRegistration,canViewOtherAttendance} from '../../../shared/access-permissions';
 import {attendanceLocationLabel,nearestAttendanceStoreOption,type AttendanceLocation,type AttendanceEntry} from '../../../shared/mobile-support';
 import {AttendanceEdit,AttendanceHrNoteEditor} from './attendance-edit';
 import {FilteredListExport} from './filtered-list-export';
@@ -49,7 +49,7 @@ export function AttendanceScreen({historyOnly=false}:{historyOnly?:boolean}) {
     });
   }
   useEffect(()=>{currentPhoto.current=photo;},[photo]);
-  const canReview=canReviewAttendance(session!.user);
+  const canReview=canViewOtherAttendance(session!.user);
   const historyStore=canReview?store:'all';
   const canConfigure=canConfigureAttendance(session!.user);
   const [noting,setNoting]=useState<AttendanceEntry|null>(null);

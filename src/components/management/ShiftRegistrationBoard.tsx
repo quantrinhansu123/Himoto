@@ -1,8 +1,8 @@
 'use client';
 
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ChevronLeft, ChevronRight, Plus, RotateCcw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { addDays, dutyRequest, vietnamDate, weekStart } from '@/lib/management/duty-roster';
 import { canLockShiftRegistration, canManageShiftRegistration } from '@/lib/management/permissions';
 import { WeeklyShiftRegistrationDialog } from './WeeklyShiftRegistrationDialog';
@@ -22,6 +22,8 @@ function adjacentMonth(month: string, offset: number) {
 
 export function ShiftRegistrationBoard({ focusDate, focusStaff }: { focusDate?: string; focusStaff?: string }) {
   const { accessUser, notify } = useManagement();
+  const canLock = canLockShiftRegistration(accessUser);
+  const writable = canManageShiftRegistration(accessUser);
   const [selfOpen, setSelfOpen] = useState(false);
   const [chosenWeek, setChosenWeek] = useState(() => weekStart(vietnamDate()));
   const [month, setMonth] = useState(() => (focusDate ?? vietnamDate()).slice(0, 7));
@@ -31,7 +33,6 @@ export function ShiftRegistrationBoard({ focusDate, focusStaff }: { focusDate?: 
   const [filterError, setFilterError] = useState('');
   const [fitMonth, setFitMonth] = useState(!focusDate);
   const [store, setStore] = useState('all');
-  const [search, setSearch] = useState('');
   const [staffFilter, setStaffFilter] = useState(focusStaff);
   const [data, setData] = useState<RegistrationRange | null>(null);
   const [loading, setLoading] = useState(true);
@@ -72,13 +73,11 @@ export function ShiftRegistrationBoard({ focusDate, focusStaff }: { focusDate?: 
       setRange(next); setFrom(next.from); setTo(next.to); setFilterError(''); setFitMonth(nextDates.length <= 31);
     } catch (cause) { setFilterError(cause instanceof Error ? cause.message : 'Khoảng ngày không hợp lệ.'); }
   }
-  const deferredSearch = useDeferredValue(search);
   const cells = useMemo(() => new Map(data?.registrations.map(row => [keyOf(row.staff_id, row.work_date), row])), [data]);
   const people = useMemo(() => (data?.staff || []).filter(person =>
-    (!staffFilter || String(person.id) === staffFilter) &&
-    (store === 'all' || (store === 'none' ? person.store_id === null : String(person.store_id) === store)) &&
-    `${person.name} ${person.position}`.toLocaleLowerCase('vi').includes(deferredSearch.trim().toLocaleLowerCase('vi')),
-  ), [data, staffFilter, store, deferredSearch]);
+    !writable || ((!staffFilter || String(person.id) === staffFilter) &&
+    (store === 'all' || (store === 'none' ? person.store_id === null : String(person.store_id) === store))),
+  ), [data, staffFilter, store, writable]);
   const groups = useMemo(() => {
     const result = new Map<string, RegisteredStaff[]>();
     for (const person of people) { const key = String(person.store_id ?? 'none'); result.set(key, [...(result.get(key) || []), person]); }
@@ -87,8 +86,6 @@ export function ShiftRegistrationBoard({ focusDate, focusStaff }: { focusDate?: 
   const total = (person: RegisteredStaff) => dates.reduce((sum, date) => sum + registrationCredit(cells.get(keyOf(person.id, date))?.shift_code), 0);
   const excel=data?registrationExcel({...data,staff:people}):{headers:[],rows:[]};
   const unavailable = loading || Boolean(error) || !data;
-  const writable = canManageShiftRegistration(accessUser);
-  const canLock = canLockShiftRegistration(accessUser);
   const weeks = [...new Set(dates.map(weekStart))];
   const week = weeks.includes(chosenWeek) ? chosenWeek : weeks[0];
   const weekLocked = data?.locked_weeks?.includes(week) ?? false;
@@ -120,21 +117,26 @@ export function ShiftRegistrationBoard({ focusDate, focusStaff }: { focusDate?: 
   }
   return <section className="mg-page mg-shift-registration-page" aria-label="Đăng ký ca làm việc"><div className="mg-page-content">
     {selfOpen && <WeeklyShiftRegistrationDialog onClose={() => setSelfOpen(false)} onSaved={() => { refresh(); notify('Đã lưu đăng ký ca.'); }} />}
-    <div className="mg-page-heading"><div><div className="mg-eyebrow">QUẢN LÝ NHÂN SỰ</div><h1>{writable ? "Quản lý đăng ký ca" : "Đăng ký ca"}</h1><p>{writable ? "Bảng ca theo tháng, nhóm nhân viên theo cơ sở." : "Xem và đăng ký ca làm của mình theo tuần."}</p></div><div className="mg-heading-actions">
+    <div className="mg-page-heading"><div><h1>{writable ? "Quản lý đăng ký ca" : "Đăng ký ca"}</h1><p>{writable ? "Bảng ca theo tháng, nhóm nhân viên theo cơ sở." : "Xem và đăng ký ca làm của mình theo tuần."}</p></div><div className={writable ? 'mg-heading-actions' : `mg-heading-actions ${styles.personalActions}`}>
       <button type="button" className="mg-button mg-button-primary" onClick={() => setSelfOpen(true)}>Đăng ký ca của tôi</button>
       {!writable&&<Link className="mg-button" href="/duty-roster">Xem lịch trực chung</Link>}
       {writable && <FilteredExcelButton filename={`himoto-dang-ky-ca-${range.from}-${range.to}`} disabled={unavailable || !people.length || Boolean(pending)} headers={excel.headers} getRows={()=>excel.rows} />}
-      <button type="button" className="mg-button" disabled={loading || Boolean(pending)} onClick={refresh}><RotateCcw size={16} />Làm mới</button>
     </div></div>
     <div className={styles.toolbar}>
       <div className={styles.month}><button type="button" className="mg-button" disabled={Boolean(pending) || month === '2000-01'} aria-label="Tháng trước" onClick={() => chooseMonth(adjacentMonth(month, -1))}><ChevronLeft size={18} /></button>
         <label>Tháng đăng ký<input type="month" min="2000-01" max="2100-12" value={month} disabled={Boolean(pending)} onChange={event => chooseMonth(event.target.value)} /></label>
         <button type="button" className="mg-button" disabled={Boolean(pending) || month === '2100-12'} aria-label="Tháng sau" onClick={() => chooseMonth(adjacentMonth(month, 1))}><ChevronRight size={18} /></button>
-        <button type="button" className="mg-button" disabled={Boolean(pending)} onClick={() => chooseMonth(month)}>Đủ ngày trong tháng</button>
-        <button type="button" className="mg-button" disabled={Boolean(pending)} onClick={() => chooseMonth(vietnamDate().slice(0, 7))}>Tháng này</button></div>
-      <label>Cơ sở<select value={store} onChange={event => setStore(event.target.value)}><option value="all">Tất cả cơ sở</option>{data?.stores.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}<option value="none">Chưa có cơ sở</option></select></label>
-      <label>Tìm nhân viên<input type="search" placeholder="Họ tên, chức vụ…" value={search} onChange={event => setSearch(event.target.value)} /></label>
-      {staffFilter && <button type="button" className="mg-button" onClick={() => setStaffFilter(undefined)}>Bỏ lọc nhân viên chấm công</button>}
+        <div className={styles.monthShortcuts}>
+          <button type="button" className="mg-button" disabled={Boolean(pending)} onClick={() => chooseMonth(month)}>Đủ ngày trong tháng</button>
+          <button type="button" className="mg-button" disabled={Boolean(pending)} onClick={() => chooseMonth(vietnamDate().slice(0, 7))}>Tháng này</button>
+        </div>
+      </div>
+      {writable && <><label>Cơ sở<select value={store} onChange={event => setStore(event.target.value)}><option value="all">Tất cả cơ sở</option>{data?.stores.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}<option value="none">Chưa có cơ sở</option></select></label>
+      <label>Tìm nhân viên<select value={staffFilter ?? ''} disabled={loading || !data} onChange={event => setStaffFilter(event.target.value || undefined)}>
+        <option value="">Tất cả nhân viên</option>
+        {staffFilter && !data?.staff.some(person => String(person.id) === staffFilter) && <option value={staffFilter}>Nhân viên từ chấm công</option>}
+        {data?.staff.map(person => <option key={person.id} value={person.id}>{person.name} · {person.store_name}</option>)}
+      </select></label></>}
       <div className={styles.range} role="group" aria-label="Bộ lọc ngày đăng ký ca">
         <label>Từ ngày<input type="date" min="2000-01-01" max="2100-12-31" value={from} disabled={Boolean(pending)} onChange={event => setFrom(event.target.value)} /></label>
         <label>Đến ngày<input type="date" min="2000-01-01" max="2100-12-31" value={to} disabled={Boolean(pending)} onChange={event => setTo(event.target.value)} /></label>
@@ -150,7 +152,7 @@ export function ShiftRegistrationBoard({ focusDate, focusStaff }: { focusDate?: 
         <button type="button" className="mg-button" disabled={unavailable || Boolean(pending)} onClick={() => void toggleWeek()}>{weekLocked ? 'Mở khóa tuần' : 'Khóa tuần'}</button>
       </div>}
     </div>
-    <div className={styles.summary}><span><strong>{people.length}</strong> nhân viên</span><span><strong>{dates.length}</strong> ngày · {range.from.split('-').reverse().join('/')} – {range.to.split('-').reverse().join('/')}</span><label><input type="checkbox" checked={fitMonth} disabled={dates.length > 31} onChange={event => setFitMonth(event.target.checked)} /> Thu gọn xem trọn tháng (máy tính)</label><span>{writable ? 'Chọn mã ca để đăng ký · Ô trống = chưa đăng ký' : 'Bạn có quyền xem bảng, không có quyền sửa ca.'}</span></div>
+    <div className={styles.summary}>{writable && <span><strong>{people.length}</strong> nhân viên</span>}<span><strong>{dates.length}</strong> ngày · {range.from.split('-').reverse().join('/')} – {range.to.split('-').reverse().join('/')}</span><label><input type="checkbox" checked={fitMonth} disabled={dates.length > 31} onChange={event => setFitMonth(event.target.checked)} /> Thu gọn xem trọn tháng (máy tính)</label>{writable && <span>Chọn mã ca để đăng ký · Ô trống = chưa đăng ký</span>}</div>
     <p className={styles.status} role="status" aria-live="polite">{loading ? 'Đang tải bảng đăng ký ca…' : pending ? 'Đang lưu đăng ký…' : saved || 'Công đăng ký là dự kiến, không thay thế công chấm và công được duyệt.'}</p>
     {error && <div role="alert" className="mg-field-error">{error} <button type="button" className="mg-button" disabled={Boolean(pending)} onClick={refresh}>Tải lại để kiểm tra</button></div>}
     {data && <div className={`${styles.scroll} ${fitMonth ? styles.fit : ''}`} role="region" aria-label={`Bảng đăng ký ca từ ${range.from} đến ${range.to}`} tabIndex={0} aria-busy={Boolean(pending)}>
@@ -164,7 +166,7 @@ export function ShiftRegistrationBoard({ focusDate, focusStaff }: { focusDate?: 
           <select aria-label={`Ca của ${person.name} ngày ${date.split('-').reverse().join('/')}`} title={!person.store_id ? 'Cần gán cơ sở trong hồ sơ nhân viên trước khi đăng ký' : `${person.name} · ${date} · ${code || 'Chưa đăng ký'}`} className={`${styles.shift} ${code === 'O' ? styles.off : code === 'F' ? styles.full : code ? styles.working : ''}`} disabled={!writable || unavailable || Boolean(pending) || !person.store_id || person.status !== 'active'} value={code} onChange={event => void register(person, date, event.target.value)}>
             <option value="">—</option>{REGISTRATION_SHIFTS.map(shift => <option key={shift.code} value={shift.code}>{shift.code}</option>)}
           </select></td>; })}<td className={styles.total}><strong>{shiftCreditLabel(total(person))}</strong></td>
-      </tr>))}{!people.length && <tr><td colSpan={dates.length + 4} className={styles.empty}>Không có nhân viên phù hợp.</td></tr>}</tbody></table>
+      </tr>))}{!people.length && <tr><td colSpan={dates.length + 4} className={styles.empty}>{writable ? 'Không có nhân viên phù hợp.' : 'Tài khoản cần được liên kết với một hồ sơ nhân viên đang hoạt động để xem ca cá nhân.'}</td></tr>}</tbody></table>
     </div>}
     <div className={styles.notes}><div><h2>Ký hiệu ca làm việc</h2><table className={styles.legend}><thead><tr><th>Ký hiệu</th><th>Chú thích</th><th>Tính công</th></tr></thead><tbody>{REGISTRATION_SHIFTS.map(shift => <tr key={shift.code}><td><b className={shift.code === 'O' ? styles.off : shift.code === 'F' ? styles.full : styles.working}>{shift.code}</b></td><td>{shift.name}{shift.start && `: ${shift.start}–${shift.end}`}{shift.code === 'G1+G3' && ' (nghỉ giữa 12:00–17:00)'}</td><td>{shiftCreditLabel(shift.credit)}</td></tr>)}</tbody></table></div>
       <div><h2>Chú thích &amp; quy định đăng ký ca</h2><p><strong>Mỗi phòng giao dịch sắp xếp 2 nhân sự trong 1 ca làm việc.</strong></p><p><strong>Thời gian làm việc cố định: 8 tiếng/1 ca – 4 tiếng/nửa ca.</strong></p><ul>
