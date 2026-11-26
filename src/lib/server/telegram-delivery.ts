@@ -20,7 +20,12 @@ const CLEANUP_MS = 10_000;
 export class TelegramContinuation extends Error {}
 export class TelegramDeliveryError extends Error {
   constructor(message: string, public definiteFailure = false, public description?: string, public method?: string,
-    public retryAfterSeconds?: number, public durationMs?: number) { super(message); }
+    public retryAfterSeconds?: number, public durationMs?: number, public migrateToChatId?: string) { super(message); }
+}
+/** Telegram's migration ID is a signed 52-bit integer; retain it as text for PostgreSQL bigint. */
+export function migratedTelegramChatId(value: unknown): string | undefined {
+  const id=typeof value==='number'&&Number.isSafeInteger(value)?String(value):typeof value==='string'?value:undefined;
+  return id&&/^-\d{5,18}$/.test(id)&&Number.isSafeInteger(Number(id))?id:undefined;
 }
 export function telegramErrorDescription(value: unknown) {
   if (typeof value !== 'string') return undefined;
@@ -60,8 +65,9 @@ export async function telegramCall(token: string, method: string, body: FormData
     const result = await response.json();
     if (result?.ok === false && Number.isInteger(result.error_code)) {
       const retry = result.parameters?.retry_after;
+      const migrated=migratedTelegramChatId(result.parameters?.migrate_to_chat_id);
       throw new TelegramDeliveryError(`TELEGRAM_${result.error_code}`, true, telegramErrorDescription(result.description), method,
-        Number.isSafeInteger(retry) && retry > 0 && retry <= 86400 ? retry : undefined);
+        Number.isSafeInteger(retry) && retry > 0 && retry <= 86400 ? retry : undefined, undefined, migrated);
     }
     if (!response.ok || result?.ok !== true) throw new TelegramDeliveryError('TELEGRAM_INVALID_RESPONSE');
     const messages = method === 'sendMediaGroup' ? result.result : [result.result];
