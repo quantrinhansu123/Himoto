@@ -91,6 +91,17 @@ async function main() {
     assert.deepEqual(await send(current.hash), keys);
     assert.equal(Number((await db.query('SELECT count(*) n FROM himoto.management_report_deliveries')).rows[0].n), 1);
     assert.deepEqual((await report.readMobileCollectionReport(manager, params)).deliveries.map(row => row.status), ['pending']);
+    const leader = { ...reader, permissions: ['contracts.read', 'contracts.draft'], scope_all_contracts_read: true };
+    const foreign = await report.readMobileCollectionFollowup(leader, '2');
+    assert(isCollectionFollowupView(foreign));
+    assert.equal(foreign.can_write, true);
+    assert.equal(foreign.can_update_status, false);
+    const foreignNote = { ...foreign.followup, order_id: 2, notes: 'QA Leader', customer_condition: 'QA condition' };
+    await assert.rejects(() => report.saveMobileCollectionFollowup(leader, '2', body({ ...foreignNote, handling_status: 'resolved' })), error => error.status === 403);
+    assert.deepEqual(await report.saveMobileCollectionFollowup(leader, '2', body(foreignNote)), { revision: 1 });
+    const foreignSaved = await report.readMobileCollectionFollowup(leader, '2');
+    assert.equal(foreignSaved.followup.notes, 'QA Leader');
+    assert.equal(foreignSaved.followup.customer_condition, 'QA condition');
 
     const { readSePayReceiptEvents } = load(path.join(root, 'lib/server/sepay-events'));
     const receipts = await readSePayReceiptEvents(db, '0');

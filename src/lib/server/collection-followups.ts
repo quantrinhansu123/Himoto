@@ -44,8 +44,8 @@ export async function writeCollectionFollowup(db:Pick<PoolClient,'query'>,actor:
   if(actor.operation==='collection_note'&&Number(order.store_id)!==actor.store_id){
     const [{followup}]=await readCollectionFollowups(db,[order_id]);
     if(followup.revision!==revision)throw new CollectionFollowupError('Ghi chú đã thay đổi. Tải lại trước khi lưu.',409);
-    if(snapshot.contact_status!==followup.contact_status||snapshot.handling_status!==followup.handling_status||snapshot.customer_condition!==followup.customer_condition){
-      throw new CollectionFollowupError('Ngoài PGD được phân công, tài khoản chỉ có thể sửa nội dung ghi chú.',403);
+    if(snapshot.contact_status!==followup.contact_status||snapshot.handling_status!==followup.handling_status){
+      throw new CollectionFollowupError('Ngoài PGD được phân công, tài khoản chỉ có thể cập nhật tình trạng khách và ghi chú.',403);
     }
   }
   const values=[order_id,order.store_id,snapshot.contact_status,snapshot.handling_status,snapshot.customer_condition,snapshot.notes,actor.id,revision];

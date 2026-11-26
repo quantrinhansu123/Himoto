@@ -13,7 +13,7 @@ async function main(){
  try{
   session.userFromSession=async()=>actor;session.readSessionUser=async()=>actor;
   Object.defineProperty(himotoPool,'query',{configurable:true,value:async(sql,values)=>{calls.push({sql,values});assert.equal(dataAccess.getStore().id,101);assert.match(sql,/FROM himoto.orders o/);assert.match(sql,/o.deleted_at IS NULL/);assert.deepEqual(values,[[1,2]]);return {rows:[{id:1,notes:'Ghi chú đã có',revision:4},{id:2}]};}});
-  Object.defineProperty(himotoPool,'connect',{configurable:true,value:async()=>({release(){},async query(sql,values){calls.push({sql,values});if(sql.startsWith('SELECT id,store_id'))return {rows:[{id:1,store_id:orderStore}]};if(sql.startsWith('INSERT INTO himoto.management_collection_followups'))return {rows:[],rowCount:0};if(sql.startsWith('UPDATE himoto.management_collection_followups'))return {rows:conflict?[]:[{revision:2}],rowCount:conflict?0:1};return {rows:[],rowCount:1};}})});
+  Object.defineProperty(himotoPool,'connect',{configurable:true,value:async()=>({release(){},async query(sql,values){calls.push({sql,values});if(sql.startsWith('SELECT id,store_id'))return {rows:[{id:1,store_id:orderStore}]};if(sql.includes('FROM himoto.orders o'))return {rows:[{id:1,revision:1,contact_status:'contacted',handling_status:'branch',customer_condition:'Đã liên hệ'}]};if(sql.startsWith('INSERT INTO himoto.management_collection_followups'))return {rows:[],rowCount:0};if(sql.startsWith('UPDATE himoto.management_collection_followups'))return {rows:conflict?[]:[{revision:2}],rowCount:conflict?0:1};return {rows:[],rowCount:1};}})});
   const enabled=actor;actor=null;assert.equal((await route.GET(request('GET','?ids=1,2'))).status,401);assert.equal(calls.length,0);actor=enabled;
   for(const ids of ['', '0','-1','1,x',Array.from({length:201},(_,i)=>i+1).join(',')])assert.equal((await route.GET(request('GET','?ids='+ids))).status,400);
   assert.equal(calls.length,0);
@@ -25,7 +25,15 @@ async function main(){
   orderStore=23;assert.equal((await route.PATCH(request('PATCH'))).status,403);assert(calls.some(c=>c.sql==='ROLLBACK'));assert(!calls.some(c=>c.sql.startsWith('INSERT')));
   orderStore=35;calls=[];const saved=await route.PATCH(request('PATCH'));assert.equal(saved.status,200);assert.equal((await saved.json()).data.revision,2);assert(calls.some(c=>c.sql==='COMMIT'));assert(calls.some(c=>c.sql.startsWith('INSERT INTO himoto.management_collection_history')));assert(!calls.some(c=>/UPDATE himoto.orders|himoto.transactions|UPDATE himoto.vehicles/.test(c.sql)));
   conflict=true;calls=[];assert.equal((await route.PATCH(request('PATCH'))).status,409);assert(calls.some(c=>c.sql==='ROLLBACK'));assert(!calls.some(c=>c.sql.includes('INSERT INTO himoto.management_collection_history')));
-  console.log(JSON.stringify({passed:5,checks:['Authentication, operating permission and same-origin guards run before DB access','Bounded contract IDs are deduplicated and reads preserve notes/defaults without caching','Malformed, read-only and foreign-branch writes are rejected','Blank notes save with revision/history and do not change contracts, vehicles or money','Concurrent edits roll back without recording a false history entry'],realBusinessWrites:0}));
+  actor={...enabled,scope_all_contracts_read:true};orderStore=23;conflict=false;calls=[];
+  const crossStore={...body,customer_condition:'Khách hẹn trả',notes:'Ghi chú khác PGD'};
+  assert.equal((await route.PATCH(request('PATCH','',crossStore))).status,200);
+  assert.deepEqual(calls.find(c=>c.sql.startsWith('UPDATE himoto.management_collection_followups')).values.slice(1,6),[23,'contacted','branch',crossStore.customer_condition,crossStore.notes]);
+  for(const change of [{contact_status:'promised'},{handling_status:'resolved'}]){
+    calls=[];assert.equal((await route.PATCH(request('PATCH','',{...crossStore,...change}))).status,403);
+    assert(!calls.some(c=>c.sql.startsWith('UPDATE')||c.sql.startsWith('INSERT')));
+  }
+  console.log(JSON.stringify({passed:6,checks:['Authentication, operating permission and same-origin guards run before DB access','Bounded contract IDs are deduplicated and reads preserve notes/defaults without caching','Malformed and unauthorized writes are rejected','Blank notes save with revision/history and do not change contracts, vehicles or money','Concurrent edits roll back without recording a false history entry','Leaders may save notes and customer condition across branches, with contact and handling statuses unchanged'],realBusinessWrites:0}));
  }finally{session.userFromSession=originalUser;session.readSessionUser=originalRead;Object.defineProperties(himotoPool,descriptors);}
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

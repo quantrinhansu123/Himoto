@@ -12,7 +12,7 @@ import { CollectionNoteField } from './CollectionNoteField';
 
 type Report={rows:CollectionRow[];read_at:string;messages:string[];hash:string;deliveries?:{status:string;message_id:number|null}[]};
 export function DebtReportPanel(){
-  const {selectedStore,can,notify}=useManagement();
+  const {selectedStore,can,notify,accessUser}=useManagement();
   const [report,setReport]=useState<{store:string;value:Report}|null>(null),[error,setError]=useState(''),[loading,setLoading]=useState(true),[version,setVersion]=useState(0);
   const data=report?.store===selectedStore?report.value:null;
   const [editingNotes,setEditingNotes]=useState<Set<number>>(()=>new Set());
@@ -21,6 +21,7 @@ export function DebtReportPanel(){
   function noteSaved(id:number,followup:CollectionFollowup){setReport(current=>current?.store===selectedStore?{...current,value:{...current.value,rows:current.value.rows.map(row=>row.id===id?{...row,followup}:row)}}:current);refresh();}
   const [search,setSearch]=useState(''),[handling,setHandling]=useState(''),[preview,setPreview]=useState(false),[sending,setSending]=useState(false);
   const [editing,setEditing]=useState<CollectionRow|null>(null),[followup,setFollowup]=useState<CollectionFollowup|null>(null),[saving,setSaving]=useState(false),[saveError,setSaveError]=useState('');
+  const canUpdateStatus=accessUser?.scope_all===true||accessUser?.store_id===editing?.store_id;
   useEffect(()=>{const controller=new AbortController();setLoading(true);setError('');
     void shiftApi<Report>(`/api/auth/gps/debts?store=${selectedStore}`,{signal:controller.signal}).then(value=>{if(!controller.signal.aborted)setReport({store:selectedStore,value});}).catch(e=>{if(!controller.signal.aborted)setError(e.message);}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});
     return()=>controller.abort();
@@ -49,8 +50,8 @@ export function DebtReportPanel(){
     </tr>)}</tbody></table></div>{!rows.length&&<p>Không có khách quá hạn / nợ xấu phù hợp.</p>}</>}
     {editing&&followup&&<Dialog title="Cập nhật tình trạng khách" subtitle={`${editing.code} · ${editing.customer}`} onClose={()=>{if(!saving&&window.confirm('Đóng phần cập nhật chưa lưu?'))setEditing(null);}}>
       <fieldset className="mg-dialog-body mg-form-grid" disabled={saving}>
-        <div className="mg-field"><label htmlFor="collection-contact">Liên hệ</label><select id="collection-contact" value={followup.contact_status} onChange={e=>setFollowup({...followup,contact_status:e.target.value as CollectionFollowup['contact_status']})}>{Object.entries(CONTACT_STATUSES).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></div>
-        <div className="mg-field"><label htmlFor="collection-handling">Xử lý</label><select id="collection-handling" value={followup.handling_status} onChange={e=>setFollowup({...followup,handling_status:e.target.value as CollectionFollowup['handling_status']})}>{Object.entries(HANDLING_STATUSES).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></div>
+        <div className="mg-field"><label htmlFor="collection-contact">Liên hệ</label><select id="collection-contact" disabled={!canUpdateStatus} value={followup.contact_status} onChange={e=>setFollowup({...followup,contact_status:e.target.value as CollectionFollowup['contact_status']})}>{Object.entries(CONTACT_STATUSES).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></div>
+        <div className="mg-field"><label htmlFor="collection-handling">Xử lý</label><select id="collection-handling" disabled={!canUpdateStatus} value={followup.handling_status} onChange={e=>setFollowup({...followup,handling_status:e.target.value as CollectionFollowup['handling_status']})}>{Object.entries(HANDLING_STATUSES).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></div>
         <div className="mg-field mg-field-wide"><label htmlFor="collection-condition">Tình trạng khách</label><input id="collection-condition" maxLength={300} placeholder="Khách đều, hẹn ngày thanh toán, không liên lạc được…" value={followup.customer_condition} onChange={e=>setFollowup({...followup,customer_condition:e.target.value})}/></div>
         <div className="mg-field mg-field-wide"><label htmlFor="collection-notes">Ghi chú liên hệ theo ngày</label><textarea id="collection-notes" maxLength={3000} rows={5} value={followup.notes} onChange={e=>setFollowup({...followup,notes:e.target.value})}/></div>
         {saveError&&<p role="alert">{saveError}</p>}

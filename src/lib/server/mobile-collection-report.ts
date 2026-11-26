@@ -3,6 +3,7 @@ import type { NextRequest } from 'next/server';
 import type { PoolClient } from 'pg';
 import { formatDateTime } from '@/lib/formatters';
 import { hasPermission } from '@/lib/management/permissions';
+import { canWriteCrossStoreCollectionFollowup } from '@/lib/management/collection-report';
 import {
   CONTACT_STATUSES, HANDLING_STATUSES, filterCollectionRows, parseCollectionFollowup,
 } from '../../../shared/collection-report';
@@ -11,6 +12,7 @@ import { VEHICLE_ORDER_SQL } from './contract-classification';
 import { CollectionFollowupError, readCollectionFollowups, writeCollectionFollowup } from './collection-followups';
 import { queueCollectionReport, readCollectionReport, readCollectionReportView } from './collection-report';
 import { himotoPool } from './himoto-database';
+import { dataAccess } from './access-context';
 import type { SessionUser } from './management-session';
 import { canMobileCrossStoreRead, withMobileData, withMobileReadData } from './mobile-context';
 import { mobileContractId } from './mobile-contracts';
@@ -18,12 +20,12 @@ import { mobileFilteredWorkbook } from './mobile-filtered-workbook';
 import { MobileError } from './mobile-session';
 import { mobileBody } from './mobile-writes';
 
-function transaction<T>(user: SessionUser, write: boolean, task: (db: PoolClient) => Promise<T>) {
+function transaction<T>(user: SessionUser, write: boolean, task: (db: PoolClient) => Promise<T>, followup = false) {
   if (!hasPermission(user, 'contracts.read') || write && !hasPermission(user, 'contracts.draft')) {
     throw new MobileError('Tài khoản chưa có quyền xử lý báo cáo nợ chậm.', 403, 'FORBIDDEN');
   }
   const scope = write ? withMobileData : withMobileReadData;
-  return scope(user, '', async () => {
+  const run = async () => {
     const client = await himotoPool.connect();
     try {
       await client.query(write ? 'BEGIN' : 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
@@ -37,7 +39,12 @@ function transaction<T>(user: SessionUser, write: boolean, task: (db: PoolClient
       if (error instanceof CollectionFollowupError) throw new MobileError(error.message, error.status, 'COLLECTION_CONFLICT');
       throw error;
     } finally { client.release(); }
-  });
+  };
+  if (followup && (write ? canWriteCrossStoreCollectionFollowup(user) : user.scope_all_contracts_read === true)) {
+    return dataAccess.run({ ...user, store_id: user.store_id ?? null, scope_all: true,
+      operation: write ? 'collection_note' : '', cross_store_read: !write }, run);
+  }
+  return scope(user, '', run);
 }
 
 function readStore(user: SessionUser, params: URLSearchParams, fields: string[]) {
@@ -77,10 +84,10 @@ export function readMobileCollectionFollowup(user: SessionUser, rawId: string) {
       FROM himoto.orders o WHERE id=$1 AND deleted_at IS NULL AND ${VEHICLE_ORDER_SQL}`, [id])).rows[0];
     const snapshot = row && (await readCollectionFollowups(db, [id]))[0];
     if (!snapshot) throw new MobileError('Không tìm thấy hợp đồng trong phạm vi.', 404, 'NOT_FOUND');
-    return { ...snapshot, code: String(row.code),
-      can_write: hasPermission(user, 'contracts.draft') && (user.scope_all === true || user.store_id === Number(row.store_id)),
-    };
-  });
+    const canUpdateStatus = hasPermission(user, 'contracts.draft') && (user.scope_all === true || user.store_id === Number(row.store_id));
+    return { ...snapshot, code: String(row.code), can_update_status: canUpdateStatus,
+      can_write: canUpdateStatus || canWriteCrossStoreCollectionFollowup(user) };
+  }, true);
 }
 
 export async function saveMobileCollectionFollowup(user: SessionUser, rawId: string, request: NextRequest) {
@@ -89,9 +96,7 @@ export async function saveMobileCollectionFollowup(user: SessionUser, rawId: str
   try { input = parseCollectionFollowup(body); }
   catch (error) { throw new MobileError((error as Error).message); }
   if (input.order_id !== id) throw new MobileError('Hợp đồng không khớp ghi chú đang sửa.');
-  return transaction(user, true, db => writeCollectionFollowup(db, {
-    id: user.id, store_id: user.store_id ?? null, scope_all: user.scope_all === true,
-  }, input));
+  return transaction(user, true, db => writeCollectionFollowup(db, dataAccess.getStore()!, input), true);
 }
 
 export async function sendMobileCollectionReport(user: SessionUser, request: NextRequest) {

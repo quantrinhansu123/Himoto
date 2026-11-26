@@ -27,6 +27,7 @@ export interface CollectionFollowupView {
   id: number;
   code: string;
   can_write: boolean;
+  can_update_status?: boolean;
   followup: CollectionFollowup;
 }
 
@@ -51,7 +52,8 @@ export function isCollectionReport(value: unknown): value is CollectionReportVie
       Array.isArray(row.gps) && row.gps.every(text) && isCollectionFollowup(row.followup));
 }
 export function isCollectionFollowupView(value: unknown): value is CollectionFollowupView {
-  return object(value) && id(value.id) && text(value.code) && typeof value.can_write === 'boolean' && isCollectionFollowup(value.followup);
+  return object(value) && id(value.id) && text(value.code) && typeof value.can_write === 'boolean'
+    && (value.can_update_status === undefined || typeof value.can_update_status === 'boolean') && isCollectionFollowup(value.followup);
 }
 export function parseCollectionFollowup(raw: unknown): CollectionFollowup & { order_id: number } {
   if (!object(raw) || !id(raw.order_id) || !isCollectionFollowup(raw) ||

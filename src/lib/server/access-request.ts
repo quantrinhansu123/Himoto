@@ -5,6 +5,7 @@ import { dataAccess, withCrossStoreOperation } from './access-context';
 import { SESSION_COOKIE, sameOrigin, userFromSession, readSessionUser, type SessionUser } from './management-session';
 import { failureResponse } from './public-failure';
 import { isSupplementalPhotoSlot,photoBaseSlot } from '@/lib/management/photo-slot-groups';
+import { canWriteCrossStoreCollectionFollowup } from '@/lib/management/collection-report';
 
 const crossStoreReadPath = /^\/api\/auth\/(?:stores|order\/car-rental|battery-contracts|customers|vehicles|vehicle\/vehicles|gps|shift-reports|dashboard|rental-revenue|staff-sales|cashbook|hr\/staff|contract-staff|debt-reminders)(?:\/|$)/;
 
@@ -120,8 +121,7 @@ export function withAccessUser<C>(handler:(request:NextRequest,context:C,user:Se
         /^\/api\/auth\/order\/car-rental(?:\/|$)/.test(request.nextUrl.pathname);
       const crossStoreRead = request.method === 'GET' && !user.scope_all &&
         (leaderContractRead || user.scope_all_read === true && crossStoreReadPath.test(request.nextUrl.pathname)) && !/\/(?:refresh|backups|import|telegram)(?:\/|$)/.test(request.nextUrl.pathname);
-      const crossStoreNote = request.method === 'PATCH' && request.nextUrl.pathname === '/api/auth/order/car-rental/followups' &&
-        (user.scope_all_read === true || user.scope_all_contracts_read === true) && !user.scope_all && hasPermission(user,'contracts.read') && hasPermission(user,'contracts.draft');
+      const crossStoreNote = request.method === 'PATCH' && request.nextUrl.pathname === '/api/auth/order/car-rental/followups' && canWriteCrossStoreCollectionFollowup(user);
       if(crossStoreNote)operation='collection_note';
       return await dataAccess.run({...user,store_id:dutyRoster?null:user.store_id??null,scope_all:dutyRoster||user.scope_all===true||crossStoreRead||crossStoreNote,cross_store_read:crossStoreRead,operation:dutyRoster?'duty_roster':operation,transfer_vehicle_id},()=>
         withCrossStoreOperation(crossStoreOperation(request.nextUrl.pathname,request.method),()=>handler(request,context,user)));

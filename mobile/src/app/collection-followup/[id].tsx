@@ -18,6 +18,7 @@ function Followup({ data, reload }: { data: CollectionFollowupView; reload: () =
   const dirty = JSON.stringify(draft) !== baseline;
   const disablePrevention = usePreventRemove(!leaving && (busy || dirty), ({ repeat }) => { if (!busy) setExit(() => repeat); });
   const disabled = !data.can_write || busy;
+  const statusDisabled = disabled || data.can_update_status === false;
   async function save() {
     if (disabled) return;
     setBusy(true);
@@ -52,9 +53,9 @@ function Followup({ data, reload }: { data: CollectionFollowupView; reload: () =
       <Text accessibilityRole="header" style={{ ...text, fontSize: 18, fontWeight: '800' }}>HĐ {data.code}</Text>
       {!!draft.updated_at && <KeyValueRow label="Cập nhật gần nhất" value={dateTime(draft.updated_at)} />}
       <ChoiceField label="Liên hệ" value={draft.contact_status} choices={Object.entries(CONTACT_STATUSES).map(([value, label]) => ({ value, label }))}
-        disabled={disabled} onChange={value => setDraft(previous => ({ ...previous, contact_status: value as typeof draft.contact_status }))} />
+        disabled={statusDisabled} onChange={value => setDraft(previous => ({ ...previous, contact_status: value as typeof draft.contact_status }))} />
       <ChoiceField label="Xử lý" value={draft.handling_status} choices={Object.entries(HANDLING_STATUSES).map(([value, label]) => ({ value, label }))}
-        disabled={disabled} onChange={value => setDraft(previous => ({ ...previous, handling_status: value as typeof draft.handling_status }))} />
+        disabled={statusDisabled} onChange={value => setDraft(previous => ({ ...previous, handling_status: value as typeof draft.handling_status }))} />
       <FormField label="Tình trạng khách" value={draft.customer_condition} maxLength={300} editable={!disabled}
         onChangeText={value => setDraft(previous => ({ ...previous, customer_condition: value }))} />
       <FormField label="Ghi chú liên hệ theo ngày" value={draft.notes} maxLength={3000} multiline editable={!disabled}
