@@ -10,6 +10,7 @@ export type PermissionAccount = {
   store_id?: number | null;
   store_kind?: string | null;
   scope_all?: boolean;
+  has_hr_position?: boolean;
   scope_all_operations?: boolean;
 };
 
@@ -77,6 +78,10 @@ export function hasPermission(account:PermissionAccount|null|undefined,permissio
 export function isAdminAccount(account: PermissionAccount | null | undefined) {
   if (!account) return false;
   return account.access_role === 'admin' || (!account.access_role && (Number(account.role_id) === 1 || account.role === 'admin' || account.role_slug === 'quan-tri-vien'));
+}
+
+export function canReviewAttendance(account: PermissionAccount | null | undefined) {
+  return account?.has_hr_position === true && hasPermission(account, 'hr.read');
 }
 
 /** Sổ quỹ / thanh toán hợp đồng: chỉ kế toán và quản trị viên. */

@@ -13,7 +13,7 @@ import { shiftCreditLabel } from '@/lib/management/attendance-shifts';
 import { buildAttendanceWorkbook } from '@/lib/management/attendance-workbook';
 import { downloadExcel } from '@/lib/management/excel-export';
 import { formatDateTime } from '@/lib/formatters';
-import { isAdminAccount } from '@/lib/management/permissions';
+import { canReviewAttendance, isAdminAccount } from '@/lib/management/permissions';
 import { WeeklyShiftRegistrationDialog } from './WeeklyShiftRegistrationDialog';
 import { BrowserLocationError, requestBrowserLocation, type BrowserLocation as Location } from '@/lib/management/browser-geolocation';
 
@@ -183,9 +183,11 @@ export function AttendancePage() {
 export function AttendanceHistoryPage() {
   const {selectedStore,selectStore,dataset,ensureData,notify,can,accessUser} = useManagement();
   const canReadHr = can('hr.read');
+  const canReview = canReviewAttendance(accessUser);
+  const historyStore = canReview ? selectedStore : 'all';
   const isAdmin = isAdminAccount(accessUser);
   useEffect(()=>{void ensureData(['stores']).catch(()=>{});},[ensureData]);
-  useEffect(()=>{setPage(1);},[selectedStore]);
+  useEffect(()=>{setPage(1);},[historyStore]);
   const [from,setFrom] = useState(()=>vietnamDate().slice(0,7)+'-01'),[to,setTo] = useState(vietnamDate),[page,setPage] = useState(1);
   const [retry,setRetry] = useState(0);
   const refresh = useCallback(()=>setRetry(value=>value+1),[]);
@@ -195,7 +197,7 @@ export function AttendanceHistoryPage() {
   async function exportAttendance() {
     const exportFrom = from || vietnamDate().slice(0, 7) + '-01';
     const exportTo = to || exportFrom;
-    const query = new URLSearchParams({from:exportFrom,to:exportTo,store:selectedStore,export:'1'});
+    const query = new URLSearchParams({from:exportFrom,to:exportTo,store:historyStore,export:'1'});
     const {rows,total} = await responseData<Report>(await fetch(`/api/auth/attendance?${query}`,{cache:'no-store'}));
     if (rows.length!==total || new Set(rows.map(row=>row.id)).size!==total) {
       throw new Error('Chưa đọc đủ lịch sử chấm công. Tải lại rồi xuất Excel.');
@@ -206,10 +208,10 @@ export function AttendanceHistoryPage() {
   }
   useEffect(()=>{
     const controller=new AbortController();setLoading(true);setError('');setData(null);
-    const query = new URLSearchParams({from,to,store:selectedStore,page:String(page)});
+    const query = new URLSearchParams({from,to,store:historyStore,page:String(page)});
     void fetch(`/api/auth/attendance?${query}`,{cache:'no-store',signal:controller.signal}).then(responseData<Report>).then(value=>{if(!controller.signal.aborted)setData(value);}).catch(cause=>{if(!controller.signal.aborted)setError(cause instanceof Error?cause.message:'Không tải được chấm công.');}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});
     return()=>controller.abort();
-  },[from,to,selectedStore,page,retry]);
+  },[from,to,historyStore,canReview,page,retry]);
   const shiftLink = (row:Attendance) => {
     const label = row.shift_name==='O'?'Nghỉ':row.shift_name||'Chưa đăng ký ca';
     if (!canReadHr) return label;
@@ -236,11 +238,11 @@ export function AttendanceHistoryPage() {
       setRecordDialog(null);
       refresh();
     }} />}
-    <div className="mg-page-heading"><div><div className="mg-eyebrow">NHÂN SỰ</div><h1>Lịch sử chấm công</h1></div><div className="mg-heading-actions"><Link className="mg-button" href="/attendance">Chấm công</Link>{canReadHr && <FilteredExcelButton disabled={loading||Boolean(error)||!data?.total} label="Tải Excel theo nhân sự" exportFile={exportAttendance}/>}</div></div>
-    <div className="mg-data-panel"><div className="mg-attendance-filters"><label>Cơ sở xem lịch sử<select aria-label="Cơ sở xem lịch sử chấm công" value={selectedStore} onChange={event=>{selectStore(event.target.value);setPage(1);}}><option value="all">Tất cả cơ sở được phép</option>{dataset?.stores.map(store=><option key={store.id} value={String(store.id)}>{store.name}</option>)}</select></label><label>Từ ngày<input aria-label="Từ ngày chấm công" type="date" value={from} onChange={event=>{setFrom(event.target.value);setPage(1);}}/></label><label>Đến ngày<input aria-label="Đến ngày chấm công" type="date" value={to} onChange={event=>{setTo(event.target.value);setPage(1);}}/></label><button type="button" className="mg-button" onClick={monthPreset}>Tháng này</button><span>{data?.total??'—'} lượt chấm công</span></div>
+    <div className="mg-page-heading"><div><div className="mg-eyebrow">NHÂN SỰ</div><h1>Lịch sử chấm công</h1></div><div className="mg-heading-actions"><Link className="mg-button" href="/attendance">Chấm công</Link>{canReview && <FilteredExcelButton disabled={loading||Boolean(error)||!data?.total} label="Tải Excel theo nhân sự" exportFile={exportAttendance}/>}</div></div>
+    <div className="mg-data-panel"><div className="mg-attendance-filters">{canReview && <label>Cơ sở xem lịch sử<select aria-label="Cơ sở xem lịch sử chấm công" value={selectedStore} onChange={event=>{selectStore(event.target.value);setPage(1);}}><option value="all">Tất cả cơ sở được phép</option>{dataset?.stores.map(store=><option key={store.id} value={String(store.id)}>{store.name}</option>)}</select></label>}<label>Từ ngày<input aria-label="Từ ngày chấm công" type="date" value={from} onChange={event=>{setFrom(event.target.value);setPage(1);}}/></label><label>Đến ngày<input aria-label="Đến ngày chấm công" type="date" value={to} onChange={event=>{setTo(event.target.value);setPage(1);}}/></label><button type="button" className="mg-button" onClick={monthPreset}>Tháng này</button><span>{data?.total??'—'} lượt chấm công</span></div>
     {error?<p className="mg-field-error" role="alert">{error}</p>:loading?<p className="mg-table-state" role="status">Đang tải bảng chấm công…</p>:<>
-      <div className="mg-attendance-mobile-list">{data?.rows.map(row=><article key={row.id} className="mg-attendance-history-card"><div className="mg-attendance-history-heading"><strong>{row.staff_name}</strong><small>#{row.id} · {new Date(row.clock_in_at).toLocaleDateString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})}</small></div><p>{row.store_name||'Chưa gắn cơ sở'} · {shiftLink(row)}{row.standard_credit!=null?' · '+shiftCreditLabel(row.standard_credit)+' công quy định':''}{row.scheduled_in?' · '+timeOnly(row.scheduled_in)+' – '+timeOnly(row.scheduled_out):''}{row.can_manage&&(row.in_gps_alert||row.out_gps_alert)&&<span style={{marginLeft:8,color:'#b91c1c',fontWeight:700}}>⚠ Lệch vị trí GPS (&gt;200m)</span>}</p><div className="mg-attendance-history-times"><span>Vào <b>{timeOnly(row.clock_in_at)}</b></span><span>Ra <b>{row.clock_out_at ? timeOnly(row.clock_out_at) : missingCheckout}</b></span><span className={row.late_minutes?'is-late':''}>Đi muộn <b>{lateLabel(row.late_minutes,row.shift_name)}</b></span><span className={row.early_leave_minutes?'is-late':''}>Về sớm <b>{earlyLabel(row.early_leave_minutes,row.clock_out_at,row.shift_name)}</b></span><span>Công thực tế <b>{attendanceCreditLabel(row)}</b>{row.credit_aggregated && ' · Tổng hợp cùng ca'}</span></div>{rowActions(row)}</article>)}{!data?.rows.length&&<p className="mg-table-state">Chưa có chấm công trong khoảng ngày đã chọn.</p>}</div>
-      <div className="mg-table-scroll mg-attendance-desktop-table" role="region" aria-label="Bảng chấm công" tabIndex={0}><table className="mg-table"><thead><tr>{['ID','Tên nhân viên','Ca làm','Giờ vào','Giờ ra','Đi muộn','Về sớm','Công thực tế','Thao tác'].map(label=><th scope="col" key={label}>{label}</th>)}</tr></thead><tbody>{data?.rows.map(row=><tr key={row.id}><td>#{row.id}</td><td><strong>{row.staff_name}</strong><small className="mg-attendance-store">{row.store_name||'Chưa gắn cơ sở'}</small>{row.can_manage&&(row.in_gps_alert||row.out_gps_alert)&&<small style={{display:'block',color:'#b91c1c',fontWeight:700}}>⚠ Lệch vị trí GPS (&gt;200m)</small>}</td><td>{shiftLink(row)}{row.standard_credit!=null&&<small className="mg-attendance-store">Công quy định: {shiftCreditLabel(row.standard_credit)}</small>}{row.scheduled_in&&<small className="mg-attendance-store">{timeOnly(row.scheduled_in)} – {timeOnly(row.scheduled_out)}</small>}</td><td>{formatDateTime(row.clock_in_at)}</td><td>{row.clock_out_at?formatDateTime(row.clock_out_at):missingCheckout}</td><td className={row.late_minutes?'is-late':''}>{lateLabel(row.late_minutes,row.shift_name)}</td><td className={row.early_leave_minutes?'is-late':''}>{earlyLabel(row.early_leave_minutes,row.clock_out_at,row.shift_name)}</td><td><strong>{attendanceCreditLabel(row)}</strong>{row.credit_aggregated && <small className="mg-attendance-store">Tổng hợp cùng ca</small>}</td><td>{rowActions(row)}</td></tr>)}{!data?.rows.length&&<tr><td colSpan={9}>Chưa có chấm công trong khoảng ngày đã chọn.</td></tr>}</tbody></table></div>
+      <div className="mg-attendance-mobile-list">{data?.rows.map(row=><article key={row.id} className="mg-attendance-history-card"><div className="mg-attendance-history-heading"><strong>{row.staff_name}</strong><small>#{row.id} · {new Date(row.clock_in_at).toLocaleDateString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})}</small></div><p>{row.store_name||'Chưa gắn cơ sở'} · {shiftLink(row)}{row.standard_credit!=null?' · '+shiftCreditLabel(row.standard_credit)+' công quy định':''}{row.scheduled_in?' · '+timeOnly(row.scheduled_in)+' – '+timeOnly(row.scheduled_out):''}{row.can_manage&&(row.in_gps_alert||row.out_gps_alert)&&<span style={{marginLeft:8,color:'#b91c1c',fontWeight:700}}>⚠ Lệch vị trí GPS (&gt;200m)</span>}</p><div className="mg-attendance-history-times"><span>Vào <b>{timeOnly(row.clock_in_at)}</b></span><span>Ra <b>{row.clock_out_at ? timeOnly(row.clock_out_at) : missingCheckout}</b></span><span className={row.late_minutes?'is-late':''}>Đi muộn <b>{lateLabel(row.late_minutes,row.shift_name)}</b></span><span className={row.early_leave_minutes?'is-late':''}>Về sớm <b>{earlyLabel(row.early_leave_minutes,row.clock_out_at,row.shift_name)}</b></span><span>Công thực tế <b>{attendanceCreditLabel(row)}</b>{row.credit_aggregated && ' · Tổng hợp cùng ca'}</span></div>{row.in_location?.note&&<p className="mg-attendance-punch-note">Ghi chú vào ca: {row.in_location.note}</p>}{row.out_location?.note&&<p className="mg-attendance-punch-note">Ghi chú ra ca: {row.out_location.note}</p>}{rowActions(row)}</article>)}{!data?.rows.length&&<p className="mg-table-state">Chưa có chấm công trong khoảng ngày đã chọn.</p>}</div>
+      <div className="mg-table-scroll mg-attendance-desktop-table" role="region" aria-label="Bảng chấm công" tabIndex={0}><table className="mg-table"><thead><tr>{['ID','Tên nhân viên','Ca làm','Giờ vào','Giờ ra','Đi muộn','Về sớm','Công thực tế','Thao tác'].map(label=><th scope="col" key={label}>{label}</th>)}</tr></thead><tbody>{data?.rows.map(row=><tr key={row.id}><td>#{row.id}</td><td><strong>{row.staff_name}</strong><small className="mg-attendance-store">{row.store_name||'Chưa gắn cơ sở'}</small>{row.can_manage&&(row.in_gps_alert||row.out_gps_alert)&&<small style={{display:'block',color:'#b91c1c',fontWeight:700}}>⚠ Lệch vị trí GPS (&gt;200m)</small>}</td><td>{shiftLink(row)}{row.standard_credit!=null&&<small className="mg-attendance-store">Công quy định: {shiftCreditLabel(row.standard_credit)}</small>}{row.scheduled_in&&<small className="mg-attendance-store">{timeOnly(row.scheduled_in)} – {timeOnly(row.scheduled_out)}</small>}</td><td>{formatDateTime(row.clock_in_at)}{row.in_location?.note&&<small className="mg-attendance-punch-note">Ghi chú: {row.in_location.note}</small>}</td><td>{row.clock_out_at?formatDateTime(row.clock_out_at):missingCheckout}{row.out_location?.note&&<small className="mg-attendance-punch-note">Ghi chú: {row.out_location.note}</small>}</td><td className={row.late_minutes?'is-late':''}>{lateLabel(row.late_minutes,row.shift_name)}</td><td className={row.early_leave_minutes?'is-late':''}>{earlyLabel(row.early_leave_minutes,row.clock_out_at,row.shift_name)}</td><td><strong>{attendanceCreditLabel(row)}</strong>{row.credit_aggregated && <small className="mg-attendance-store">Tổng hợp cùng ca</small>}</td><td>{rowActions(row)}</td></tr>)}{!data?.rows.length&&<tr><td colSpan={9}>Chưa có chấm công trong khoảng ngày đã chọn.</td></tr>}</tbody></table></div>
     </>}
     {data&&data.total>50&&<div className="mg-attendance-pagination"><button className="mg-button" disabled={loading||data.page<=1} onClick={()=>setPage(data.page-1)}>Trước</button><span>Trang {data.page}/{Math.ceil(data.total/50)}</span><button className="mg-button" disabled={loading||data.page>=Math.ceil(data.total/50)} onClick={()=>setPage(data.page+1)}>Sau</button></div>}</div>
     <p className="mg-attendance-hint">Giờ chấm công theo máy chủ (giờ Việt Nam). Nhân viên xem lịch sử của mình; người có quyền nhân sự xem theo phạm vi cơ sở.</p>
@@ -382,9 +384,7 @@ function ClockCapture({action,initialLocation,onClose,onSaved}:{action:'in'|'out
   return <Dialog className="mg-attendance-capture-dialog" title={showLocationHelp?'Bật vị trí để chấm công':action==='in'?'Chấm công vào ca':'Chấm công ra ca'} onClose={()=>{if(!lock.current)onClose();}}>
     <div className="mg-dialog-body mg-attendance-capture" hidden={showLocationHelp}>
       <video ref={video} autoPlay playsInline muted onLoadedData={()=>setCameraReady(true)} aria-label="Camera chấm công"/>
-      <button type="button" className="mg-button" disabled={!cameraReady||busy} onClick={capture}><Camera size={17}/>{photo?'Chụp lại':'Chụp ảnh'}</button>
       {preview&&<img src={preview} alt="Ảnh chấm công vừa chụp"/>}
-      {error&&<p className="mg-field-error" role="alert">{error}</p>}
     </div>
     {showLocationHelp && <div className="mg-dialog-body">
       <p>Safari đang chặn vị trí. Hãy cấp quyền cho Himoto rồi kiểm tra lại ngay trong cửa sổ này.</p>
@@ -397,10 +397,15 @@ function ClockCapture({action,initialLocation,onClose,onSaved}:{action:'in'|'out
       {(photo || note) && <p>Ảnh đã chụp và ghi chú đã nhập được giữ trong cửa sổ này.</p>}
     </div>}
     <div className="mg-dialog-footer mg-attendance-capture-footer">
+      {!showLocationHelp && <div className="mg-attendance-photo-actions">
+        <button type="button" className="mg-button" disabled={!cameraReady||busy} onClick={capture}><Camera size={17}/>{photo?'Chụp lại ảnh':'Chụp ảnh'}</button>
+        <span role="status">{photo?'Đã chụp ảnh.':'Cần chụp ảnh để xác nhận chấm công.'}</span>
+      </div>}
       {!showLocationHelp && <label className="mg-field mg-attendance-capture-note">
         Ghi chú (không bắt buộc)
         <textarea rows={2} value={note} maxLength={500} disabled={busy} onChange={event=>setNote(event.target.value)} />
       </label>}
+      {error&&<p className="mg-field-error" role="alert">{error}</p>}
       {checkingLocation ? <p role="status">Đang lấy vị trí. Nếu trình duyệt hỏi quyền vị trí, hãy chọn Cho phép.</p>
         : locationError ? <p className="mg-field-error" role="alert">{permissionDenied ? 'Chưa có quyền vị trí.' : locationError.message}</p>
         : <p role="status">Đã lấy được vị trí.</p>}

@@ -14,7 +14,11 @@ async function main() {
   assert.throws(()=>attendancePhotoMime(Buffer.from('not an image')));
   assert.equal(requestPermission('/api/auth/attendance','POST'),null);
   assert.equal(attendanceScope({id:1,access_role:'branch_staff',store_id:2}).reviewer,false);
-  assert.deepEqual(attendanceScope({id:1,access_role:'branch_manager',permissions:['hr.read'],store_id:2}),{reviewer:true,all:false,store:2});
+  const reviewer = {id:1,access_role:'hr',permissions:['hr.read'],store_id:2};
+  assert.equal(attendanceScope(reviewer).reviewer,false);
+  assert.equal(attendanceScope({id:1,access_role:'admin'}).reviewer,false);
+  assert.equal(attendanceScope({id:1,access_role:'admin',has_hr_position:true}).reviewer,true);
+  assert.deepEqual(attendanceScope({...reviewer,has_hr_position:true}),{reviewer:true,all:false,store:2});
   const compare = (code, clockIn, clockOut) => compareRegisteredAttendance(
     {work_date:'2026-11-05',shift_code:code}, clockIn, clockOut,
   );
@@ -74,11 +78,12 @@ async function main() {
     assert.equal((await recordAttendance(db,user,'in',into,photo,location)).replayed,true);
     await assert.rejects(recordAttendance(db,user,'in','33333333-3333-4333-8333-333333333333',photo,location),e=>e.status===409);
     await assert.rejects(recordAttendance(db,user,'out',into,photo,location),e=>e.status===409);
-    assert.equal((await recordAttendance(db,user,'out',out,photo,location)).id,first.id);
+    assert.equal((await recordAttendance(db,user,'out',out,photo,location,'  Ghi chú ra ca  ')).id,first.id);
     assert.equal((await recordAttendance(db,user,'out',out,photo,location)).replayed,true);
     await assert.rejects(recordAttendance(db,user,'out','44444444-4444-4444-8444-444444444444',photo,location),e=>e.status===409);
     const row=(await client.query('SELECT * FROM qa_attendance')).rows[0];
     assert(row.clock_out_at>=row.clock_in_at);assert.equal(row.staff_name,staff.full_name);assert(row.in_photo.equals(photo));assert(row.out_photo.equals(photo));
+    assert.equal(row.out_location.note,'Ghi chú ra ca');
     await client.query(`CREATE TEMP TABLE qa_attendance_registrations (LIKE himoto.staff_shift_registrations INCLUDING ALL) ON COMMIT DROP;
       INSERT INTO qa_attendance_registrations(staff_id,store_id,work_date,shift_code,created_by,updated_by)
       VALUES (900001,2,'2026-11-04','G3',900001,900001),(900001,2,'2026-11-05','S',900001,900001),(900002,2,'2026-11-06','G2',900001,900001);`);
@@ -91,6 +96,7 @@ async function main() {
     const hr = {...manager,access_role:'hr',scope_all:true};
     const admin = {...user,access_role:'admin'};
     const original = {id:first.id,original_in:row.clock_in_at.toISOString(),original_out:row.clock_out_at.toISOString()};
+    await assert.rejects(manageAttendance(db,{...admin,id:900002},'DELETE',original),e=>e.status===404);
     const correction = {...original,clock_in_at:new Date(row.clock_in_at.getTime()-60000).toISOString(),clock_out_at:original.original_out};
     for (const nonAdmin of [user,manager,hr]) {
       await assert.rejects(manageAttendance(db,nonAdmin,'DELETE',original),e=>e.status===403);

@@ -17,6 +17,7 @@ import { loadAttendancePending, storeAttendancePending, clearAttendancePending, 
 import type { RecordMediaPhoto } from '@/lib/record-media-photo';
 import { supportFormData } from '@/lib/support-form-data';
 import { dutyToday } from '../../../shared/mobile-duty-roster';
+import { canReviewAttendance } from '../../../shared/access-permissions';
 import type { AttendanceLocation, AttendanceEntry } from '../../../shared/mobile-support';
 import { AttendanceEdit } from './attendance-edit';
 import { FilteredListExport } from './filtered-list-export';
@@ -48,9 +49,11 @@ export function AttendanceScreen({ historyOnly = false }: { historyOnly?: boolea
   }
   useEffect(() => { currentPhoto.current = photo; }, [photo]);
   const canReview = session!.user.permissions.includes('hr.read');
+  const canReviewOther = canReviewAttendance(session!.user);
+  const historyStore = canReviewOther ? store : 'all';
   const [editing, setEditing] = useState<AttendanceEntry | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const query = useQuery({ queryKey: ['attendance', session!.user.id, session!.user.storeId, session!.user.permissions.join(','), historyOnly, from, to, store, page], queryFn: async ({ signal }) => historyOnly ? api!.attendance(new URLSearchParams({ from, to, store, page: String(page) }).toString(), signal) : { ...await api!.attendanceOverview(signal), rows: [] as AttendanceEntry[], total: 0, page: 1 }, enabled: !!api && (!historyOnly || from <= to) });
+  const query = useQuery({ queryKey: ['attendance', session!.user.id, session!.user.storeId, session!.user.permissions.join(','), canReviewOther, historyOnly, from, to, historyStore, page], queryFn: async ({ signal }) => historyOnly ? api!.attendance(new URLSearchParams({ from, to, store: historyStore, page: String(page) }).toString(), signal) : { ...await api!.attendanceOverview(signal), rows: [] as AttendanceEntry[], total: 0, page: 1 }, enabled: !!api && (!historyOnly || from <= to) });
   const { server_now: serverNow } = query.data ?? {};
   const { dataUpdatedAt, refetch } = query;
   const pendingIsFromPriorDay = Boolean(pending && serverNow &&
@@ -226,8 +229,8 @@ export function AttendanceScreen({ historyOnly = false }: { historyOnly?: boolea
               <View style={{ flex: 1 }}><DateField label="Từ ngày" value={from} onChange={value => { setFrom(value); setPage(1); }} /></View>
               <View style={{ flex: 1 }}><DateField label="Đến ngày" value={to} onChange={value => { setTo(value); setPage(1); }} /></View>
             </View>
-            {canReview && <ChoiceField label="Cơ sở chấm công" value={store} searchable choices={[{ value: 'all', label: 'Tất cả cơ sở được phép' }, ...(workspace.data?.stores || []).map(item => ({ value: String(item.id), label: item.name }))]} onChange={value => { setStore(value); setPage(1); }} />}
-            {query.data?.rows.some(row => row.can_manage) && <FilteredListExport kind="attendance" label="Tải Excel theo nhân sự" filters={new URLSearchParams({ from, to, store }).toString()} disabled={query.isFetching || query.isError} />}
+            {canReviewOther && <ChoiceField label="Cơ sở chấm công" value={store} searchable choices={[{ value: 'all', label: 'Tất cả cơ sở được phép' }, ...(workspace.data?.stores || []).map(item => ({ value: String(item.id), label: item.name }))]} onChange={value => { setStore(value); setPage(1); }} />}
+            {canReviewOther && Boolean(query.data?.total) && <FilteredListExport kind="attendance" label="Tải Excel theo nhân sự" filters={new URLSearchParams({ from, to, store: historyStore }).toString()} disabled={query.isFetching || query.isError} />}
             {from > to && <InlineError message="Ngày kết thúc phải bằng hoặc sau ngày bắt đầu." />}
           </Card>}
         </>}

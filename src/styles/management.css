@@ -4841,6 +4841,8 @@
 .mg-attendance-capture img { max-height:160px; }
 .mg-attendance-capture-footer { flex-wrap:wrap; }
 .mg-attendance-capture-footer > p { flex-basis:100%; margin:0; }
+.mg-attendance-photo-actions { display:flex; align-items:center; gap:8px; flex-basis:100%; }
+.mg-attendance-punch-note { display:block; margin-top:4px; overflow-wrap:anywhere; white-space:pre-wrap; }
 .mg-attendance-capture-note { flex-basis:100%; min-width:0; }
 @media (max-width:768px) {
   .mg-attendance-capture-dialog[open] { display:flex; flex-direction:column; overflow:hidden; }

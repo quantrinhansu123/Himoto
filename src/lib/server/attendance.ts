@@ -1,14 +1,13 @@
 import 'server-only';
 import type { PoolClient } from 'pg';
 import type { SessionUser } from './management-session';
-import { hasPermission, isAdminAccount } from '@/lib/management/permissions';
+import { canReviewAttendance, isAdminAccount } from '@/lib/management/permissions';
 import { attendanceShift } from '@/lib/management/attendance-shifts';
 import { REGISTRATION_SHIFTS } from '@/lib/management/shift-registration';
 
 type Database = Pick<PoolClient, 'query'>;
 export const ATTENDANCE_ON_LOCAL_DATE = "(clock_in_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date=($2::timestamptz AT TIME ZONE 'Asia/Ho_Chi_Minh')::date";
 export class AttendanceError extends Error { constructor(message: string, public status = 400) { super(message); } }
-export const canReviewAttendance = (user: SessionUser) => hasPermission(user, 'hr.read');
 export function attendanceScope(user: SessionUser) {
   // These queries use the owner connection, so every read includes this explicit scope.
   return { reviewer: canReviewAttendance(user), all: isAdminAccount(user) || user.scope_all === true, store: user.store_id ?? null };
@@ -29,7 +28,8 @@ export async function manageAttendance(db: Database, user: SessionUser, method: 
   }
   const body = input as Record<string, unknown>;
   const current = (await db.query(`SELECT clock_in_at,clock_out_at,clock_timestamp() AS now
-    FROM himoto.management_staff_attendance WHERE id=$1 FOR UPDATE`,[body.id])).rows[0];
+    FROM himoto.management_staff_attendance WHERE id=$1 AND (actor_id=$2 OR $3::boolean) FOR UPDATE`,
+    [body.id,user.id,canReviewAttendance(user)])).rows[0];
   if (!current) throw new AttendanceError('Không tìm thấy lượt chấm công.',404);
   if (current.clock_in_at.toISOString() !== body.original_in || (current.clock_out_at?.toISOString() ?? null) !== body.original_out) {
     throw new AttendanceError('Lượt chấm công đã thay đổi. Đóng cửa sổ và tải lại trước khi thử lại.',409);
