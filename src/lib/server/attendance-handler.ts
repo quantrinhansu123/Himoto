@@ -159,7 +159,7 @@ export async function handleAttendance(request: NextRequest, user: SessionUser) 
     const photo = Buffer.from(await file.arrayBuffer()); attendancePhotoMime(photo);
     const location = parseAttendanceLocation(String(form.get('location') || ''));
     await client.query('BEGIN');
-    const data = await recordAttendance(client,user,String(form.get('action')),String(form.get('request_id')),photo,location);
+    const data = await recordAttendance(client,user,String(form.get('action')),String(form.get('request_id')),photo,location,form.get('note'));
     let gpsAnomaly = location.accuracy > GPS_ALERT_RADIUS_METERS;
     if (!gpsAnomaly && !data.replayed) {
       const punchedStore = (await client.query('SELECT store_id FROM himoto.management_staff_attendance WHERE id=$1', [data.id])).rows[0]?.store_id;

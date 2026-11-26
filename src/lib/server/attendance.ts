@@ -107,8 +107,12 @@ export async function attendanceStaff(db: Database, user: SessionUser) {
   if (result.rows.length !== 1) return null;
   return result.rows[0];
 }
-export async function recordAttendance(db: Database, user: SessionUser, action: string, requestId: string, photo: Buffer, location: ReturnType<typeof parseAttendanceLocation>) {
+export async function recordAttendance(db: Database, user: SessionUser, action: string, requestId: string, photo: Buffer, location: ReturnType<typeof parseAttendanceLocation>, rawNote: unknown = null) {
   if (!['in','out'].includes(action) || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId)) throw new AttendanceError('Lần chấm công không hợp lệ.');
+  if(rawNote!==null&&typeof rawNote!=='string')throw new AttendanceError('Ghi chú chấm công không hợp lệ.');
+  const note=typeof rawNote==='string'?rawNote.trim():'';
+  if(note.length>500)throw new AttendanceError('Ghi chú chấm công tối đa 500 ký tự.');
+  const evidence=JSON.stringify({...location,...(note&&{note})});
   const mime = attendancePhotoMime(photo);
   const staff = await attendanceStaff(db,user);
   if (!staff) throw new AttendanceError('Tài khoản chưa liên kết với một nhân viên đang hoạt động. Liên hệ quản lý nhân sự.',409);
@@ -126,11 +130,11 @@ export async function recordAttendance(db: Database, user: SessionUser, action: 
   if (action === 'in') {
     if (opened.rows.length) throw new AttendanceError('Bạn đã vào ca. Bấm Ra ca trước khi bắt đầu ca mới.',409);
     const result = await db.query(`INSERT INTO himoto.management_staff_attendance(staff_id,actor_id,store_id,staff_name,in_request,in_photo,in_mime,in_location,clock_in_at)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9) RETURNING id`,[staff.id,user.id,staff.store_id,staff.full_name,requestId,photo,mime,JSON.stringify(location),now]);
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9) RETURNING id`,[staff.id,user.id,staff.store_id,staff.full_name,requestId,photo,mime,evidence,now]);
     return { id: Number(result.rows[0].id) };
   }
   if (!opened.rows.length) throw new AttendanceError('Bạn chưa có ca đang mở trong ngày hôm nay.',409);
-  await db.query(`UPDATE himoto.management_staff_attendance SET clock_out_at=$6,out_request=$2,out_photo=$3,out_mime=$4,out_location=$5::jsonb WHERE id=$1`,[opened.rows[0].id,requestId,photo,mime,JSON.stringify(location),now]);
+  await db.query(`UPDATE himoto.management_staff_attendance SET clock_out_at=$6,out_request=$2,out_photo=$3,out_mime=$4,out_location=$5::jsonb WHERE id=$1`,[opened.rows[0].id,requestId,photo,mime,evidence,now]);
   return { id: Number(opened.rows[0].id) };
 }
 

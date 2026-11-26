@@ -19,7 +19,7 @@ import { BrowserLocationError, requestBrowserLocation, type BrowserLocation as L
 
 type NearestStore = {store_name:string;distance_m:number};
 type InitialClockLocation = Location | Error;
-type Attendance = {in_nearest_store?:NearestStore|null;out_nearest_store?:NearestStore|null;id:number;staff_id:number|string;staff_name:string;store_name:string|null;store_from_profile:boolean;clock_in_at:string;clock_out_at:string|null;in_location:Location;out_location:Location|null;has_out_photo:boolean;has_store_location:boolean;in_distance_m:number|null;out_distance_m:number|null;in_gps_alert?:boolean;out_gps_alert?:boolean;shift_name:string|null;scheduled_in:string|null;scheduled_out:string|null;late_minutes:number|null;early_leave_minutes:number|null;standard_credit:number|null;earned_credit:number|null;credit_aggregated:boolean;credit_on_other_row:boolean;can_manage:boolean};
+type Attendance = {in_nearest_store?:NearestStore|null;out_nearest_store?:NearestStore|null;id:number;staff_id:number|string;staff_name:string;store_name:string|null;store_from_profile:boolean;clock_in_at:string;clock_out_at:string|null;in_location:Location & {note?:string};out_location:(Location & {note?:string})|null;has_out_photo:boolean;has_store_location:boolean;in_distance_m:number|null;out_distance_m:number|null;in_gps_alert?:boolean;out_gps_alert?:boolean;shift_name:string|null;scheduled_in:string|null;scheduled_out:string|null;late_minutes:number|null;early_leave_minutes:number|null;standard_credit:number|null;earned_credit:number|null;credit_aggregated:boolean;credit_on_other_row:boolean;can_manage:boolean};
 type Summary = {staff:{name:string;store_id:number|null;store_name:string|null}|null;open:{id:number;clock_in_at:string}|null;latest:{clock_in_at:string;clock_out_at:string|null}|null;shift:{shift_name:string;starts_at:string;ends_at:string}|null;shift_code:string|null;late_minutes:number|null;early_leave_minutes:number|null;server_now:string};
 type Report = {rows:Attendance[];total:number;page:number};
 async function responseData<T>(response:Response):Promise<T> {
@@ -64,6 +64,7 @@ function Evidence({row,side}:{row:Attendance;side:'in'|'out'}) {
               !row.has_store_location ? (row.store_name?'Cơ sở chưa cấu hình tọa độ':'Lượt chấm công chưa có cơ sở') : 'Chưa có GPS để tính'}
           </dd>
         </>}
+        {location?.note && <><dt>Ghi chú</dt><dd>{location.note}</dd></>}
       </dl>
     </> : <p className="mg-attendance-evidence-empty">{missingCheckout}</p>}
   </section>;
@@ -326,7 +327,7 @@ function ClockCapture({action,initialLocation,onClose,onSaved}:{action:'in'|'out
   const video=useRef<HTMLVideoElement>(null),stream=useRef<MediaStream|null>(null),lock=useRef(false),requestId=useRef(crypto.randomUUID());
   const [cameraReady,setCameraReady]=useState(false),[photo,setPhoto]=useState<Blob|null>(null),[preview,setPreview]=useState(''),[locating,setLocating]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
   const [clockLocation,setClockLocation]=useState<InitialClockLocation|null>(null);
-  const [deniedRetries,setDeniedRetries]=useState(0);
+  const [note,setNote]=useState('');
   useEffect(()=>{let current=true;
     void initialLocation.then(location => {
       if(!current)return;
@@ -349,15 +350,9 @@ function ClockCapture({action,initialLocation,onClose,onSaved}:{action:'in'|'out
     try {
       const location = await requestBrowserLocation();
       setClockLocation(location);
-      setDeniedRetries(0);
       return location;
     } catch (cause) {
       setClockLocation(cause instanceof Error ? cause : new Error('Chưa lấy được vị trí. Vui lòng thử lại.'));
-      if(cause instanceof BrowserLocationError && cause.reason==='permission-denied') {
-        setDeniedRetries(count=>count+1);
-      } else {
-        setDeniedRetries(0);
-      }
       return null;
     } finally {
       setLocating(false);
@@ -374,7 +369,7 @@ function ClockCapture({action,initialLocation,onClose,onSaved}:{action:'in'|'out
     try {
       const location = Math.abs(Date.now()-clockLocation.timestamp)<60_000 ? clockLocation : await retryLocation();
       if(!location)return;
-      const form=new FormData();form.set('action',action);form.set('request_id',requestId.current);form.set('photo',photo,'cham-cong.jpg');form.set('location',JSON.stringify(location));await responseData(await fetch('/api/auth/attendance',{method:'POST',body:form}));onSaved();
+      const form=new FormData();form.set('action',action);form.set('request_id',requestId.current);form.set('photo',photo,'cham-cong.jpg');form.set('location',JSON.stringify(location));form.set('note',note.trim());await responseData(await fetch('/api/auth/attendance',{method:'POST',body:form}));onSaved();
     }
     catch(cause){setError(cause instanceof Error?cause.message:'Chưa xác nhận được chấm công. Giữ màn hình này để thử lại cùng lần chấm.');}
     finally {lock.current=false;setBusy(false);}
@@ -382,7 +377,7 @@ function ClockCapture({action,initialLocation,onClose,onSaved}:{action:'in'|'out
   const locationError = clockLocation instanceof Error ? clockLocation : null;
   const permissionDenied = locationError instanceof BrowserLocationError && locationError.reason==='permission-denied';
   const checkingLocation = locating || !clockLocation;
-  const showLocationHelp = permissionDenied && deniedRetries>0;
+  const showLocationHelp = permissionDenied;
 
   return <Dialog className="mg-attendance-capture-dialog" title={showLocationHelp?'Bật vị trí để chấm công':action==='in'?'Chấm công vào ca':'Chấm công ra ca'} onClose={()=>{if(!lock.current)onClose();}}>
     <div className="mg-dialog-body mg-attendance-capture" hidden={showLocationHelp}>
@@ -392,19 +387,22 @@ function ClockCapture({action,initialLocation,onClose,onSaved}:{action:'in'|'out
       {error&&<p className="mg-field-error" role="alert">{error}</p>}
     </div>
     {showLocationHelp && <div className="mg-dialog-body">
-      <p>Trình duyệt đã từ chối yêu cầu lấy vị trí. Trên iPhone, bạn có thể bật lại ngay cho trang này.</p>
+      <p>Safari đang chặn vị trí. Hãy cấp quyền cho Himoto rồi kiểm tra lại ngay trong cửa sổ này.</p>
       <ol>
         <li>Trong Safari, chạm vào biểu tượng menu bên trái thanh địa chỉ. Chọn <strong>Cài đặt trang web</strong> (trong mục <strong>Thêm</strong> nếu có), rồi chọn <strong>Vị trí → Cho phép</strong>.</li>
-        <li>Nếu vẫn bị chặn, mở <strong>Cài đặt iPhone → Quyền riêng tư &amp; Bảo mật → Dịch vụ định vị</strong>. Bật định vị và chọn <strong>Trang web Safari → Khi dùng ứng dụng</strong>.</li>
+        <li>Nếu vẫn bị chặn, mở <strong>Cài đặt iPhone → Quyền riêng tư &amp; Bảo mật → Dịch vụ định vị</strong>. Bật dịch vụ định vị, chọn <strong>Trang web Safari → Khi dùng ứng dụng</strong> và bật <strong>Vị trí chính xác</strong>.</li>
         <li>Quay lại màn hình này và bấm <strong>Kiểm tra lại vị trí</strong>.</li>
       </ol>
-      {photo && <p>Ảnh bạn vừa chụp vẫn được giữ trong lần chấm công này.</p>}
+      <p><a href="https://support.apple.com/guide/iphone/browse-the-web-privately-iphb01fc3c85/ios" target="_blank" rel="noopener noreferrer">Mở hướng dẫn cài đặt vị trí Safari của Apple</a></p>
+      {(photo || note) && <p>Ảnh đã chụp và ghi chú đã nhập được giữ trong cửa sổ này.</p>}
     </div>}
     <div className="mg-dialog-footer mg-attendance-capture-footer">
+      {!showLocationHelp && <label className="mg-field mg-attendance-capture-note">
+        Ghi chú (không bắt buộc)
+        <textarea rows={2} value={note} maxLength={500} disabled={busy} onChange={event=>setNote(event.target.value)} />
+      </label>}
       {checkingLocation ? <p role="status">Đang lấy vị trí. Nếu trình duyệt hỏi quyền vị trí, hãy chọn Cho phép.</p>
-        : locationError ? <p className="mg-field-error" role="alert">{permissionDenied
-          ? showLocationHelp ? `Lần kiểm tra ${deniedRetries}: trình duyệt vẫn chặn vị trí.` : 'Chưa có quyền vị trí. Bấm thử lại để yêu cầu trình duyệt hoặc xem cách bật quyền.'
-          : locationError.message}</p>
+        : locationError ? <p className="mg-field-error" role="alert">{permissionDenied ? 'Chưa có quyền vị trí.' : locationError.message}</p>
         : <p role="status">Đã lấy được vị trí.</p>}
       <button type="button" className="mg-button" disabled={busy} onClick={onClose}>Đóng</button>
       {locationError && !busy

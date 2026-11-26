@@ -167,6 +167,7 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
     <div className="mg-workspace"><span className="mg-workspace-symbol"><Building2 size={19} /></span><div><strong>HIMOTO Workspace</strong><small>Quản lý vận hành</small></div></div>
     <p className="mg-nav-caption">DANH MỤC QUẢN LÝ</p>
     <nav aria-label="Điều hướng quản lý">{navigation.map(item => {
+      if ('links' in item && item.id === 'hr' && user?.has_hr_position !== true) return null;
       if (!('links' in item)) return visibleNavigation.includes(item) ? renderNavLink(item, iconsOnly) : null;
       const links = item.links.filter(link => visibleNavigation.includes(link));
       if (!links.length) return null;

@@ -36,11 +36,18 @@ export async function patchCollectionFollowup(request:NextRequest) {
   }finally{client?.release();}
 }
 
-export async function writeCollectionFollowup(db:Pick<PoolClient,'query'>,actor:Pick<DataAccess,'scope_all'|'store_id'|'id'>,input:ReturnType<typeof parseCollectionFollowup>) {
+export async function writeCollectionFollowup(db:Pick<PoolClient,'query'>,actor:Pick<DataAccess,'scope_all'|'store_id'|'id'>&Partial<Pick<DataAccess,'operation'>>,input:ReturnType<typeof parseCollectionFollowup>) {
   const {order_id,revision,...snapshot}=input;
   const order=(await db.query('SELECT id,store_id FROM himoto.orders WHERE id=$1 AND deleted_at IS NULL FOR UPDATE',[order_id])).rows[0];
   if(!order)throw new CollectionFollowupError('Không tìm thấy hợp đồng trong phạm vi.',404);
   if(!actor.scope_all&&Number(order.store_id)!==actor.store_id)throw new CollectionFollowupError('Hợp đồng ngoài PGD được phân công.',403);
+  if(actor.operation==='collection_note'&&Number(order.store_id)!==actor.store_id){
+    const [{followup}]=await readCollectionFollowups(db,[order_id]);
+    if(followup.revision!==revision)throw new CollectionFollowupError('Ghi chú đã thay đổi. Tải lại trước khi lưu.',409);
+    if(snapshot.contact_status!==followup.contact_status||snapshot.handling_status!==followup.handling_status||snapshot.customer_condition!==followup.customer_condition){
+      throw new CollectionFollowupError('Ngoài PGD được phân công, tài khoản chỉ có thể sửa nội dung ghi chú.',403);
+    }
+  }
   const values=[order_id,order.store_id,snapshot.contact_status,snapshot.handling_status,snapshot.customer_condition,snapshot.notes,actor.id,revision];
   const updated=revision===0
     ?await db.query(`INSERT INTO himoto.management_collection_followups(order_id,store_id,contact_status,handling_status,customer_condition,notes,updated_by)

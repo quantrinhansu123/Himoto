@@ -8,12 +8,12 @@ import { ADMIN_PERMISSIONS, ACCESS_PERMISSIONS, canRecordContractPayment, canSet
 import { himotoPool, ownerDatabase } from './himoto-database';
 import { dataAccess } from './access-context';
 import { logSessionUnavailable, retrySessionRead } from './session-read';
-import { hasLeaderPosition } from '../../../shared/staff-positions';
+import { hasLeaderPosition, staffRoles } from '../../../shared/staff-positions';
 import { failureResponse } from './public-failure';
 
 export const SESSION_COOKIE = 'himoto_management_session';
 export const SESSION_SECONDS = 8 * 60 * 60;
-export type SessionUser = { id: number; name: string; email: string; role: string; role_slug: string; access_role?:string; permissions?:string[]; store_id?:number|null; store_kind?:string|null; scope_all?:boolean;scope_all_read?:boolean;scope_all_contracts_read?:boolean;scope_all_operations?:boolean;password_version?:number };
+export type SessionUser = { id: number; name: string; email: string; role: string; role_slug: string; access_role?:string; permissions?:string[]; store_id?:number|null; store_kind?:string|null; scope_all?:boolean;scope_all_read?:boolean;scope_all_contracts_read?:boolean;scope_all_operations?:boolean;password_version?:number;has_hr_position?:boolean };
 type Account = { staff_positions?: string[]; id: string | number; name: string; email: string; password?: string; status: string; role: string; role_id: string | number; role_slug: string | null; access_role?:string; permissions?:string[]; access_store_id?:string|number|null; store_kind?:string|null; ownership_store_id?:string|number|null; scope_all?:boolean; scope_all_read?:boolean; scope_all_operations?:boolean; access_enabled?:boolean;management_password_version?:number };
 type Database = Pick<typeof himotoPool, 'query'>;
 export { canRecordContractPayment, isAdminAccount };
@@ -69,6 +69,7 @@ function safeUser(account: Account): SessionUser {
     scope_all:ownershipManager?false:admin||(!account.access_role)||['headquarters_sales','headquarters_debt'].includes(account.access_role)||account.scope_all===true,
     ...(account.staff_positions?.some(hasLeaderPosition)?{scope_all_contracts_read:true}:{}),
     ...(account.scope_all_read===true?{scope_all_read:true}:{}),
+    ...(account.staff_positions?.some(position=>staffRoles(position).includes('HCNS'))?{has_hr_position:true}:{}),
     ...(account.scope_all_operations===true?{scope_all_operations:true}:{}),
     ...(account.management_password_version?{password_version:Number(account.management_password_version)}:{}) };
 }
