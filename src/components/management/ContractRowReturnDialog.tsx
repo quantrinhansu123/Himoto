@@ -266,7 +266,7 @@ export function ContractRowReturnDialog({ contractId, contractCode = '',initialQ
           {!contractCode && <p className="mg-composer-hint">Tìm theo một biển số sẽ hiện các xe cùng hợp đồng. Tích chọn những xe khách thực tế trả.</p>}
           <h3>1. Xe trả và phí thực tế</h3>
           {openRows.length>1&&<p className="mg-composer-hint">Chỉ tích xe khách thực tế trả. Xe chưa chọn tiếp tục thuê; trả từng xe không tự giảm doanh số tổng của hợp đồng.</p>}
-          <div className="mg-form-grid mg-contract-grid-two">
+          <div className="mg-form-grid mg-contract-grid-two mg-return-timing">
             <div className="mg-field"><label htmlFor="contract-returned-at">Ngày giờ khách trả thực tế (24h)<span aria-hidden="true"> *</span></label>
               <DateTime24Controls id="contract-returned-at" label="Ngày giờ khách trả thực tế" value={returnedAt} onChange={changeReturnedAt}
                 error={error === futureReturnError} describedBy={error === futureReturnError ? 'contract-returned-at-error' : undefined} />

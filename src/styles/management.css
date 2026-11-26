@@ -2373,6 +2373,9 @@
 .mg-time24 { display: flex; align-items: center; gap: 4px; }
 .mg-time24 select { min-width: 0; flex: 1 1 0; padding: 8px 4px 8px 10px !important; font-variant-numeric: tabular-nums; }
 @media (max-width: 600px) { .mg-datetime24 { grid-template-columns: minmax(0, 1fr); } .mg-time24 { width: 164px; } }
+.mg-return-timing .mg-datetime24 { display: flex; flex-wrap: wrap; }
+.mg-return-timing .mg-datetime24 > input { flex: 1 1 140px; min-width: 0; }
+.mg-return-timing .mg-time24 { flex: 0 0 164px; max-width: 100%; }
 .mg-vietnam-date {
   position: relative;
   display: flex;
