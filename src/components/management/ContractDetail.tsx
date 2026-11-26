@@ -71,7 +71,7 @@ import { FilteredExcelButton } from './FilteredExcelButton';
 
 export type ContractVersionPrint = { end_date: string | null; total_amount: number | null; paid_amount: number | null };
 
-export function ContractDetail({ row, onClose, onQr,onReminder,onPrint,onEditDraft,onEditIssued,onHandover, onPrintVersion, onPayment, onReturn, onRenew, onVehicleChange, onBatteryRent }: { row: ManagementRow; onClose: () => void; onQr?:()=>void; onReminder?:()=>void; onPrint: () => void;onEditDraft?:()=>void;onEditIssued?:()=>void;onHandover?:()=>void; onPrintVersion?: (version: ContractVersionPrint) => void; onPayment?: (purpose?: PaymentPurpose) => void; onReturn?: () => void; onRenew?: () => void; onVehicleChange?: () => void; onBatteryRent?: () => void }) {
+export function ContractDetail({ row, onClose, onQr,onReminder,onPrint,onEditDraft,onEditIssued,onRentalTerms,onHandover, onPrintVersion, onPayment, onReturn, onRenew, onVehicleChange, onBatteryRent }: { row: ManagementRow; onClose: () => void; onQr?:()=>void; onReminder?:()=>void; onPrint: () => void;onEditDraft?:()=>void;onEditIssued?:()=>void;onRentalTerms?:()=>void;onHandover?:()=>void; onPrintVersion?: (version: ContractVersionPrint) => void; onPayment?: (purpose?: PaymentPurpose) => void; onReturn?: () => void; onRenew?: () => void; onVehicleChange?: () => void; onBatteryRent?: () => void }) {
   const { dataset, source, can, accessUser, invalidateData, notify } = useManagement();
   const [lifecycleOverride,setLifecycleOverride]=useState<Partial<ManagementRow>>({});
   const [badDebtCloseOpen,setBadDebtCloseOpen]=useState(false);
@@ -203,7 +203,9 @@ export function ContractDetail({ row, onClose, onQr,onReminder,onPrint,onEditDra
           ['Số tiền đặt cọc', money(pricing.deposit_amount)], ['Hình thức đặt cọc', text(pricing.deposit_payment_method)],
           ['Cọc đã thu', money(depositPaid)], ['Đã trả cọc', money(depositRefunded)], ['Cọc đang giữ', money(depositHeld)],
         ])}</div>
-        <div className="mg-contract-cost-section"><h3>Phí thuê xe</h3>{fields([
+        <div className="mg-contract-cost-section"><h3>Phí thuê xe</h3>
+          {onRentalTerms && <button type="button" className="mg-button" onClick={onRentalTerms}><Pencil size={16}/>Sửa giá thuê</button>}
+          {fields([
           ['Gói thuê', text(pricing.package_name)], ['Đơn giá áp dụng', money(pricing.unit_price)],
           [paymentMismatch ? 'Tiền hợp đồng đang lưu' : 'Tổng phí thuê xe', money(row.total_amount ?? pricing.total_amount)], ['Phát sinh trả xe (+ trễ / − trả sớm)', money(row.return_adjustment_amount)],
           [paymentMismatch ? 'Đã thu theo số tổng hợp hợp đồng' : 'Đã thu tiền thuê', money(row.paid_amount)], [paymentMismatch ? 'Còn thiếu tiền thuê (cần đối chiếu)' : 'Còn thiếu tiền thuê', paymentMismatch || row.total_amount == null || row.paid_amount == null ? '—' : money(Math.max(Number(row.total_amount) - Number(row.paid_amount), 0))],

@@ -16,7 +16,7 @@ export function RentalTermsEditor({id,onClose,onSaved}:{id:number;onClose:()=>vo
   useEffect(()=>{const controller=new AbortController();void rentalTermsRequest(id,undefined,controller.signal).then(data=>{setState(data);setTotal(String(data.total_amount));select(data,String(data.items.find(i=>!i.completed_at)?.id||data.items[0]?.id||''));}).catch(cause=>{if(!controller.signal.aborted)setError(cause instanceof Error?cause.message:'Không tải được tiền / ngày thuê.');}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});return()=>controller.abort();},[id]);
   async function submit(event:FormEvent){event.preventDefault();const item=state?.items.find(i=>String(i.id)===itemId);if(!state||!item||saving)return;
     if(!reason.trim()){setError('Nhập lý do sửa tiền / ngày thuê rồi bấm Lưu.');reasonRef.current?.focus();return;}setSaving(true);setError('');
-    const input={revision:state.revision,item_id:item.id,item_revision:item.revision,start_at:start,end_at:end,unit_price:rate,total_amount:total,reason:reason.trim()},body=JSON.stringify(input);
+    const input={revision:state.revision,item_id:item.id,item_revision:item.revision,start_at:start,end_at:end,unit_price:rate===String(item.unit_price??'')?'':rate,total_amount:total,reason:reason.trim()},body=JSON.stringify(input);
     if(requestId.current?.body!==body)requestId.current={body,id:crypto.randomUUID()};
     try{await rentalTermsRequest(id,{...input,request_id:requestId.current.id});onSaved();}catch(cause){setError(cause instanceof Error?cause.message:'Không lưu được tiền / ngày thuê. Tải lại để kiểm tra.');requestAnimationFrame(()=>errorRef.current?.focus());}finally{setSaving(false);}
   }

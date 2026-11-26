@@ -1,3 +1,13 @@
+import { requiresOwnershipApproval } from './contract-approval';
+import { canEditIssuedContract } from './contract-profile';
+import type { PermissionAccount } from './permissions';
+import type { ManagementRow } from './types';
+
+export function canEditRentalTerms(account: PermissionAccount | null | undefined, row: ManagementRow) {
+  return row.status !== 'draft' && !requiresOwnershipApproval(row.rental_type) && !row.billing_plan_json
+    && canEditIssuedContract(account, row.store_id);
+}
+
 export interface RentalTermsItem {id:number;revision:string;vehicle_id:number;license:string;start_at:string;end_at:string;unit_price:number|null;completed_at:string|null}
 export interface RentalTermsState {revision:string;code:string;total_amount:number;paid_amount:number|null;items:RentalTermsItem[]}
 export interface RentalTermsInput {request_id:string;revision:string;item_id:number;item_revision:string;start_at:string;end_at:string;unit_price:string;total_amount:string;reason:string}

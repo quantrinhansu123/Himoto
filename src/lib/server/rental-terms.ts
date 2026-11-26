@@ -13,6 +13,9 @@ type Database=Pick<PoolClient,'query'>;
 export class RentalTermsError extends Error {constructor(message:string,public status=400){super(message);}}
 const local=(value:unknown)=>value?new Date(new Date(String(value)).getTime()+7*3600000).toISOString().slice(0,16):'';
 const utc=(value:string)=>`${value}:00+07:00`;
+const rentalTermsRateSql = `CASE WHEN o.draft_payload ->> 'legacy_migration' IS NOT NULL
+  THEN COALESCE(d.substitute_unit_price,${dailyPriceSql()})
+  ELSE COALESCE(d.hiring_fee,${dailyPriceSql()}) END`;
 function validDate(value:unknown):value is string {return typeof value==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)&&Number.isFinite(Date.parse(utc(value)))&&local(utc(value))===value;}
 export function parseRentalTerms(body:unknown):RentalTermsInput {
   if(!body||typeof body!=='object'||Array.isArray(body))throw new RentalTermsError('Nhập tiền / ngày thuê và lý do sửa.');
@@ -35,7 +38,7 @@ async function order(db:Database,id:number,user:PermissionAccount&{id:number},lo
 }
 export async function readRentalTerms(db:Database,id:number,user:PermissionAccount&{id:number}):Promise<RentalTermsState> {
   const o=await order(db,id,user);
-  const items=(await db.query(`SELECT d.id,d.xmin::text AS revision,d.vehicle_id,v.license,d.rent_at,d.return_at,d.completed_at,${dailyPriceSql()} AS unit_price
+  const items=(await db.query(`SELECT d.id,d.xmin::text AS revision,d.vehicle_id,v.license,d.rent_at,d.return_at,d.completed_at,${rentalTermsRateSql} AS unit_price
     FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id LEFT JOIN ${contractVehicleLabelSource('ARRAY[$1::bigint]')} v ON v.id=d.vehicle_id
     WHERE d.order_id=$1 AND d.deleted_at IS NULL ORDER BY d.id`,[id])).rows;
   const paid=(await db.query(`SELECT ${rentalPaidSql()} AS paid FROM himoto.orders o ${depositLateral()} WHERE o.id=$1`,[id])).rows[0]?.paid;
@@ -48,11 +51,13 @@ export async function updateRentalTerms(db:Database,id:number,user:PermissionAcc
   const previous=history.find((h:{request_id:string})=>h.request_id===input.request_id);
   if(previous){if(previous.hash!==hash)throw new RentalTermsError('Mã lần sửa đã dùng cho nội dung khác. Tải lại trước khi sửa tiếp.',409);return readRentalTerms(db,id,user);}
   if(o.revision!==input.revision)throw new RentalTermsError('Hợp đồng vừa thay đổi. Tải lại tiền / ngày thuê trước khi sửa.',409);
-  const d=(await db.query('SELECT *,xmin::text AS revision FROM himoto.order_vehicle_details WHERE id=$1 AND order_id=$2 AND deleted_at IS NULL FOR UPDATE',[input.item_id,id])).rows[0];
+  const d=(await db.query(`SELECT d.*,d.xmin::text AS revision,${rentalTermsRateSql} AS unit_price
+    FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id
+    WHERE d.id=$1 AND d.order_id=$2 AND d.deleted_at IS NULL FOR UPDATE OF d`,[input.item_id,id])).rows[0];
   if(!d||d.revision!==input.item_revision)throw new RentalTermsError('Dòng xe vừa thay đổi hoặc không thuộc hợp đồng này. Tải lại để kiểm tra.',409);
-  if(d.completed_at&&Date.parse(utc(input.start_at))>=new Date(d.completed_at).getTime())throw new RentalTermsError('Ngày thuê phải trước thời điểm thực tế đã trả xe.',409);
   const datesChanged=local(d.rent_at)!==input.start_at||local(d.return_at)!==input.end_at;
   if(datesChanged){
+    if(d.completed_at&&Date.parse(utc(input.start_at))>=new Date(d.completed_at).getTime())throw new RentalTermsError('Ngày thuê phải trước thời điểm thực tế đã trả xe.',409);
     let conflicts;
     try{
       conflicts=await db.query('SELECT vehicle_id FROM himoto.vehicle_history_conflict_ids($1::bigint[],$2,$3::timestamptz,$4::timestamptz)',[[Number(d.vehicle_id)],id,utc(input.start_at),d.completed_at||utc(input.end_at)]);
@@ -66,10 +71,10 @@ export async function updateRentalTerms(db:Database,id:number,user:PermissionAcc
   }
   const sending=await db.query("SELECT 1 FROM himoto.management_contract_notifications WHERE order_id=$1 AND status IN ('pending','sending','unknown') LIMIT 1",[id]);
   if(sending.rowCount)throw new RentalTermsError('Telegram đang gửi hoặc chưa xác định kết quả. Xử lý lượt gửi trước khi sửa tiền / ngày thuê.',409);
-  const oldRate=payload.legacy_migration?d.substitute_unit_price:d.hiring_fee;
-  const before={item_id:Number(d.id),start_at:local(d.rent_at),end_at:local(d.return_at),unit_price:oldRate==null?null:Number(oldRate),total_amount:Number(o.total)};
+  const before={item_id:Number(d.id),start_at:local(d.rent_at),end_at:local(d.return_at),unit_price:d.unit_price==null?null:Number(d.unit_price),total_amount:Number(o.total)};
   const after={item_id:input.item_id,start_at:input.start_at,end_at:input.end_at,unit_price:input.unit_price===''?before.unit_price:Number(input.unit_price),total_amount:Number(input.total_amount)};
   if(JSON.stringify(before)===JSON.stringify(after))throw new RentalTermsError('Tiền và ngày thuê chưa thay đổi.');
+  const priceChanged=after.unit_price!==before.unit_price;
   const amendedVersions:unknown[]=[],amendedReceipts:unknown[]=[];
   if(datesChanged){
     composer.versions=(Array.isArray(composer.versions)?composer.versions:[]).map((v:{kind:string;item_id:number;return_at:string;before_return_at:string;rent_at?:string})=>{
@@ -92,13 +97,17 @@ export async function updateRentalTerms(db:Database,id:number,user:PermissionAcc
       await db.query('UPDATE himoto.management_contract_payments SET renewal_payload=$3::jsonb WHERE order_id=$1 AND transaction_id=$2',[id,receipt.transaction_id,JSON.stringify(updated)]);
     }
   }
-  await db.query(`UPDATE himoto.order_vehicle_details SET rent_at=$3::timestamptz,return_at=$4::timestamptz,
+  await db.query(`UPDATE himoto.order_vehicle_details SET rent_at=COALESCE($3::timestamptz,rent_at),return_at=COALESCE($4::timestamptz,return_at),
     hiring_fee=CASE WHEN $6::boolean OR $5::bigint IS NULL THEN hiring_fee ELSE $5::bigint END,
-    substitute_unit_price=CASE WHEN $6::boolean AND $5::numeric IS NOT NULL THEN $5::numeric ELSE substitute_unit_price END,updated_at=now() WHERE id=$1 AND order_id=$2`,[d.id,id,utc(input.start_at),utc(input.end_at),input.unit_price===''?null:input.unit_price,Boolean(payload.legacy_migration)]);
-  const span=(await db.query(`SELECT min(rent_at) AS start_at,COALESCE(max(return_at) FILTER(WHERE completed_at IS NULL),max(return_at)) AS end_at FROM himoto.order_vehicle_details WHERE order_id=$1 AND deleted_at IS NULL`,[id])).rows[0];
+    substitute_unit_price=CASE WHEN $6::boolean AND $5::numeric IS NOT NULL THEN $5::numeric ELSE substitute_unit_price END,updated_at=now() WHERE id=$1 AND order_id=$2`,[d.id,id,datesChanged?utc(input.start_at):null,datesChanged?utc(input.end_at):null,priceChanged?input.unit_price:null,Boolean(payload.legacy_migration)]);
+  const span=(await db.query(`SELECT min(d.rent_at) AS start_at,COALESCE(max(d.return_at) FILTER(WHERE d.completed_at IS NULL),max(d.return_at)) AS end_at,
+    CASE WHEN count(${rentalTermsRateSql})=count(*) THEN sum(${rentalTermsRateSql}) END AS unit_price
+    FROM himoto.order_vehicle_details d JOIN himoto.orders o ON o.id=d.order_id WHERE d.order_id=$1 AND d.deleted_at IS NULL`,[id])).rows[0];
   const at=new Date().toISOString(),edit={request_id:input.request_id,hash,at,actor_id:user.id,reason:input.reason,before,after,original_contract_snapshot:o.contract_snapshot,renewal_versions_before:amendedVersions,payment_metadata_before:amendedReceipts};
-  payload.management_composer={...composer,draft:{...composer.draft,start_date:local(span.start_at),end_date:local(span.end_at),total_amount:input.total_amount,...(d.type==='day'&&input.unit_price!==''?{unit_price:input.unit_price}:{})},rental_terms_history:[...history,edit]};
+  payload.management_composer={...composer,draft:{...composer.draft,total_amount:input.total_amount,
+    ...(datesChanged?{start_date:local(span.start_at),end_date:local(span.end_at)}:{}),
+    ...(priceChanged&&span.unit_price!=null?{unit_price:String(span.unit_price)}:{})},rental_terms_history:[...history,edit]};
   await db.query(`UPDATE himoto.orders SET total=$2,total_rental_fees=CASE WHEN total_rental_fees IS NULL THEN NULL ELSE GREATEST(total_rental_fees+$3::numeric,0) END,
-    rent_at=$4::timestamptz,return_at=$5::timestamptz,contract_snapshot=NULL,draft_payload=$6::json,updated_at=now() WHERE id=$1`,[id,input.total_amount,Number(input.total_amount)-Number(o.total),span.start_at,span.end_at,JSON.stringify(payload)]);
+    rent_at=COALESCE($4::timestamptz,rent_at),return_at=COALESCE($5::timestamptz,return_at),contract_snapshot=NULL,draft_payload=$6::json,updated_at=now() WHERE id=$1`,[id,input.total_amount,Number(input.total_amount)-Number(o.total),datesChanged?span.start_at:null,datesChanged?span.end_at:null,JSON.stringify(payload)]);
   return readRentalTerms(db,id,user);
 }

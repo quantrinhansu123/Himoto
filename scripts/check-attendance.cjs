@@ -19,9 +19,15 @@ async function main() {
     {work_date:'2026-11-05',shift_code:code}, clockIn, clockOut,
   );
   const lateAndEarly = compare('S','2026-11-05T08:07:01+07:00','2026-11-05T16:45+07:00');
-  assert.equal(lateAndEarly.late_minutes,8);
+  assert.equal(lateAndEarly.late_minutes,7);
   assert.equal(lateAndEarly.early_leave_minutes,15);
-  assert.equal(lateAndEarly.earned_credit,1-23/480);
+  assert.equal(lateAndEarly.earned_credit,1-22/480);
+  for (const code of ['G2','C']) {
+    const onTime = compare(code,'2026-11-05T13:00:59+07:00',null);
+    assert.equal(onTime.scheduled_in,'2026-11-05T06:00:00.000Z');
+    assert.equal(onTime.late_minutes,0);
+    assert.equal(compare(code,'2026-11-05T13:08:59+07:00',null).late_minutes,8);
+  }
   const fullShift = compare('S','2026-11-05T07:55+07:00','2026-11-05T17:00+07:00');
   assert.equal(fullShift.late_minutes,0);
   assert.equal(fullShift.early_leave_minutes,0);

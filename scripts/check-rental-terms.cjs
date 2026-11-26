@@ -9,7 +9,7 @@ async function main(){
   const {requestPermission}=load(path.join(root,'lib/server/access-request'));assert.equal(requestPermission('/api/auth/order/car-rental/1/rental-terms','PATCH'),'contracts.draft');
   const c=await db.connect(),schema='qa_rental_terms';const checks=[];
   const proxy={query(sql,args){return c.query(sql.replaceAll('himoto.',schema+'.'),args);}};
-  const rev=async()=>{await c.query('RESET ROLE');const r=(await c.query(`SELECT o.xmin::text AS revision,d.xmin::text AS item_revision FROM ${schema}.orders o JOIN ${schema}.order_vehicle_details d ON d.order_id=o.id WHERE o.id=1`)).rows[0];await c.query('SET LOCAL ROLE himoto_scoped');return r;};
+  const rev=async(id=1,item=101)=>{await c.query('RESET ROLE');const r=(await c.query(`SELECT o.xmin::text AS revision,d.xmin::text AS item_revision FROM ${schema}.orders o JOIN ${schema}.order_vehicle_details d ON d.order_id=o.id WHERE o.id=$1 AND d.id=$2`,[id,item])).rows[0];await c.query('SET LOCAL ROLE himoto_scoped');return r;};
   const atomic=async work=>{await c.query('SAVEPOINT action');try{return await dataAccess.run(user,work);}catch(e){await c.query('ROLLBACK TO SAVEPOINT action');throw e;}finally{await c.query('RELEASE SAVEPOINT action');}};
   try{
     await c.query('BEGIN');await c.query(`CREATE SCHEMA ${schema};GRANT USAGE ON SCHEMA ${schema} TO himoto_scoped`);
@@ -56,6 +56,26 @@ async function main(){
     assert.equal(JSON.stringify((await proxy.query('SELECT draft_payload FROM himoto.orders WHERE id=1')).rows),snapshot);
     assert.equal((await proxy.query('SELECT renewal_payload FROM himoto.management_contract_payments')).rows[0].renewal_payload.return_at,'2026-01-05T10:00:00+07:00');
     checks.push('An error after correcting the line and receipt metadata rolls back the entire change');
+    await c.query('RESET ROLE');
+    await c.query(`INSERT INTO ${schema}.orders(id,store_id,contract_number,order_type,order_status,total,pid,total_rental_fees,rent_at,return_at,draft_payload)
+      VALUES(3,32,'QA-MONTHLY','monthly','renting','500000',0,500000,'2026-02-01T03:00:17Z','2026-03-01T03:00:31Z','{"management_composer":{"draft":{"unit_price":"500000"}}}');
+      INSERT INTO ${schema}.vehicles(id,store_id,current_store_id,license,status,name,type,year,created_by) VALUES(105,32,32,'QA-MONTHLY','using','Xe QA','xeso',2026,70001);
+      INSERT INTO ${schema}.order_vehicle_details(id,order_id,vehicle_id,rent_at,return_at,hiring_fee,type) VALUES
+        (103,3,100,'2026-02-01T03:00:17Z','2026-03-01T03:00:31Z',250000,'month'),
+        (104,3,105,'2026-02-01T03:00:17Z','2026-03-01T03:00:31Z',250000,'month');`);
+    const monthlyRevision=await rev(3,103);
+    const monthly=await atomic(()=>service.readRentalTerms(proxy,3,user));
+    assert.deepEqual(monthly.items.map(item=>item.unit_price),[250000,250000]);
+    const corrected=await atomic(()=>service.updateRentalTerms(proxy,3,user,{...base,...monthlyRevision,request_id:randomUUID(),item_id:103,
+      start_at:monthly.items[0].start_at,end_at:monthly.items[0].end_at,unit_price:'300000',total_amount:'550000'}));
+    assert.deepEqual(corrected.items.map(item=>item.unit_price),[300000,250000]);assert.equal(corrected.total_amount,550000);
+    const priceOnly=(await proxy.query(`SELECT o.rent_at,o.return_at,o.total_rental_fees,d.rent_at AS line_start,d.return_at AS line_end,
+      o.draft_payload #>> '{management_composer,draft,unit_price}' AS rate
+      FROM himoto.orders o JOIN himoto.order_vehicle_details d ON d.order_id=o.id WHERE d.id=103`)).rows[0];
+    assert.equal(priceOnly.rate,'550000');assert.equal(Number(priceOnly.total_rental_fees),550000);
+    for(const key of ['rent_at','line_start'])assert.equal(priceOnly[key].toISOString(),'2026-02-01T03:00:17.000Z');
+    for(const key of ['return_at','line_end'])assert.equal(priceOnly[key].toISOString(),'2026-03-01T03:00:31.000Z');
+    checks.push('Price-only correction of a monthly multi-vehicle contract updates the aggregate rate and preserves the exact rental timestamps');
     await c.query('RESET ROLE');await c.query('ROLLBACK');console.log(JSON.stringify({passed:checks.length,checks,realBusinessWrites:0,realTelegramRequests:0}));
   }finally{await c.query('ROLLBACK').catch(()=>{});c.release();await globalThis.himotoPool?.end();}
 }

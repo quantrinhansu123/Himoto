@@ -30,6 +30,7 @@ import { staffPositionSuggestions } from '@/lib/management/staff-positions';
 import { canSendDebtReminder,canSettleContract } from '@/lib/management/permissions';
 import { canFinalizeRentalContract } from '@/lib/management/contract-approval';
 import { canEditIssuedContract } from '@/lib/management/contract-profile';
+import { canEditRentalTerms } from '@/lib/management/rental-terms';
 import { ResponsiveDataActions } from './ResponsiveDataActions';
 import { useContractTypes } from '@/components/contracts/ContractTypesProvider';
 import { useManagementTable } from './useManagementTable';
@@ -78,6 +79,7 @@ const DebtReminderDialog=dynamic(()=>import('./DebtReminderDialog').then(module=
 const BulkDebtReminderDialog=dynamic(()=>import('./BulkDebtReminderDialog').then(module=>module.BulkDebtReminderDialog),{ssr:false,loading:FeatureLoading});
 const ContractApprovalDialog=dynamic(()=>import('./ContractApproval').then(module=>module.ContractApprovalDialog),{ssr:false,loading:FeatureLoading});
 const OwnershipTermsEditor=dynamic(()=>import('./OwnershipTermsEditor').then(module=>module.OwnershipTermsEditor),{ssr:false,loading:FeatureLoading});
+const RentalTermsEditor=dynamic(()=>import('./RentalTermsEditor').then(module=>module.RentalTermsEditor),{ssr:false,loading:FeatureLoading});
 
 const DebtReportPanel=dynamic(()=>import('./DebtReportPanel').then(module=>module.DebtReportPanel),{ssr:false,loading:FeatureLoading});
 
@@ -145,6 +147,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
   const [batteryRentTarget, setBatteryRentTarget] = useState<ManagementRow | null>(null);
   const [approvalTarget,setApprovalTarget]=useState<ManagementRow|null>(null);
   const [ownershipTermsTarget, setOwnershipTermsTarget] = useState<ManagementRow | null>(null);
+  const [rentalTermsTarget, setRentalTermsTarget] = useState<ManagementRow | null>(null);
   const [batteryPrinting, setBatteryPrinting] = useState<BatteryContract | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -543,6 +546,7 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
           onBatteryRent={can('contracts.draft') && kind === 'contracts' && source === 'api' ? row => setBatteryRentTarget(row) : undefined}
           onApproveContract={kind==='contracts'&&source==='api'?row=>setApprovalTarget(row):undefined}
           onOwnershipTerms={kind === 'contracts' && source === 'api' ? row => setOwnershipTermsTarget(row) : undefined}
+          onRentalTerms={kind === 'contracts' && source === 'api' ? setRentalTermsTarget : undefined}
           onVehicleAction={kind === 'vehicles' && source === 'api' && (can('vehicles.transfer')||can('vehicles.receive')||can('vehicles.write')) ? (row, mode) => setVehicleAction({ mode, vehicle: row }) : undefined}
 
           canEditContract={can('contracts.draft')}
@@ -616,11 +620,19 @@ function ManagementContent({ kind, draftsOnly = false, vatOnly = false, overdueO
     {batteryPrinting && <BatteryPrintPreview doc={batteryPrinting} onClose={() => setBatteryPrinting(null)} />}
     {approvalTarget&&<ContractApprovalDialog row={approvalTarget} onClose={()=>setApprovalTarget(null)} onSaved={()=>{setApprovalTarget(null);table.refresh();}}/>}
     {ownershipTermsTarget && <OwnershipTermsEditor key={ownershipTermsTarget.id} id={ownershipTermsTarget.id} code={ownershipTermsTarget.code} startOpen onClose={() => setOwnershipTermsTarget(null)} onSaved={() => { setOwnershipTermsTarget(null); table.refresh(); }} />}
+    {rentalTermsTarget && <RentalTermsEditor key={rentalTermsTarget.id} id={rentalTermsTarget.id} onClose={() => setRentalTermsTarget(null)} onSaved={() => {
+      setRentalTermsTarget(null);
+      invalidateData(['contracts']);
+      if (paged) table.refresh();
+      else void ensureData(['contracts'], true).catch(() => {});
+      notify(`Đã lưu giá thuê hợp đồng ${rentalTermsTarget.code}.`);
+    }} />}
     {viewing && kind === 'contracts' && <ContractDetail row={viewing} onClose={() => setViewing(null)} onReturn={() => { if(viewing.status==='bad_debt')setRecoveryTarget(viewing);else setReturnTarget({ orderId: viewing.id, code: viewing.code }); setViewing(null); }} onRenew={() => { setRenewTarget(viewing); setViewing(null); }} onVehicleChange={() => { setVehicleTarget({ orderId: viewing.id, code: viewing.code }); setViewing(null); }} onBatteryRent={() => { setBatteryRentTarget(viewing); setViewing(null); }} onPayment={canPayContracts ? (purpose?: PaymentPurpose) => { router.push(cashbookPaymentPath(viewing.id, purpose || 'debt')); setViewing(null); } : undefined} onPrint={() => { setPrintRow(viewing); setComposerMode('print'); setViewing(null); setComposerOpen(true); }}
       onQr={()=>{setQrTarget(viewing.id);setViewing(null);}}
       onHandover={canFinalizeRentalContract(accessUser,viewing.rental_type)?()=>{setHandoverId(viewing.id);setViewing(null);}:undefined}
       onEditDraft={()=>{setPrintRow(viewing);setComposerMode('draft');setViewing(null);setComposerOpen(true);}}
       onEditIssued={()=>{setPrintRow(viewing);setComposerMode('edit');setViewing(null);setComposerOpen(true);}}
+      onRentalTerms={source==='api'&&canEditRentalTerms(accessUser,viewing)?()=>{setRentalTermsTarget(viewing);setViewing(null);}:undefined}
       onReminder={canSendDebtReminder(accessUser)?()=>{setReminderTarget(viewing.id);setViewing(null);}:undefined}
       onPrintVersion={version => { setPrintRow({ ...viewing, ...(version.end_date ? { end_date: version.end_date } : {}), ...(version.total_amount !== null ? { total_amount: version.total_amount } : {}), ...(version.paid_amount !== null ? { paid_amount: version.paid_amount } : {}) }); setComposerMode('print'); setViewing(null); setComposerOpen(true); }} />}
     {qrTarget!==null&&<ContractQrDialog id={qrTarget} onClose={()=>setQrTarget(null)}/>}

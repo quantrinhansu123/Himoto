@@ -3,8 +3,10 @@ import { useEffect, useState } from 'react';
 import { loadRentalRevenue, type RentalRevenueReport } from '@/lib/management/rental-revenue';
 import { loadEstimatedSales, type EstimatedSalesReport } from '@/lib/management/estimated-sales';
 import { formatMoney } from '@/lib/formatters';
+import { FilteredExcelButton } from './FilteredExcelButton';
 
 const labels = [['rental', 'Phí thuê đã thu'], ['renewal', 'Gia hạn đã thu'], ['late', 'Phí quá hạn đã thu'], ['early', 'Đã hoàn do trả sớm']] as const;
+const staffColumns = [['rental','Tiền thuê đã thu'], ['early','Tiền thuê đã hoàn'], ['revenue','Doanh thu thực thu']] as const;
 
 export function RentalRevenuePanel({
   from, to, store, retry,
@@ -20,6 +22,7 @@ export function RentalRevenuePanel({
   const [estimateLoading, setEstimateLoading] = useState(true);
   const [error, setError] = useState('');
   const [estimateError, setEstimateError] = useState('');
+  const [selectedStaff, setSelectedStaff] = useState('');
 
   useEffect(() => {
     const controller = new AbortController();
@@ -56,6 +59,10 @@ export function RentalRevenuePanel({
   const ready = !loading && !error && report;
   const estimateReady = !estimateLoading && !estimateError && estimate;
   const debtReady = !debtLoading && !debtError;
+  const staff = report?.staff.filter(row => row.key !== 'company' && row.key !== 'unassigned') ?? [];
+  const employee = staff.find(row => row.key === selectedStaff);
+  const staffRows = employee ? [employee] : staff;
+  const exportStaff = employee ? `-${/^\d+$/.test(employee.key) ? employee.key : employee.name.replace(/[^\p{L}\p{M}\p{N}]+/gu, '-').slice(0, 40)}` : '';
 
   return (
     <section className="mg-rental-revenue" aria-label="Doanh số, doanh thu và công nợ thuê xe" aria-busy={loading || estimateLoading || debtLoading}>
@@ -139,6 +146,31 @@ export function RentalRevenuePanel({
             : <p className="mg-rental-revenue-note">Tổng tiền thuê còn thiếu của HĐ đang Quá hạn trong kỳ; không gồm Nợ xấu và cọc.</p>}
         </article>
       </div>
+
+      <section className="mg-data-panel mg-rental-revenue-detail" aria-labelledby="rental-staff-revenue-title" aria-busy={loading}>
+        <div className="mg-rental-revenue-heading">
+          <div><h2 id="rental-staff-revenue-title">Doanh thu thực thu theo nhân viên</h2><p>Tiền thuê đã thu trừ tiền thuê đã hoàn, theo ngày giao dịch và cơ sở đang chọn.</p></div>
+          <div className="mg-rental-revenue-toolbar is-inline">
+            <label className="mg-field">Nhân viên<select value={employee?.key ?? ''} disabled={!ready || !staff.length} onChange={event => setSelectedStaff(event.target.value)}>
+              <option value="">Tất cả nhân viên</option>
+              {staff.map(row => <option key={row.key} value={row.key}>{row.name}{/^\d+$/.test(row.key) ? ` (#${row.key})` : ''}</option>)}
+            </select></label>
+            <FilteredExcelButton label="Xuất Excel doanh thu" showOnMobile disabled={!ready || !staffRows.length}
+              filename={`doanh-thu-nhan-vien${exportStaff}-${store}-${from}-${to}`}
+              headers={['Nhân viên', 'ID nhân viên', ...staffColumns.map(([,label]) => `${label} (VNĐ)`)]}
+              getRows={() => staffRows.map(row => [row.name, /^\d+$/.test(row.key) ? row.key : '', ...staffColumns.map(([key]) => row[key])])}/>
+          </div>
+        </div>
+        {loading ? <p className="mg-table-state" role="status">Đang tải doanh thu theo nhân viên…</p>
+          : error ? <p className="mg-table-state" role="alert">{error}</p>
+          : !staff.length ? <p className="mg-table-state">Chưa có doanh thu ghi nhận theo nhân viên trong kỳ.</p>
+          : <div className="mg-table-scroll" tabIndex={0} role="region" aria-label="Bảng doanh thu thực thu theo nhân viên">
+            <table className="mg-table mg-source-sales-table">
+              <thead><tr><th scope="col">Nhân viên</th>{staffColumns.map(([key,label]) => <th key={key} scope="col" className="mg-align-right">{label}</th>)}</tr></thead>
+              <tbody>{staffRows.map(row => <tr key={row.key}><th scope="row">{row.name}</th>{staffColumns.map(([key]) => <td key={key} className="mg-align-right">{formatMoney(row[key])}</td>)}</tr>)}</tbody>
+            </table>
+          </div>}
+      </section>
 
       {ready && report!.unclassified_count > 0 && (
         <div className="mg-data-panel mg-rental-revenue-detail">

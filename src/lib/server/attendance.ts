@@ -143,10 +143,10 @@ const morningShift = attendanceShift('G1')!;
 const eveningShift = attendanceShift('G3')!;
 export const SPLIT_SHIFT_MORNING_END = morningShift.end;
 
-function minutesAfter(later: AttendanceTime, earlier: AttendanceTime) {
+function minutesAfter(later: AttendanceTime, earlier: AttendanceTime, round = Math.ceil) {
   if (!later || !earlier) return null;
   const difference = new Date(later).getTime() - new Date(earlier).getTime();
-  return Number.isFinite(difference) ? Math.max(0, Math.ceil(difference / 60000)) : null;
+  return Number.isFinite(difference) ? Math.max(0, round(difference / 60000)) : null;
 }
 export function compareRegisteredAttendance(
   registration: { work_date: string | null; shift_code: string | null } | undefined,
@@ -164,7 +164,8 @@ export function compareRegisteredAttendance(
   }
   const scheduled_in = atWorkTime(segment?.start);
   const scheduled_out = atWorkTime(segment?.end);
-  const lateMinutes = minutesAfter(clockIn, scheduled_in);
+  // Match the check-in time displayed to the minute.
+  const lateMinutes = minutesAfter(clockIn, scheduled_in, Math.floor);
   const earlyMinutes = minutesAfter(scheduled_out, clockOut);
   const standardCredit = segment?.credit ?? null;
   // A full unit represents 480 paid minutes, including for shifts with an unpaid break.

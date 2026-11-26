@@ -12,6 +12,7 @@ import { GpsEvidence } from './GpsEvidence';
 import { ContractMonitoringAmount,ContractGpsIndicator } from './ContractMonitoringCells';
 import { ContractRentalPeriod } from './ContractRentalPeriod';
 import { contractIssuedEditBlockReason } from '@/lib/management/contract-profile';
+import { canEditRentalTerms } from '@/lib/management/rental-terms';
 import { ContractHoldStatus } from './ContractHoldStatus';
 import { ContractCollectionNote } from './ContractCollectionNotes';
 import { ContractApprovalStatus } from './ContractApproval';
@@ -96,6 +97,7 @@ interface Props {
   onVehicleChange?: (row: ManagementRow) => void;
   onBatteryRent?: (row: ManagementRow) => void;
   onOwnershipTerms?: (row: ManagementRow) => void;
+  onRentalTerms?: (row: ManagementRow) => void;
   onApproveContract?: (row: ManagementRow) => void;
   onClone?: (row: ManagementRow) => void;
   onVehicleAction?: (row: ManagementRow, mode: 'transfer' | 'status' | 'receive' | 'reject' | 'cancel') => void;
@@ -115,7 +117,7 @@ interface Props {
   onSelectionChange?: (ids: number[], selected: boolean) => void;
 }
 
-export function DataTable({ config, columns, rows, offset, sortKey, sortDirection, onSort, onView, onEdit, onDelete, onPrint, onPayment,onQr,onReminder,onTelegram, onHandover, onReturn, onMarkBadDebt, onCloseBadDebt, onRenew, onVehicleChange, onBatteryRent, onOwnershipTerms, onApproveContract, onClone, onVehicleAction, cloningId, canEditContract, canEditDraft, canEdit, canDelete, onBlacklist, blacklistBusyId, loading, error, isFiltered, onReset, onRetry, selectedIds, onSelectionChange }: Props) {
+export function DataTable({ config, columns, rows, offset, sortKey, sortDirection, onSort, onView, onEdit, onDelete, onPrint, onPayment,onQr,onReminder,onTelegram, onHandover, onReturn, onMarkBadDebt, onCloseBadDebt, onRenew, onVehicleChange, onBatteryRent, onOwnershipTerms, onRentalTerms, onApproveContract, onClone, onVehicleAction, cloningId, canEditContract, canEditDraft, canEdit, canDelete, onBlacklist, blacklistBusyId, loading, error, isFiltered, onReset, onRetry, selectedIds, onSelectionChange }: Props) {
   const {can,accessUser}=useManagement();
   const blockingError=rows.length?'':error;
   const selectable = Boolean(selectedIds && onSelectionChange);
@@ -191,6 +193,9 @@ export function DataTable({ config, columns, rows, offset, sortKey, sortDirectio
       actions.push(editBlock
         ? {key:'edit',label:'Sửa hợp đồng',icon:<Pencil size={16}/>,disabled:true,title:editBlock,onSelect:()=>{}}
         : {key:'edit',label:'Sửa hợp đồng',icon:<Pencil size={16}/>,onSelect:()=>onEdit(row)});
+    }
+    if (isContract && onRentalTerms && canEditRentalTerms(accessUser, row)) {
+      actions.push({ key: 'rental-terms', label: 'Sửa giá thuê', icon: <Pencil size={16} />, onSelect: () => onRentalTerms(row) });
     }
     if (!isContract && canEdit) actions.push({ key: 'edit', label: 'Chỉnh sửa', icon: <Pencil size={16} />, onSelect: () => onEdit(row) });
     if (isContract && onClone) actions.push({ key: 'clone', label: cloningId === row.id ? 'Đang sao chép…' : 'Sao chép hợp đồng', disabled: cloningId != null,

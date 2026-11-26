@@ -6,15 +6,15 @@ import { downloadFilteredExcel } from '@/lib/management/excel-export';
 
 type ExcelRows = (string | number | null | undefined)[][];
 type ExportOptions = {
-  headers: string[]; filename: string; getRows: () => ExcelRows | Promise<ExcelRows>;
+  label?: string; headers: string[]; filename: string; getRows: () => ExcelRows | Promise<ExcelRows>;
 } | {
   label: string; exportFile: () => Promise<number>;
 };
 
-export function FilteredExcelButton({ disabled, ...options }: { disabled: boolean } & ExportOptions) {
+export function FilteredExcelButton({ disabled, showOnMobile = false, ...options }: { disabled: boolean; showOnMobile?: boolean } & ExportOptions) {
   const [busy, setBusy] = useState(false);
   const { notify } = useManagement();
-  return <button type="button" className="mg-button mg-excel-export" disabled={disabled || busy} onClick={async () => {
+  return <button type="button" className={`mg-button${showOnMobile ? '' : ' mg-excel-export'}`} disabled={disabled || busy} onClick={async () => {
     if (busy) return;
     setBusy(true);
     try {
@@ -30,5 +30,5 @@ export function FilteredExcelButton({ disabled, ...options }: { disabled: boolea
     }
     catch (cause) { notify(cause instanceof Error ? cause.message : 'Không tải được Excel.'); }
     finally { setBusy(false); }
-  }}><ArrowDownToLine size={17}/>{busy ? 'Đang xuất…' : 'label' in options ? options.label : 'Tải Excel theo bộ lọc'}</button>;
+  }}><ArrowDownToLine size={17}/>{busy ? 'Đang xuất…' : options.label ?? 'Tải Excel theo bộ lọc'}</button>;
 }
