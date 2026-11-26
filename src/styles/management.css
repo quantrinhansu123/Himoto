@@ -4807,6 +4807,7 @@
 .mg-attendance-capture img { max-height:160px; }
 .mg-attendance-capture-footer { flex-wrap:wrap; }
 .mg-attendance-capture-footer > p { flex-basis:100%; margin:0; }
+.mg-attendance-capture-note { flex-basis:100%; min-width:0; }
 @media (max-width:768px) {
   .mg-attendance-capture-dialog[open] { display:flex; flex-direction:column; overflow:hidden; }
   .mg-attendance-capture-dialog > .mg-dialog-body { min-height:0; overflow-y:auto; }

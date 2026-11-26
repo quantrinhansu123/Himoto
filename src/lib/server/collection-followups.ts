@@ -25,6 +25,17 @@ export async function patchCollectionFollowup(request:NextRequest) {
     if(!order){await client.query('ROLLBACK');return NextResponse.json({message:'Không tìm thấy hợp đồng trong phạm vi.'},{status:404});}
     if(!actor.scope_all&&Number(order.store_id)!==actor.store_id){await client.query('ROLLBACK');return NextResponse.json({message:'Hợp đồng ngoài PGD được phân công.'},{status:403});}
     const {order_id,revision,...snapshot}=input;
+    if(actor.operation==='collection_note'&&Number(order.store_id)!==actor.store_id){
+      const [{followup}]=await readCollectionFollowups(client,[order_id]);
+      if(followup.revision!==revision){
+        await client.query('ROLLBACK');
+        return NextResponse.json({message:'Ghi chú đã thay đổi. Tải lại trước khi lưu.'},{status:409});
+      }
+      if(snapshot.contact_status!==followup.contact_status||snapshot.handling_status!==followup.handling_status||snapshot.customer_condition!==followup.customer_condition){
+        await client.query('ROLLBACK');
+        return NextResponse.json({message:'Ngoài PGD được phân công, tài khoản chỉ có thể sửa nội dung ghi chú.'},{status:403});
+      }
+    }
     const values=[order_id,order.store_id,snapshot.contact_status,snapshot.handling_status,snapshot.customer_condition,snapshot.notes,actor.id,revision];
     const inserted=await client.query(`INSERT INTO himoto.management_collection_followups(order_id,store_id,contact_status,handling_status,customer_condition,notes,updated_by)
       SELECT $1,$2,$3,$4,$5,$6,$7 WHERE $8::integer=0

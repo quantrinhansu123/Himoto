@@ -72,7 +72,7 @@ function Shell({ children, user }: { children: ReactNode; user: SessionUser | nu
   const { dataset, selectedStore, selectStore, source, canSaveContractDrafts, reload, refreshing,notify } = useManagement();
   const pathname = usePathname();
   const router = useRouter();
-  const showHrMenu = canReviewAttendance(user) || canManageShiftRegistration(user);
+  const showHrMenu = user?.has_hr_position === true && (canReviewAttendance(user) || canManageShiftRegistration(user));
   const menu = navigation.filter(item => !('links' in item) || (item.id !== 'hr' || showHrMenu) && (item.id !== 'personnel' || !showHrMenu));
   const navLinks = menu.flatMap(item => 'links' in item ? item.links : [item]);
   const currentLink = navLinks.find(item => pathname === item.href);

@@ -323,7 +323,6 @@ function ClockCapture({action,homeStore,stores,initialLocation,onClose,onSaved}:
   const video=useRef<HTMLVideoElement>(null),stream=useRef<MediaStream|null>(null),lock=useRef(false),requestId=useRef(crypto.randomUUID());
   const [cameraReady,setCameraReady]=useState(false),[photo,setPhoto]=useState<Blob|null>(null),[preview,setPreview]=useState(''),[locating,setLocating]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
   const [clockLocation,setClockLocation]=useState<InitialClockLocation|null>(null);
-  const [deniedRetries,setDeniedRetries]=useState(0);
   const [store,setStore]=useState(String(homeStore)), [note,setNote]=useState('');
   const needsNote=store!==String(homeStore)&&!note.trim();
   useEffect(()=>{let current=true;
@@ -348,15 +347,9 @@ function ClockCapture({action,homeStore,stores,initialLocation,onClose,onSaved}:
     try {
       const location = await requestBrowserLocation();
       setClockLocation(location);
-      setDeniedRetries(0);
       return location;
     } catch (cause) {
       setClockLocation(cause instanceof Error ? cause : new Error('Chưa lấy được vị trí. Vui lòng thử lại.'));
-      if(cause instanceof BrowserLocationError && cause.reason==='permission-denied') {
-        setDeniedRetries(count=>count+1);
-      } else {
-        setDeniedRetries(0);
-      }
       return null;
     } finally {
       setLocating(false);
@@ -381,7 +374,7 @@ function ClockCapture({action,homeStore,stores,initialLocation,onClose,onSaved}:
   const locationError = clockLocation instanceof Error ? clockLocation : null;
   const permissionDenied = locationError instanceof BrowserLocationError && locationError.reason==='permission-denied';
   const checkingLocation = locating || !clockLocation;
-  const showLocationHelp = permissionDenied && deniedRetries>0;
+  const showLocationHelp = permissionDenied;
 
   return <Dialog className="mg-attendance-capture-dialog" title={showLocationHelp?'Bật vị trí để chấm công':action==='in'?'Chấm công vào ca':'Chấm công ra ca'} onClose={()=>{if(!lock.current)onClose();}}>
     <div className="mg-dialog-body mg-attendance-capture" hidden={showLocationHelp}>
@@ -389,23 +382,25 @@ function ClockCapture({action,homeStore,stores,initialLocation,onClose,onSaved}:
       <button type="button" className="mg-button" disabled={!cameraReady||busy} onClick={capture}><Camera size={17}/>{photo?'Chụp lại':'Chụp ảnh'}</button>
       {preview&&<img src={preview} alt="Ảnh chấm công vừa chụp"/>}
       <label className="mg-field">Cơ sở chấm công<select value={store} disabled={busy} onChange={event=>setStore(event.target.value)}>{stores.map(option=><option key={option.id} value={option.id}>{option.name}</option>)}</select></label>
-      <label className="mg-field">{store===String(homeStore)?'Ghi chú (không bắt buộc)':'Lý do chấm công tại cơ sở khác (bắt buộc)'}<textarea value={note} maxLength={500} disabled={busy} onChange={event=>setNote(event.target.value)} /></label>
       {error&&<p className="mg-field-error" role="alert">{error}</p>}
     </div>
     {showLocationHelp && <div className="mg-dialog-body">
-      <p>Trình duyệt đã từ chối yêu cầu lấy vị trí. Trên iPhone, bạn có thể bật lại ngay cho trang này.</p>
+      <p>Safari đang chặn vị trí. Hãy cấp quyền cho Himoto rồi kiểm tra lại ngay trong cửa sổ này.</p>
       <ol>
         <li>Trong Safari, chạm vào biểu tượng menu bên trái thanh địa chỉ. Chọn <strong>Cài đặt trang web</strong> (trong mục <strong>Thêm</strong> nếu có), rồi chọn <strong>Vị trí → Cho phép</strong>.</li>
-        <li>Nếu vẫn bị chặn, mở <strong>Cài đặt iPhone → Quyền riêng tư &amp; Bảo mật → Dịch vụ định vị</strong>. Bật định vị và chọn <strong>Trang web Safari → Khi dùng ứng dụng</strong>.</li>
+        <li>Nếu vẫn bị chặn, mở <strong>Cài đặt iPhone → Quyền riêng tư &amp; Bảo mật → Dịch vụ định vị</strong>. Bật dịch vụ định vị, chọn <strong>Trang web Safari → Khi dùng ứng dụng</strong> và bật <strong>Vị trí chính xác</strong>.</li>
         <li>Quay lại màn hình này và bấm <strong>Kiểm tra lại vị trí</strong>.</li>
       </ol>
-      {photo && <p>Ảnh bạn vừa chụp vẫn được giữ trong lần chấm công này.</p>}
+      <p><a href="https://support.apple.com/guide/iphone/browse-the-web-privately-iphb01fc3c85/ios" target="_blank" rel="noopener noreferrer">Mở hướng dẫn cài đặt vị trí Safari của Apple</a></p>
+      {(photo || note) && <p>Ảnh đã chụp và ghi chú đã nhập được giữ trong cửa sổ này.</p>}
     </div>}
     <div className="mg-dialog-footer mg-attendance-capture-footer">
+      {!showLocationHelp && <label className="mg-field mg-attendance-capture-note">
+        {store===String(homeStore)?'Ghi chú (không bắt buộc)':'Lý do chấm công tại cơ sở khác (bắt buộc)'}
+        <textarea rows={2} value={note} maxLength={500} required={store!==String(homeStore)} disabled={busy} onChange={event=>setNote(event.target.value)} />
+      </label>}
       {checkingLocation ? <p role="status">Đang lấy vị trí. Nếu trình duyệt hỏi quyền vị trí, hãy chọn Cho phép.</p>
-        : locationError ? <p className="mg-field-error" role="alert">{permissionDenied
-          ? showLocationHelp ? `Lần kiểm tra ${deniedRetries}: trình duyệt vẫn chặn vị trí.` : 'Chưa có quyền vị trí. Bấm thử lại để yêu cầu trình duyệt hoặc xem cách bật quyền.'
-          : locationError.message}</p>
+        : locationError ? <p className="mg-field-error" role="alert">{permissionDenied ? 'Chưa có quyền vị trí.' : locationError.message}</p>
         : clockLocation && !(clockLocation instanceof Error) ? <p role="status">
           {attendanceLocationLabel(clockLocation, nearestAttendanceStoreOption(clockLocation, stores))}
         </p> : null}

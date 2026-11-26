@@ -110,7 +110,10 @@ export function withAccessRequest<C>(handler:(request:NextRequest,context:C)=>Pr
       const allDutyStores = dutyRoster && (request.nextUrl.pathname !== '/api/auth/duty-roster/registrations' || !canManageShiftRegistration(user) || canLockShiftRegistration(user));
       const crossStoreRead = request.method === 'GET' && user.scope_all_read === true && !user.scope_all &&
         crossStoreReadPath.test(request.nextUrl.pathname) && !/\/(?:refresh|backups|import|telegram)(?:\/|$)/.test(request.nextUrl.pathname);
-      return await dataAccess.run({...user,store_id:allDutyStores?null:user.store_id??null,scope_all:allDutyStores||user.scope_all===true||crossStoreRead,cross_store_read:crossStoreRead,operation:dutyRoster?'duty_roster':operation,transfer_vehicle_id},()=>handler(request,context));
+      const crossStoreNote = request.method === 'PATCH' && request.nextUrl.pathname === '/api/auth/order/car-rental/followups' &&
+        user.scope_all_read === true && !user.scope_all && hasPermission(user,'contracts.read') && hasPermission(user,'contracts.draft');
+      if(crossStoreNote)operation='collection_note';
+      return await dataAccess.run({...user,store_id:allDutyStores?null:user.store_id??null,scope_all:allDutyStores||user.scope_all===true||crossStoreRead||crossStoreNote,cross_store_read:crossStoreRead,operation:dutyRoster?'duty_roster':operation,transfer_vehicle_id},()=>handler(request,context));
     } catch (error) {
       return failureResponse('Không thực hiện được thao tác.', error);
     }
