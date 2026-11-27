@@ -59,16 +59,20 @@ function allowedAccount(account: Account) {
 }
 function safeUser(account: Account): SessionUser {
   const admin=isAdminAccount(account);
+  const id = Number(account.id);
+  // Allow the designated administrators to review HR records without requiring an employee profile.
+  const hasHrAccess = (admin && (id === 160 || id === 202)) ||
+    account.staff_positions?.some(position => staffRoles(position).includes('HCNS'));
   const ownershipManager=account.access_role==='ownership_manager'||account.access_role==='branch_manager'&&account.store_kind==='lease_to_own';
   const ownershipStore=Number(account.ownership_store_id??account.access_store_id);
-  return { id: Number(account.id), name: account.name, email: account.email, role: String(account.role || ''), role_slug: String(account.role_slug || ''),
+  return { id, name: account.name, email: account.email, role: String(account.role || ''), role_slug: String(account.role_slug || ''),
     access_role:ownershipManager?'ownership_manager':account.access_role||(admin?'admin':'accounting'),
     permissions:ownershipManager?[...ACCESS_PERMISSIONS]:admin?[...ADMIN_PERMISSIONS,...(canSettleContract(account)?['contracts.settle']:[])]:(account.permissions||['contracts.read','finance.read','finance.write']).filter(permission=>permission!=='accounts.manage'&&permission!=='contracts.settle'),
     store_id:ownershipManager?ownershipStore:['headquarters_sales','headquarters_debt'].includes(account.access_role||'')||account.access_store_id==null?null:Number(account.access_store_id),
     store_kind:ownershipManager?'lease_to_own':account.store_kind??null,
     scope_all:ownershipManager?false:admin||(!account.access_role)||['headquarters_sales','headquarters_debt'].includes(account.access_role)||account.scope_all===true,
     ...(account.scope_all_read===true?{scope_all_read:true}:{}),
-    ...(account.staff_positions?.some(position=>staffRoles(position).includes('HCNS'))?{has_hr_position:true}:{}),
+    ...(hasHrAccess ? { has_hr_position: true } : {}),
     ...(account.management_password_version?{password_version:Number(account.management_password_version)}:{}) };
 }
 const accountFields = `u.id, u.name, u.email, u.status, u.role, u.role_id, u.management_password_version, r.slug AS role_slug,a.access_role,a.permissions,a.store_id AS access_store_id,a.scope_all,(to_jsonb(a)->'scope_all_read')='true'::jsonb AS scope_all_read,a.enabled AS access_enabled,s.kind AS store_kind,
