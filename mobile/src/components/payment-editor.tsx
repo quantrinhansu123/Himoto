@@ -553,27 +553,29 @@ function PaymentForm({
               valueColor={theme.info}
             />
           )}
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, paddingTop: 6 }}>
-            <Button
-              size="sm"
-              secondary
-              equalWidth
-              icon={<QrCode size={14} color={theme.text} />}
-              label="Mã QR chuyển khoản"
-              onPress={() =>
-                router.push({ pathname: "/contract-qr/[id]", params: { id } })
-              }
-            />
-            <Button
-              size="sm"
-              secondary
-              equalWidth
-              icon={<MessageCircle size={14} color={theme.text} />}
-              label="Gửi Telegram"
-              onPress={() =>
-                router.push({ pathname: "/contract-telegram/[id]", params: { id } })
-              }
-            />
+          <View style={{ gap: 8, paddingTop: 6 }}>
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              <Button
+                size="sm"
+                secondary
+                equalWidth
+                icon={<QrCode size={14} color={theme.text} />}
+                label="Mã QR chuyển khoản"
+                onPress={() =>
+                  router.push({ pathname: "/contract-qr/[id]", params: { id } })
+                }
+              />
+              <Button
+                size="sm"
+                secondary
+                equalWidth
+                icon={<MessageCircle size={14} color={theme.text} />}
+                label="Gửi Telegram"
+                onPress={() =>
+                  router.push({ pathname: "/contract-telegram/[id]", params: { id } })
+                }
+              />
+            </View>
             {session?.user.permissions.includes("contracts.settle") && (
               <Button
                 size="sm"
