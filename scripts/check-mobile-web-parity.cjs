@@ -51,11 +51,12 @@ async function main(){
  const range=registrationDto.registrationMonthRange(month.month),rangeData=await api.mobileShiftRegistration(actor,req(new URLSearchParams(range).toString()),false);
  assert(registrationDto.isRegistrationRange(rangeData));assert(!registrationDto.isRegistrationRange({...rangeData,registrations:[...rangeData.registrations,...rangeData.registrations]}));
  assert.throws(()=>registrationDto.registrationDates('2026-11-02','2026-11-01'));assert.throws(()=>registrationDto.registrationDates('2026-01-01','2026-05-01'));
- const registrationFile=await exportApi.exportMobileList(actor,'shift-registrations',req(new URLSearchParams({...range,store:'23',search:'QA'}).toString()));
+ const hcns={...actor,has_hr_position:true,scope_all:true,store_id:null};
+ const registrationFile=await exportApi.exportMobileList(hcns,'shift-registrations',req(new URLSearchParams({...range,store:'23',search:'QA'}).toString()));
  const registrationBook=new(require('exceljs').Workbook)();await registrationBook.xlsx.load(Buffer.from(registrationFile.contentBase64,'base64'));
  assert.equal(registrationFile.rowCount,1);assert.equal(registrationBook.worksheets[0].rowCount,2);assert.equal(registrationBook.worksheets[0].getRow(1).getCell(1).value,'Địa điểm làm việc');assert.equal(registrationBook.worksheets[0].getRow(2).getCell(registrationBook.worksheets[0].columnCount).value,registrationDto.registrationCredit('S'));
  await assert.rejects(()=>exportApi.exportMobileList({...actor,permissions:[]},'shift-registrations',req(new URLSearchParams(range).toString())),e=>e.status===403);
- for(const query of ['from=2026-11-01&to=2026-11-02&staff_id=999','from=2026-11-01&to=2026-11-02&store=all&store=23'])await assert.rejects(()=>exportApi.exportMobileList(actor,'shift-registrations',req(query)),e=>e.status===400);
+ for(const query of ['from=2026-11-01&to=2026-11-02&staff_id=999','from=2026-11-01&to=2026-11-02&store=all&store=23'])await assert.rejects(()=>exportApi.exportMobileList(hcns,'shift-registrations',req(query)),e=>e.status===400);
  checks.push('Registration range shares web 1–93-day date validation and Excel columns/credits; native API keeps month compatibility, rejects mixed/injected filters and gates all-store range/export behind HR');
  const file=await exportApi.exportMobileList(actor,'shifts',req('store_id=23&status=draft'));
  assert(allRequested);assert.equal(file.rowCount,151);

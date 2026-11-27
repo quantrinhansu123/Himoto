@@ -29,6 +29,7 @@ async function main() {
     assert.equal(attendanceScope({id:1,access_role,permissions:['hr.read'],store_id:2,store_kind:'lease_to_own',scope_all:false}).reviewer,false);
   }
   const hr = {id:1,access_role:'hr',permissions:['hr.read'],store_id:2};
+  assert.deepEqual(attendanceScope({id:1,access_role:'branch_staff',scope_all:true,permissions:['attendance.review']}),{reviewer:false,all:false,store:null});
   assert.equal(attendanceScope(hr).reviewer,false);
   assert.deepEqual(attendanceScope({...hr,has_hr_position:true}),{reviewer:true,all:false,store:2});
   for (const account of [{id:1,access_role:'admin'},{id:1,permissions:['attendance.review','attendance.export','attendance.note']}]) {

@@ -11,7 +11,8 @@ export const ATTENDANCE_ON_LOCAL_DATE = "(clock_in_at AT TIME ZONE 'Asia/Ho_Chi_
 export class AttendanceError extends Error { constructor(message: string, public status = 400) { super(message); } }
 export function attendanceScope(user: SessionUser) {
   // These queries use the owner connection, so every read includes this explicit scope.
-  return { reviewer: canViewOtherAttendance(user), all: isAdminAccount(user) || user.scope_all === true, store: user.store_id ?? null };
+  const reviewer = canViewOtherAttendance(user);
+  return { reviewer, all: reviewer && (isAdminAccount(user) || user.scope_all === true), store: user.store_id ?? null };
 }
 function attendanceEditTime(value: unknown) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value)) {

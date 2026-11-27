@@ -30,7 +30,7 @@ async function transaction<T>(user: SessionUser, self: boolean, write: boolean, 
   });
 }
 function registrationStore(user: SessionUser) {
-  if (!canManageShiftRegistration(user) || canLockShiftRegistration(user)) return undefined;
+  if (!canManageShiftRegistration(user) || canLockShiftRegistration(user) || user.scope_all === true) return undefined;
   if (!user.store_id) throw new MobileError('Tài khoản chưa được gắn cơ sở quản lý.',403,'FORBIDDEN');
   return user.store_id;
 }

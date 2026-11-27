@@ -14,6 +14,7 @@ import { documentRequirements } from '@/lib/management/contract-requirements';
 import { hasSalesCommissionRole, staffCustomerSourceLabel, staffRoles } from '@/lib/management/staff-positions';
 import { canEditIssuedContract,contractProfile,saveContractProfile,saveFullContract } from '@/lib/management/contract-profile';
 import { RentalTermsEditor } from '@/components/management/RentalTermsEditor';
+import { ReceiptCorrectionsEditor } from '@/components/management/ReceiptCorrectionsEditor';
 import { ManagementRow } from '@/lib/management/types';
 import { CONTRACT_STATUSES, CONTRACT_TYPES } from '@/lib/management/config';
 import { mapApiRow } from '@/lib/management/repository';
@@ -89,6 +90,7 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
   const catalog = useContractTypes();
   const [typeManagerOpen, setTypeManagerOpen] = useState(false);
   const [editingTerms, setEditingTerms] = useState(false);
+  const [editingReceipts, setEditingReceipts] = useState(false);
   const [draft, setDraft] = useState<ContractDraft>(() => {
     const initial = createContractDraft(dataset!, selectedStore, row);
     if(backfill&&!row)initial.backfill={note:''};
@@ -997,6 +999,7 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
           </>)}
           {panel('payment', 'Chi phí', <>
             {editingIssued && !ownership && row && <p><button type="button" className="mg-button" disabled={saving} onClick={() => setEditingTerms(true)}>Sửa tiền / ngày thuê</button></p>}
+            {editingIssued && ownership && row && <p><button type="button" className="mg-button" disabled={saving} onClick={() => setEditingReceipts(true)}>Sửa tiền cọc / chia khoản đã thu</button></p>}
             <div className="mg-contract-cost-section"><h3>{reserving ? 'Tiền giữ xe / Đặt cọc' : 'Tiền cọc'}</h3><div className="mg-form-grid mg-contract-grid-two">
               {moneyField('deposit_amount', reserving ? 'Số tiền cọc giữ xe (VNĐ)' : 'Số tiền đặt cọc (VNĐ)')}{paymentMethodField('deposit_payment_method', 'Hình thức dự kiến nhận cọc')}
             </div></div>
@@ -1063,6 +1066,7 @@ export function ContractComposer({ row, mode = 'print', backfill=false, onClose,
       </form>
     </Dialog>
     {editingTerms && row && <RentalTermsEditor id={row.id} onClose={() => setEditingTerms(false)} onSaved={() => { setEditingTerms(false); onSaved?.(draft.contract_number.trim() || row.code); onClose(); }} />}
+    {editingReceipts && row && <ReceiptCorrectionsEditor id={row.id} onClose={() => setEditingReceipts(false)} onSaved={() => { setEditingReceipts(false); onSaved?.(row.code); onClose(); }} />}
     {customerModal && <CustomerCreateDialog allowIncomplete startDraft={reserving} foreign={draft.customer.customer_type==='foreign'} idCard={draft.customer.customer_type==='foreign'?normalizeIdCard(idInput):/^\d{9}$|^\d{12}$/.test(normalizeIdCard(idInput)) ? normalizeIdCard(idInput) : ''} storeId={customerStoreId} onCreated={customerCreated} onClose={() => setCustomerModal(false)} />}
     {document && <ContractPrintPreview doc={document} contractId={savedDraft?.id || row?.id} onClose={() => setDocument(null)} />}
     {typeManagerOpen && <ContractTypeManager onClose={()=>setTypeManagerOpen(false)} onCreated={type=>{changeRentalType(type);setTypeManagerOpen(false);}} />}

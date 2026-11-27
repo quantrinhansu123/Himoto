@@ -31,6 +31,9 @@ async function main() {
   assert.equal(canLockShiftRegistration(delegated), false);
   assert.equal(canLockShiftRegistration({...delegated,scope_all:true}),true);
   assert.equal(canManageShiftRegistration({access_role:'admin'}),true);
+  const hcns = {access_role:'custom', has_hr_position:true, permissions:[]};
+  assert.equal(canManageShiftRegistration(hcns),true);
+  assert.equal(canLockShiftRegistration({...hcns,scope_all:true}),false);
   for (const account of [{access_role:'hr', permissions:['hr.read']}, {access_role:'custom', permissions:['hr.write']}]) {
     assert.equal(canManageShiftRegistration(account), false);
   }

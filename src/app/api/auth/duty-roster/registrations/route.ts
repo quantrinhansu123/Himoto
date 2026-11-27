@@ -20,8 +20,9 @@ async function handle(request: NextRequest) {
     if (writing && !canManageShiftRegistration(user)) throw new DutyError('Tài khoản chưa có quyền quản lý đăng ký ca.', 403);
     if (request.method === 'PATCH' && !canLockShiftRegistration(user)) throw new DutyError('Cần quyền quản lý toàn hệ thống để khóa tuần đăng ký.', 403);
     const ownUserId = canManageShiftRegistration(user) ? undefined : user.id;
-    const storeScope = canManageShiftRegistration(user) && !canLockShiftRegistration(user) ? user.store_id : undefined;
-    if (canManageShiftRegistration(user) && !canLockShiftRegistration(user) && !storeScope) throw new DutyError('Tài khoản chưa được gắn cơ sở quản lý.', 403);
+    const branchScoped = canManageShiftRegistration(user) && !canLockShiftRegistration(user) && user.scope_all !== true;
+    const storeScope = branchScoped ? user.store_id : undefined;
+    if (branchScoped && !storeScope) throw new DutyError('Tài khoản chưa được gắn cơ sở quản lý.', 403);
     const raw = writing ? await request.json() : null;
     if (request.method === 'PUT' && storeScope && parseRegistration(raw).store_id !== storeScope) throw new DutyError('Cơ sở nằm ngoài phạm vi quản lý.',403);
     client = await (request.method === 'PATCH' ? ownerDatabase : himotoPool).connect();

@@ -134,8 +134,8 @@ export function canConfigureAttendance(account: PermissionAccount | null | undef
   return hasHrWriteRole(account) || hasPermission(account,'attendance.settings');
 }
 export function canManageShiftRegistration(account: PermissionAccount | null | undefined) {
-  return hasHrWriteRole(account) || hasPermission(account,'shift_registration.manage');
+  return account?.has_hr_position === true || hasHrWriteRole(account) || hasPermission(account,'shift_registration.manage');
 }
 export function canLockShiftRegistration(account: PermissionAccount | null | undefined) {
-  return isAdminAccount(account) || hasHrWriteRole(account) || (account?.scope_all === true && canManageShiftRegistration(account));
+  return isAdminAccount(account) || hasHrWriteRole(account) || (account?.scope_all === true && hasPermission(account,'shift_registration.manage'));
 }
