@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Stack, useLocalSearchParams } from "expo-router";
-import { shiftReportTypeLabel, type ShiftReportType } from "../../../../shared/mobile-shift-reports";
+import { type ShiftReportType } from "../../../../shared/mobile-shift-reports";
 import { useSession } from "@/providers/session";
 import { StateView } from "@/components/ui";
 import { ShiftEditor } from "@/components/shift-editor";
@@ -16,7 +16,7 @@ function Editor({ id, initialStore, initialReportType }: { id: string; initialSt
   if (options.isPending || id !== "new" && record.isPending) return <StateView title="Đang mở biểu mẫu báo cáo ca" loading />;
   if (record.data?.status === "submitted") return <StateView title="Báo cáo PGD đã chốt" message="Số kiểm kê và minh chứng PGD được giữ nguyên. Mở phần đối soát KTNB để tiếp tục kiểm tra." />;
   return <>
-    <Stack.Screen options={{ title: `${title} (${shiftReportTypeLabel(effectiveType)})` }} />
+    <Stack.Screen options={{ title }} />
     <ShiftEditor key={`${id}:${initialReportType}`} initialStore={initialStore} initialReportType={initialReportType} options={options.data} record={id === "new" ? null : record.data!} />
   </>;
 }

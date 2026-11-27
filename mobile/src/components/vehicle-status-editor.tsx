@@ -50,7 +50,7 @@ function StatusForm({id}:{id:string}) {
             <Text style={{color:theme.text,fontSize:18,fontWeight:'800',flex:1}}>{vehicle?.license||vehicle?.name||`Xe #${id}`}</Text>
             {vehicle&&<StatusBadge status={vehicle.status} label={statuses[vehicle.status]||vehicle.status} />}
           </View>
-          {vehicle&&<KeyValueRow label="Kho hiện tại" value={vehicle.storeName} />}
+          {vehicle&&<KeyValueRow label="Cơ sở hiện tại" value={vehicle.storeName} />}
           <Text style={{color:theme.muted,fontSize:13,lineHeight:19}}>Đổi trạng thái độc lập trong Danh sách xe, kể cả Nợ xấu → Lưu kho. Cơ sở và hợp đồng hiện có được giữ nguyên.</Text>
           {!!(data?.inventory||query.data?.inventory)?.hasOpenContract&&<Text style={{color:theme.muted,fontSize:13,lineHeight:19}}>Xe còn hợp đồng liên quan. Đổi trạng thái xe không thay đổi hợp đồng hoặc công nợ.</Text>}
         </Card>
@@ -63,7 +63,7 @@ function StatusForm({id}:{id:string}) {
         </Card>:!write.checked?<Button label="Kiểm tra thao tác trên thiết bị" loading={write.checking} onPress={()=>{void write.check();}}/>:!data?<Card style={{gap:14}}>
           {query.isError&&<InlineError message={(query.error as Error).message}/>}
           {!!query.data?.inventory?.blockedReason&&<InlineError message={query.data.inventory.blockedReason}/>}
-          {query.data?.inventory?.available&&<Button label="Nhập thông tin đổi trạng thái" disabled={query.isFetching||query.isError} onPress={()=>start(query.data!)}/>}
+          {query.data?.inventory?.available&&<Button label="Đổi trạng thái" disabled={query.isFetching||query.isError} onPress={()=>start(query.data!)}/>}
           <Button label="Tải lại thông tin xe" secondary loading={query.isFetching} onPress={()=>{void query.refetch();}}/>
         </Card>:review?<>
           <Card style={{gap:12}}>
@@ -79,7 +79,7 @@ function StatusForm({id}:{id:string}) {
             </View>
             <Text style={{color:theme.muted,fontSize:13.5,lineHeight:20}}>Không cần nhập khách hàng, không tạo hợp đồng nháp, không trả xe hoặc xóa công nợ.</Text>
           </Card>
-          <Button label="Lưu đổi trạng thái" disabled={locked} loading={write.busy} onPress={()=>setConfirm(true)}/>
+          <Button label="Đổi trạng thái" disabled={locked} loading={write.busy} onPress={()=>setConfirm(true)}/>
           <Button label="Sửa thông tin" secondary disabled={locked} onPress={()=>{setReview(null);setError('');top();}}/>
         </>:<>
           <Card style={{gap:16}}>
@@ -93,7 +93,7 @@ function StatusForm({id}:{id:string}) {
       </KeyboardFormScrollView>
 
     {confirm&&review&&<ConfirmEdit title="Lưu đổi trạng thái xe?" message={`${review.vehicle.license||review.vehicle.name} · ${statuses[review.input.status]||review.input.status}. Ghi lịch sử thao tác, giữ nguyên cơ sở, hợp đồng và công nợ.`}
-      confirmLabel="Lưu đổi trạng thái" onCancel={()=>setConfirm(false)} onConfirm={()=>{setConfirm(false);void write.submit({...review.input,review_snapshot:review.snapshot});}}/>}
+      confirmLabel="Đổi trạng thái" onCancel={()=>setConfirm(false)} onConfirm={()=>{setConfirm(false);void write.submit({...review.input,review_snapshot:review.snapshot});}}/>}
     {reload&&<ConfirmEdit title="Tải lại xe và nhập lại?" message="Nội dung đang nhập sẽ được bỏ. Lấy thông tin xe mới nhất trước khi tiếp tục." confirmLabel="Tải lại và nhập lại" onCancel={()=>setReload(false)} onConfirm={()=>{setReload(false);setData(null);setReview(null);setNote('');setError('');top();void query.refetch();}}/>}
     {write.exit&&<ConfirmEdit title="Rời màn đổi trạng thái?" busy={write.busy} message="Nội dung chưa gửi sẽ mất. Mã đã gửi vẫn giữ để đối chiếu trong Tài khoản." confirmLabel="Rời màn đổi trạng thái" onCancel={write.dismissExit} onConfirm={write.leave}/>}
   </SafeAreaView>;

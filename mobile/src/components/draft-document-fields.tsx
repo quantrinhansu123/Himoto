@@ -352,7 +352,7 @@ export function DraftParty<T extends MobileContractFormInput>({ input, change, d
           onChange={(value) => set("customer_type", value)}
         />
         <FormField
-          label="Họ tên khách thuê"
+          label="Tên khách hàng"
           value={customer.name}
           onChangeText={(value) => set("name", value)}
           editable={!disabled}
@@ -361,7 +361,7 @@ export function DraftParty<T extends MobileContractFormInput>({ input, change, d
           error={errors.name}
         />
         <FormField
-          label="Điện thoại khách thuê"
+          label="SĐT"
           value={customer.phone}
           onChangeText={(value) => set("phone", value)}
           editable={!disabled}
@@ -382,7 +382,7 @@ export function DraftParty<T extends MobileContractFormInput>({ input, change, d
           error={errors.email}
         />
         <FormField
-          label="Địa chỉ khách thuê"
+          label="Nơi ở hiện tại"
           value={customer.address}
           onChangeText={(value) => set("address", value)}
           editable={!disabled}
@@ -436,8 +436,8 @@ export function DraftParty<T extends MobileContractFormInput>({ input, change, d
         <FormField
           label={
             customer.customer_type === "foreign"
-              ? "Hộ chiếu khách thuê"
-              : "CCCD/CMND khách thuê"
+              ? "Số hộ chiếu"
+              : "Số CMTND/CCCD"
           }
           value={customer.id_card}
           onChangeText={(value) => set("id_card", value)}
@@ -462,7 +462,7 @@ export function DraftParty<T extends MobileContractFormInput>({ input, change, d
           maxLength={255}
         />
         <FormField
-          label="GPLX khách thuê"
+          label="Số giấy phép lái xe"
           value={customer.driver_license_number}
           onChangeText={(value) => set("driver_license_number", value)}
           editable={!disabled}
@@ -799,7 +799,7 @@ export function DraftFees<T extends MobileContractFormInput>({ input, change, di
           onChange={(value) => set("package_name", value)}
         />
         <MoneyField
-          label="Đơn giá (VND)"
+          label="Đơn giá áp dụng (VNĐ)"
           value={d.unit_price}
           onChange={(value) => set("unit_price", value)}
           disabled={disabled}
@@ -828,14 +828,14 @@ export function DraftFees<T extends MobileContractFormInput>({ input, change, di
           </View>
         )}
         <MoneyField
-          label="Tổng giá trị hợp đồng (VND)"
+          label="Tổng tiền thuê và phí khác (VNĐ)"
           value={d.total_amount}
           onChange={(value) => set("total_amount", value)}
           disabled={disabled}
           error={errors.total_amount}
         />
         <MoneyField
-          label="Tiền cọc dự kiến (VND)"
+          label={d.reservation ? "Số tiền cọc giữ xe (VNĐ)" : "Số tiền đặt cọc (VNĐ)"}
           value={d.deposit_amount}
           onChange={(value) => set("deposit_amount", value)}
           disabled={disabled}
@@ -843,7 +843,9 @@ export function DraftFees<T extends MobileContractFormInput>({ input, change, di
         />
         {(totalAmountNum > 0 || depositAmountNum > 0) && (
           <Text style={{ color: theme.primary, fontSize: 14, fontWeight: "700" }}>
-            Tổng cần thu gồm cọc: {money(totalAmountNum + depositAmountNum)}
+            {d.reservation
+              ? `Tổng tiền thuê và phí: ${money(totalAmountNum)}`
+              : `Tổng cần thu gồm cọc: ${money(totalAmountNum + depositAmountNum)}`}
           </Text>
         )}
         <Text style={{ color: theme.muted, fontSize: 14, lineHeight: 22 }}>

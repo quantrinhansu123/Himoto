@@ -124,11 +124,11 @@ function Recovery({id}:{id:string}) {
         </Card>
         <Button label="Xác nhận đã kiểm tra phiếu trả xe" loading={busy} onPress={()=>{void acknowledge();}}/>
         <Button secondary label="Gửi Telegram trả xe" disabled={busy} onPress={()=>{void acknowledge({telegram:true});}}/>
-        {!!receipt.review.fees.items[0]&&<Button label="Mở hồ sơ trả xe" secondary disabled={busy}
+        {!!receipt.review.fees.items[0]&&<Button label="Sửa hồ sơ trả xe" secondary disabled={busy}
           onPress={()=>{void acknowledge({itemId:String(receipt.review.fees.items[0].id)});}}/>}
         <View style={{flexDirection:'row',flexWrap:'wrap',gap:8}}>
-          {!!receipt.review.fees.items[0]&&receipt.review.after.depositHeld>0&&<Button size="sm" equalWidth secondary label="Yêu cầu hoàn cọc" disabled={busy} onPress={()=>{void acknowledge({refundItemId:String(receipt.review.fees.items[0].id)});}}/>}
-          <Button size="sm" equalWidth secondary label="Mở Sổ quỹ" disabled={busy} onPress={()=>{void acknowledge({cashbook:true});}}/>
+          {!!receipt.review.fees.items[0]&&receipt.review.after.depositHeld>0&&<Button size="sm" equalWidth secondary label="Bổ sung hoàn cọc" disabled={busy} onPress={()=>{void acknowledge({refundItemId:String(receipt.review.fees.items[0].id)});}}/>}
+          <Button size="sm" equalWidth secondary label="Điền thu/chi vào sổ quỹ" disabled={busy} onPress={()=>{void acknowledge({cashbook:true});}}/>
         </View>
         <Button label="Tải lại phiếu trả xe" secondary loading={busy} onPress={()=>{void load();}}/>
       </>}

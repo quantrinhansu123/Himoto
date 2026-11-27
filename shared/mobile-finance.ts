@@ -3,9 +3,9 @@ import type { MobileCollectionMethod, MobileWriteReceipt } from "./mobile-contra
 export const MOBILE_PAYMENT_PURPOSES = ["debt", "renewal", "deposit", "extra", "deposit_refund", "rental_refund"] as const;
 export type MobilePaymentPurpose = (typeof MOBILE_PAYMENT_PURPOSES)[number];
 export const PAYMENT_PURPOSE_LABELS: Record<MobilePaymentPurpose, string> = {
-  debt: "Thu tiền thuê / công nợ", deposit: "Thu cọc còn thiếu", extra: "Thu thêm khoản khác",
-  renewal: "Thu tiền và gia hạn một hoặc nhiều xe",
-  deposit_refund: "Trả cọc cho khách", rental_refund: "Hoàn tiền thuê trả sớm",
+  debt: "Thu công nợ còn thiếu", deposit: "Thu tiền cọc còn thiếu", extra: "Thêm phiếu thu (thu khác)",
+  renewal: "Thu tiền gia hạn",
+  deposit_refund: "Phiếu chi: Trả cọc cho khách", rental_refund: "Phiếu chi: Hoàn tiền thuê trả sớm",
 };
 export interface MobilePaymentInput {
   revision: string;

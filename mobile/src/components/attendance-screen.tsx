@@ -57,6 +57,25 @@ export function AttendanceScreen({ historyOnly = false }: { historyOnly?: boolea
   const query = useQuery({ queryKey: ['attendance', session!.user.id, session!.user.storeId, session!.user.permissions.join(','), canReviewOther, historyOnly, from, to, historyStore, page], queryFn: async ({ signal }) => historyOnly ? api!.attendance(new URLSearchParams({ from, to, store: historyStore, page: String(page) }).toString(), signal) : { ...await api!.attendanceOverview(signal), rows: [] as AttendanceEntry[], total: 0, page: 1 }, enabled: !!api && (!historyOnly || from <= to) });
   const { server_now: serverNow } = query.data ?? {};
   const { dataUpdatedAt, refetch } = query;
+  const [clockTick, setClockTick] = useState(() => Date.now());
+  useEffect(() => {
+    if (historyOnly || !serverNow) return;
+    setClockTick(Date.now());
+    const id = setInterval(() => setClockTick(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [historyOnly, serverNow]);
+  const liveClockLabel = serverNow
+    ? new Intl.DateTimeFormat('vi-VN', {
+        timeZone: 'Asia/Ho_Chi_Minh',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour12: false,
+      }).format(new Date(Date.parse(serverNow) + Math.max(0, clockTick - dataUpdatedAt)))
+    : '';
   const pendingIsFromPriorDay = Boolean(pending && serverNow &&
     dutyToday(new Date(pending.location.timestamp)) < dutyToday(new Date(serverNow)));
   useEffect(() => {
@@ -176,7 +195,12 @@ export function AttendanceScreen({ historyOnly = false }: { historyOnly?: boolea
     <FlatList data={historyOnly ? query.data?.rows || [] : []} keyExtractor={row => String(row.id)} contentContainerStyle={{ padding: 16, paddingBottom: 36, gap: 12, maxWidth: 760, width: '100%', alignSelf: 'center' }} refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={() => { void query.refetch(); }} tintColor={theme.primary} />}
       ListHeaderComponent={<View style={{ gap: 12 }}>
         {!historyOnly && <>
-          {serverNow && <Text style={{ color: theme.muted, fontSize: 13 }}>Giờ máy chủ (VN): {dateTime(serverNow)}</Text>}
+          {liveClockLabel ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <Text style={{ color: theme.muted, fontSize: 13 }}>Giờ máy chủ (VN)</Text>
+              <Text style={{ color: theme.text, fontSize: 14, fontWeight: '800', fontVariant: ['tabular-nums'] }}>{liveClockLabel}</Text>
+            </View>
+          ) : null}
           {/* Hero Check-In / Check-Out Card FIRST above the fold */}
           {query.isPending && !query.data ? <SkeletonList count={1} lines={4} /> : <Card style={{ gap: 12, padding: 16 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
@@ -210,9 +234,9 @@ export function AttendanceScreen({ historyOnly = false }: { historyOnly?: boolea
           {/* Compact Horizontal Shortcut Strip */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
             <Chip label="Lịch sử chấm công" icon={<History size={14} color={theme.text} />} disabled={busy} onPress={() => router.push('/attendance-history')} />
-            <Chip label="Đăng ký ca tuần" icon={<CalendarDays size={14} color={theme.text} />} disabled={busy} onPress={() => router.push('/self-shift-registration')} />
+            <Chip label="Đăng ký ca trong tuần" icon={<CalendarDays size={14} color={theme.text} />} disabled={busy} onPress={() => router.push('/self-shift-registration')} />
             {canReview && <Chip label="Bảng đăng ký ca" icon={<Clock3 size={14} color={theme.text} />} disabled={busy} onPress={() => router.push('/shift-registrations')} />}
-            <Chip label="GPS cơ sở" icon={<MapPin size={14} color={theme.text} />} disabled={busy} onPress={() => router.push('/attendance-locations')} />
+            <Chip label="Cài đặt" icon={<MapPin size={14} color={theme.text} />} disabled={busy} onPress={() => router.push('/attendance-locations')} />
           </ScrollView>
           {!!notice && <InfoBanner tone="success" message={notice} />}
           {!!error && !action && <InlineError message={error} />}
@@ -227,13 +251,15 @@ export function AttendanceScreen({ historyOnly = false }: { historyOnly?: boolea
             <Chip label="Tháng này" disabled={query.isFetching} onPress={() => { const current = dutyToday(); setFrom(current.slice(0, 7) + '-01'); setTo(current); setPage(1); }} />
             <Chip label="Hôm nay" disabled={query.isFetching} onPress={() => { const current = dutyToday(); setFrom(current); setTo(current); setPage(1); }} />
           </ScrollView>
+          {canReviewOther && Boolean(query.data?.total) && (
+            <FilteredListExport kind="attendance" label="Tải Excel theo nhân sự" filters={new URLSearchParams({ from, to, store: historyStore }).toString()} disabled={query.isFetching || query.isError} />
+          )}
           {filtersOpen && <Card style={{ gap: 10 }}>
             <View style={{ flexDirection: 'row', gap: 8 }}>
               <View style={{ flex: 1 }}><DateField label="Từ ngày" value={from} onChange={value => { setFrom(value); setPage(1); }} /></View>
               <View style={{ flex: 1 }}><DateField label="Đến ngày" value={to} onChange={value => { setTo(value); setPage(1); }} /></View>
             </View>
-            {canReviewOther && <ChoiceField label="Cơ sở chấm công" value={store} searchable choices={[{ value: 'all', label: 'Tất cả cơ sở được phép' }, ...(workspace.data?.stores || []).map(item => ({ value: String(item.id), label: item.name }))]} onChange={value => { setStore(value); setPage(1); }} />}
-            {canReviewOther && Boolean(query.data?.total) && <FilteredListExport kind="attendance" label="Tải Excel theo nhân sự" filters={new URLSearchParams({ from, to, store: historyStore }).toString()} disabled={query.isFetching || query.isError} />}
+            {canReviewOther && <ChoiceField label="Cơ sở xem lịch sử" value={store} searchable choices={[{ value: 'all', label: 'Tất cả cơ sở được phép' }, ...(workspace.data?.stores || []).map(item => ({ value: String(item.id), label: item.name }))]} onChange={value => { setStore(value); setPage(1); }} />}
             {from > to && <InlineError message="Ngày kết thúc phải bằng hoặc sau ngày bắt đầu." />}
           </Card>}
         </>}
@@ -263,7 +289,7 @@ export function AttendanceScreen({ historyOnly = false }: { historyOnly?: boolea
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingTop: 2 }}>
           <Button size="sm" equalWidth secondary label={`${evidence === String(row.id) ? 'Ẩn' : 'Xem'} ảnh & GPS`} onPress={() => setEvidence(current => current === String(row.id) ? null : String(row.id))} />
           {row.can_manage && <Button size="sm" equalWidth secondary label="Sửa giờ" onPress={() => setEditing(row)} />}
-          {!row.shift_name && canReview && <Button size="sm" equalWidth secondary label="Đăng ký ca" onPress={() => router.push({ pathname: '/shift-registrations', params: { date: dutyToday(new Date(row.clock_in_at)), staff: row.staff_name } })} />}
+          {canReview && <Button size="sm" equalWidth secondary label="Đăng ký ca" onPress={() => router.push({ pathname: '/shift-registrations', params: { date: dutyToday(new Date(row.clock_in_at)), staff: row.staff_name } })} />}
         </View>
         {evidence === String(row.id) && <View style={{ gap: 6, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 8 }}>
           {row.can_manage && (

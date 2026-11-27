@@ -38,14 +38,12 @@ function List({ source }: { source: string }) {
         contentContainerStyle={{ padding: 16, paddingBottom: 36, gap: 11, maxWidth: 760, width: '100%', alignSelf: 'center' }}
         refreshControl={<RefreshControl refreshing={query.isRefetching} tintColor={theme.primary} onRefresh={() => { void query.refetch(); }} />}
       >
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-          <Text style={{ color: theme.muted, fontSize: 13, flex: 1 }}>
-            {query.data ? `${query.data.scopeCount} hợp đồng trong phạm vi` : 'Đang tải…'}{source ? ` · HĐ xe #${source}` : ''}
-          </Text>
-          {session!.user.permissions.includes('contracts.draft') && (
-            <Button size="sm" icon={<Plus size={14} color={theme.primaryText} />} label="Lập HĐ pin" onPress={() => router.push({ pathname: '/battery-editor/[id]', params: { id: 'new', ...(source ? { source } : {}) } })} />
-          )}
-        </View>
+        <Text style={{ color: theme.muted, fontSize: 13 }}>
+          {query.data ? `${query.data.scopeCount} hợp đồng trong phạm vi` : 'Đang tải…'}{source ? ` · HĐ xe #${source}` : ''}
+        </Text>
+        {session!.user.permissions.includes('contracts.draft') && (
+          <Button size="sm" icon={<Plus size={14} color={theme.primaryText} />} label="Tạo hợp đồng thuê pin / sạc" onPress={() => router.push({ pathname: '/battery-editor/[id]', params: { id: 'new', ...(source ? { source } : {}) } })} />
+        )}
 
         {source ? (
           <View style={{ flexDirection: 'row', gap: 8 }}>

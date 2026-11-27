@@ -28,8 +28,8 @@ function Profile({ id }: { id: string }) {
   return <SafeAreaView edges={['bottom', 'left', 'right']} style={{ flex: 1, backgroundColor: theme.background }}><ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40, gap: 12, maxWidth: 760, width: '100%', alignSelf: 'center' }} refreshControl={<RefreshControl refreshing={query.isRefetching} tintColor={theme.primary} onRefresh={() => { void query.refetch(); }} />}>
     <BatterySummary record={r} />
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-      <Button size="sm" equalWidth secondary label="Xem giấy / in" disabled={pending || busy} onPress={() => router.push({ pathname: '/print/[kind]/[id]', params: { kind: 'battery-contracts', id } })} />
-      {canDraft && <Button size="sm" equalWidth secondary label="Sửa HĐ pin / sạc" disabled={pending || busy} onPress={() => router.push({ pathname: '/battery-editor/[id]', params: { id } })} />}
+      <Button size="sm" equalWidth secondary label="Xem / In hợp đồng" disabled={pending || busy} onPress={() => router.push({ pathname: '/print/[kind]/[id]', params: { kind: 'battery-contracts', id } })} />
+      {canDraft && <Button size="sm" equalWidth secondary label="Sửa hợp đồng" disabled={pending || busy} onPress={() => router.push({ pathname: '/battery-editor/[id]', params: { id } })} />}
     </View>
     {r.vehicle_contract_id && <Button size="sm" secondary label={`Mở hợp đồng xe · ${r.vehicle_contract_code || r.vehicle_contract_id}`} onPress={() => router.push({ pathname: '/record/[kind]/[id]', params: { kind: 'contracts', id: String(r.vehicle_contract_id) } })} />}
     {(r.status === 'renting' && (canRenew || canReturn) || (context.renewal_remaining > 0 && r.status !== 'cancelled' && canRenew)) && (
@@ -70,11 +70,11 @@ function Profile({ id }: { id: string }) {
         </View>
       </Card>;
     })}
-    {r.status !== 'cancelled' && canDraft && <Button size="sm" secondary label="Ảnh / Telegram thuê pin và sạc" onPress={() => router.push({ pathname: "/battery-media/[id]/[eventKey]", params: { id, eventKey: "rental" } })} />}
+    {r.status !== 'cancelled' && canDraft && <Button size="sm" secondary label="Gửi / xem Telegram pin / sạc" onPress={() => router.push({ pathname: "/battery-media/[id]/[eventKey]", params: { id, eventKey: "rental" } })} />}
     {!!error && <InlineError message={error} />}{pending && !busy && <Button size="sm" secondary label="Đối chiếu xóa pin trong Tài khoản" onPress={() => router.push('/(tabs)/account')} />}
     <View style={{ flexDirection: 'row', gap: 8 }}>
       <Button size="sm" equalWidth secondary label="Tải lại hồ sơ" loading={query.isFetching} onPress={() => { void query.refetch(); }} />
-      {canDraft && <Button size="sm" equalWidth secondary danger label="Xóa HĐ pin / sạc" loading={busy} disabled={pending} onPress={() => setConfirm(true)} />}
+      {canDraft && <Button size="sm" equalWidth secondary danger label="Xóa hợp đồng" loading={busy} disabled={pending} onPress={() => setConfirm(true)} />}
     </View>
     {confirm && <ConfirmEdit title={`Xóa ${r.code}?`} message="Hợp đồng sẽ rời danh sách đang quản lý. Các phiếu thu đã ghi được giữ để đối chiếu sổ quỹ." confirmLabel="Xác nhận xóa hợp đồng pin" onCancel={() => setConfirm(false)} onConfirm={() => { void remove(); }} />}
   </ScrollView></SafeAreaView>;

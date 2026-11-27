@@ -235,7 +235,7 @@ function CustomerDetailScreen({
                 danger={!isBlacklisted}
                 secondary={isBlacklisted}
                 disabled={busy}
-                label={isBlacklisted ? "Gỡ Blacklist" : "Đưa vào Blacklist"}
+                label={isBlacklisted ? "Bỏ Blacklist" : "Đưa vào Blacklist"}
                 icon={isBlacklisted ? <ShieldCheck size={14} color={theme.text} /> : <ShieldBan size={14} color={theme.danger} />}
                 onPress={() => setBlacklistConfirm(true)}
               />

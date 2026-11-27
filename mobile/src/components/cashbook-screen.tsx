@@ -85,10 +85,12 @@ export function CashbookScreen({ initialStore }: { initialStore?: string }) {
       <Text style={{ color: theme.muted, fontSize: 13 }}>{stores.find(row => String(row.id) === store)?.name || "Tất cả cơ sở"} · Theo ngày thực thu / thực chi</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
         <Chip label={open ? "Ẩn bộ lọc" : activeFilterCount ? `Bộ lọc (${activeFilterCount})` : "Bộ lọc"} selected={open || activeFilterCount > 0} icon={<SlidersHorizontal size={14} color={open || activeFilterCount > 0 ? theme.primary : theme.text} />} onPress={() => setOpen(value => !value)} />
-        {session!.user.permissions.includes('finance.write') && <Chip label="Hoàn cọc chờ duyệt" onPress={() => router.push('/deposit-refund-queue')} />}
+        <Chip label="Hôm nay" selected={Boolean(from && from === to && from === dutyToday())} onPress={() => { const today = dutyToday(); setFrom(today); setTo(today); }} />
+        <Chip label="Báo cáo doanh thu thuê xe" onPress={() => router.push("/staff-sales")} />
+        {session!.user.permissions.includes('finance.write') && <Chip label="Yêu cầu hoàn cọc chờ duyệt" onPress={() => router.push('/deposit-refund-queue')} />}
         {session!.user.permissions.includes('contracts.read') && <Chip label="Tiền về SePay" onPress={() => router.push('/payment-events')} />}
-        <Chip label="Quản lý tài khoản" onPress={() => router.push({ pathname: '/cashbook-accounts', params: { store, status: accountStatus } })} />
-        {session!.user.permissions.includes('finance.write') && <Chip label="+ Thêm tài khoản" onPress={() => router.push({ pathname: '/cashbook-account-editor/[kind]/[id]', params: { kind: 'cash', id: 'new', store } })} />}
+        <Chip label="Danh sách TK" onPress={() => router.push({ pathname: '/cashbook-accounts', params: { store, status: accountStatus } })} />
+        {session!.user.permissions.includes('finance.write') && <Chip label="Thêm tài khoản" onPress={() => router.push({ pathname: '/cashbook-account-editor/[kind]/[id]', params: { kind: 'cash', id: 'new', store } })} />}
         {session!.user.permissions.includes("settings.write") && (
           <Chip
             label={selectMode ? `Xong chọn (${selected.size})` : "Chọn xóa phiếu"}
@@ -100,10 +102,11 @@ export function CashbookScreen({ initialStore }: { initialStore?: string }) {
           />
         )}
       </ScrollView>
+      <FileExportButton key={new URLSearchParams({ store_id: store, search, actor, from, to }).toString()} label="Tải Excel theo bộ lọc" disabled={!valid || query.isFetching || query.isError || !data || input.trim() !== search.trim()} load={signal => api!.cashbookExcel(new URLSearchParams({ store_id: store, search, actor, from, to }).toString(), signal)} />
       {open && <Card style={{ gap: 10 }}>
         <FormField label="Tìm phiếu thu chi" value={input} onChangeText={setInput} maxLength={300} />
         <ChoiceField label="Cơ sở sổ quỹ" value={store} choices={[...(canReadAll ? [{ value: "all", label: "Tất cả cơ sở" }] : []), ...stores.map(row => ({ value: String(row.id), label: row.name }))]} searchable onChange={value => { setStore(value); setActor(""); }} />
-        <ChoiceField label="Người thực hiện phiếu" value={actor} choices={[{ value: "", label: "Tất cả người thực hiện" }, ...(data?.actors || []).map(([value, label]) => ({ value, label }))]} searchable onChange={setActor} />
+        <ChoiceField label="Người thực hiện" value={actor} choices={[{ value: "", label: "Tất cả người thực hiện" }, ...(data?.actors || []).map(([value, label]) => ({ value, label }))]} searchable onChange={setActor} />
         <View style={{ flexDirection: "row", gap: 8 }}>
           <View style={{ flex: 1 }}><DateField label="Từ ngày" value={from} onChange={setFrom} /></View>
           <View style={{ flex: 1 }}><DateField label="Đến ngày" value={to} onChange={setTo} /></View>
@@ -115,7 +118,6 @@ export function CashbookScreen({ initialStore }: { initialStore?: string }) {
         <ChoiceField label="Sắp xếp phiếu" value={paging.sort} choices={CASHBOOK_SORTS} onChange={sort => updatePaging({ sort })} />
         <ChoiceField label="Chiều sắp xếp phiếu" value={paging.direction} choices={[{ value: "desc", label: "Giảm dần" }, { value: "asc", label: "Tăng dần" }]} onChange={direction => updatePaging({ direction })} />
         <ChoiceField label="Số phiếu mỗi trang" value={paging.limit} choices={[5, 10, 25, 50].map(value => ({ value: String(value), label: String(value) }))} onChange={limit => updatePaging({ limit })} />
-        <FileExportButton key={new URLSearchParams({ store_id: store, search, actor, from, to }).toString()} disabled={!valid || query.isFetching || query.isError || !data || input.trim() !== search.trim()} load={signal => api!.cashbookExcel(new URLSearchParams({ store_id: store, search, actor, from, to }).toString(), signal)} />
         {!valid && <InlineError message="Đến ngày phải bằng hoặc sau Từ ngày." />}
       </Card>}
       <Card style={{ gap: 10 }}>
@@ -162,7 +164,7 @@ export function CashbookScreen({ initialStore }: { initialStore?: string }) {
               <KeyValueRow label="Tổng chi toàn bộ" valueColor={theme.danger} value={money(totalAccountExpense)} />
             </View>
           )}
-          <SegmentedBar value={accountStatus} onChange={setAccountStatus} options={[{value:'active',label:'Đang dùng'},{value:'inactive',label:'Ngừng'},{value:'all',label:'Tất cả'}]} />
+          <SegmentedBar value={accountStatus} onChange={setAccountStatus} options={[{value:'active',label:'Đang sử dụng'},{value:'inactive',label:'Ngừng sử dụng'},{value:'all',label:'Tất cả tài khoản'}]} />
           {accounts.isPending && <SkeletonList count={2} lines={2} />}
           {accounts.isError && <InlineError message={accounts.error.message} />}
           <FileExportButton key={accountParams} label="Tải Excel tài khoản theo bộ lọc" disabled={accounts.isFetching||accounts.isError||!balances.length}

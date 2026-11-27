@@ -60,12 +60,12 @@ import { isAdminAccount } from '../../../shared/mobile-managed-accounts';
 import { requiresOwnershipApproval } from '../../../shared/contract-approval';
 
 const GPS_CARD_LABELS: Record<string, string> = {
-  online: "GPS trực tuyến",
-  stopped: "GPS đang dừng",
-  stale: "GPS chưa cập nhật",
-  warning: "GPS cảnh báo",
-  offline: "GPS mất kết nối",
-  unavailable: "Chưa có định vị",
+  online: "ON · Đang di chuyển",
+  stopped: "ON · Đang dừng",
+  stale: "Chưa cập nhật",
+  warning: "Cảnh báo",
+  offline: "OFF · Mất kết nối",
+  unavailable: "Không còn trong tài khoản GPS",
   none: "Chưa gắn GPS",
 };
 
@@ -568,14 +568,14 @@ export function CatalogueScreen({
   if (kind === "customers" && session?.user.permissions.includes("settings.write")) {
     actions.push(
       { label: "Nhập khách hàng từ Excel", onPress: () => router.push("/import-customers") },
-      { label: "Khớp cơ sở khách từ Excel", onPress: () => router.push("/customer-store-import") },
+      { label: "Khớp cơ sở theo căn cước", onPress: () => router.push("/customer-store-import") },
     );
   }
   const exportFilters = new URLSearchParams({ search, status, store, ...(kind === "contracts" ? { scope, from, to, store_basis: storeBasis, ...(customerId ? { customer_id: customerId } : {}) } : {}), ...extraParams }).toString();
   if (kind === 'contracts' && !operationsCatalogue && isAdminAccount(session?.user)) actions.push({ label: 'Nhập nháp hợp đồng từ Excel', onPress: () => router.push('/import-contracts') });
   if (!operationsCatalogue) {
     if (session?.user.permissions.includes(kind === 'contracts' ? 'contracts.delete' : 'settings.write'))
-      actions.push({ label: "Chọn nhiều hồ sơ để xóa", onPress: () => router.push({ pathname: "/bulk-delete/[kind]", params: { kind, filters: exportFilters } }) });
+      actions.push({ label: "Xóa đã chọn", onPress: () => router.push({ pathname: "/bulk-delete/[kind]", params: { kind, filters: exportFilters } }) });
   }
   const toolbar = (
     <View
@@ -704,6 +704,15 @@ export function CatalogueScreen({
             >
               <Text style={{ color: theme.text, fontSize: 12.5, fontWeight: "600" }}>Kho xe toàn hệ thống</Text>
             </Pressable>
+            {session?.user.permissions.includes("vehicles.write") && (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => router.push({ pathname: "/fleet-inventory", params: { purpose: "status", store } })}
+                style={({ pressed }) => [styles.actionPill, { borderColor: theme.border, backgroundColor: theme.surface, opacity: pressed ? 0.72 : 1 }]}
+              >
+                <Text style={{ color: theme.text, fontSize: 12.5, fontWeight: "600" }}>Đổi trạng thái xe</Text>
+              </Pressable>
+            )}
             <Pressable
               accessibilityRole="button"
               onPress={() => router.push("/vehicle-transfers")}

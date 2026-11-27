@@ -144,7 +144,7 @@ function SwapForm({id}:{id:string}) {
           <Button size="sm" equalWidth label="Trang kho trước" secondary disabled={locked||candidates.isFetching||candidatePage===1} onPress={()=>{setCandidatePage(p=>p-1);top();}}/>
           <Button size="sm" equalWidth label="Trang kho tiếp" secondary disabled={locked||candidates.isFetching||!candidates.data?.hasMore} onPress={()=>{setCandidatePage(p=>p+1);top();}}/>
         </View>
-        <Button label="Tải lại danh sách xe thay thế" secondary loading={candidates.isFetching} disabled={locked} onPress={()=>{void candidates.refetch();}}/>
+        <Button label="Làm mới xe thay thế" secondary loading={candidates.isFetching} disabled={locked} onPress={()=>{void candidates.refetch();}}/>
       </Card>
       {vehicle&&<Card style={{gap:4}}>
         <KeyValueRow label="Xe thay thế đã chọn" value={vehicle.license||vehicle.name} emphasize />
@@ -170,7 +170,7 @@ function SwapForm({id}:{id:string}) {
         {!!review.vehicle.draftHolds?.length&&<Text style={{color:theme.warning,fontSize:13.5,lineHeight:20}}>Xe đang được giữ trong hợp đồng nháp: {review.vehicle.draftHolds.map(hold=>hold.code).join(', ')}. Kiểm tra trước khi xác nhận đổi xe.</Text>}
         <Text style={{color:theme.muted,fontSize:13.5,lineHeight:20}}>Giữ nguyên kỳ thuê, giá, tiền cọc và các khoản đã thu/hoàn. Lượt đổi này không ghi thêm khoản tiền.</Text>
       </Card>
-      <Button label="Ghi đổi xe trong hợp đồng" loading={action.busy} disabled={locked||!input} onPress={()=>setConfirm(true)}/>
+      <Button label="Đổi xe trong hợp đồng" loading={action.busy} disabled={locked||!input} onPress={()=>setConfirm(true)}/>
       <View style={{flexDirection:'row',gap:10}}>
         <Button size="sm" equalWidth label="Xem lại danh sách xe" secondary disabled={locked} onPress={()=>{setStep(1);clearReview();top();}}/>
         <Button size="sm" equalWidth label="Tải lại để chọn lại xe" secondary disabled={locked} onPress={()=>setReload(true)}/>

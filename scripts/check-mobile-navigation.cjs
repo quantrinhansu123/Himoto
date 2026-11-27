@@ -205,7 +205,7 @@ async function main() {
   assert(text(tree).includes('Quá hạn (0)'));
   reset(); listPage = { ...listPage, total: 2, statusCounts: [['bad_debt',2]] };
   tree = CatalogueScreen({ kind: 'customers' });
-  assert(text(tree).includes('Nợ xấu / Cấm thuê (2)'));
+  assert(text(tree).includes('Blacklist (khách nợ xấu) (2)'));
   checks.push('Customer blacklist tab counts the web bad_debt status instead of showing a false zero for its filter alias');
   reset(); listPage = { ...listPage, rows: [record], total: 418, pages: 21 };
   infiniteState = { hasNextPage: true, isFetching: false, isFetchNextPageError: false };

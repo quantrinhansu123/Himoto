@@ -467,7 +467,7 @@ export default function Overview() {
                 Nhận trả xe nhanh theo biển số / SĐT
               </Text>
               <Text style={{ color: theme.muted, fontSize: 13, lineHeight: 18 }}>
-                Tìm hợp đồng đang thuê để trả xe ngay
+                Tìm hợp đồng đang thuê & trả xe
               </Text>
             </View>
             <View style={{ flexDirection: "row", gap: 8 }}>
@@ -610,12 +610,13 @@ export default function Overview() {
                   <FilePenLine size={18} color={theme.primary} />
                   <Text
                     style={{
+                      flex: 1,
                       color: theme.text,
-                      fontSize: 14,
+                      fontSize: 13.5,
                       fontWeight: "600",
                     }}
                   >
-                    Hợp đồng nháp
+                    Tiếp tục hợp đồng nháp
                   </Text>
                 </Pressable>
 
@@ -640,12 +641,13 @@ export default function Overview() {
                   <Clock3 size={18} color="#D97706" />
                   <Text
                     style={{
+                      flex: 1,
                       color: theme.text,
-                      fontSize: 14,
+                      fontSize: 13.5,
                       fontWeight: "600",
                     }}
                   >
-                    Đến hạn đóng tiền
+                    Xem khoản đến hạn đóng tiền
                   </Text>
                 </Pressable>
               </View>

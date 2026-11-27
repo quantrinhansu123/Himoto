@@ -11,7 +11,9 @@ import {ShiftAuditExport} from '@/components/shift-audit-export';
 import {ShiftStockPhotos} from '@/components/shift-stock-photos';
 import { ShiftReopen } from "@/components/shift-reopen";
 import { ShiftGpsAlerts } from "@/components/shift-gps-alerts";
-function Report({id,evidence}:{id:string;evidence?:"batteries"|"door"}){
+type EvidenceCategory = "batteries" | "cash" | "personal" | "company" | "door";
+const EVIDENCE_CATEGORIES: readonly EvidenceCategory[] = ["batteries", "cash", "personal", "company", "door"];
+function Report({id,evidence}:{id:string;evidence?:EvidenceCategory}){
   const{api,session}=useSession(),theme=useTheme(),query=useQuery({queryKey:["shift",session!.user.id,id],queryFn:({signal})=>api!.shift(id,signal),enabled:session!.user.permissions.includes("contracts.read"),retry:false});
   if(!session!.user.permissions.includes("contracts.read"))return <StateView title="Không có quyền xem báo cáo ca" />;
   if(query.isPending)return <StateView title="Đang mở báo cáo ca" loading />;if(query.isError)return <StateView title="Chưa mở được báo cáo ca" message={query.error.message} retry={()=>{void query.refetch();}} />;const report=query.data;
@@ -29,4 +31,4 @@ function Report({id,evidence}:{id:string;evidence?:"batteries"|"door"}){
     <Button secondary label="Tải lại hồ sơ báo cáo ca" loading={query.isFetching} onPress={()=>{void query.refetch();}} />
   </ScrollView></SafeAreaView>;
 }
-export default function Route(){const{id,evidence}=useLocalSearchParams<{id:string;evidence?:string}>(),{api,session}=useSession();if(!api||!session||!/^[1-9]\d{0,14}$/.test(id))return <StateView title="Không mở được báo cáo ca" />;return <Report key={`${id}:${api.origin}:${session.token}:${session.user.storeId}:${session.user.allStores}:${session.user.permissions.join(",")}`} id={id} evidence={evidence==="batteries"||evidence==="door"?evidence:undefined} />;}
+export default function Route(){const{id,evidence}=useLocalSearchParams<{id:string;evidence?:string}>(),{api,session}=useSession();if(!api||!session||!/^[1-9]\d{0,14}$/.test(id))return <StateView title="Không mở được báo cáo ca" />;const picked=EVIDENCE_CATEGORIES.includes(evidence as EvidenceCategory)?(evidence as EvidenceCategory):undefined;return <Report key={`${id}:${api.origin}:${session.token}:${session.user.storeId}:${session.user.allStores}:${session.user.permissions.join(",")}`} id={id} evidence={picked} />;}

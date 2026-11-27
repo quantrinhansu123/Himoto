@@ -163,7 +163,11 @@ function Settlement({ data, write, initialMode }: { data: Context<'payment_settl
   const entered = mode === 'partial' ? amount : mode === 'full' ? String(data.remaining ?? '') : '0';
   const receives = Number(entered) > 0, accounts = data.accounts.filter(row => row.method === method);
   const account = accounts.find(row => String(row.id) === selected) ?? (accounts.length === 1 ? accounts[0] : undefined);
-  const title = mode === 'close_unpaid' ? 'Đóng hợp đồng không thu tiền' : closing ? 'Thu đủ và đóng hợp đồng' : 'Ghi nhận thanh toán';
+  const title = mode === 'close_unpaid'
+    ? 'Đóng hợp đồng không thu tiền'
+    : mode === 'full'
+      ? (closed ? 'Thu đủ công nợ' : 'Thu đủ và đóng hợp đồng')
+      : 'Ghi nhận thanh toán một phần';
   function review() {
     Keyboard.dismiss();
     const current = data.items.flatMap(row => vehicles[row.id]?.revision === row.revision ? [vehicles[row.id]] : []);
@@ -195,7 +199,7 @@ function Settlement({ data, write, initialMode }: { data: Context<'payment_settl
     </Card>
     {data.blocked_reason ? <InlineError message={data.blocked_reason} /> : <Card style={{ gap: 16 }}>
       <ChoiceField label="Cách thanh toán và đóng hợp đồng" value={mode} choices={[
-        { value: 'partial', label: 'Thanh toán một phần' }, { value: 'full', label: closed ? 'Thu toàn bộ công nợ' : 'Thu đủ và đóng hợp đồng' },
+        { value: 'partial', label: 'Thanh toán một phần' }, { value: 'full', label: closed ? 'Thu đủ công nợ' : 'Thu đủ và đóng hợp đồng' },
         ...(!closed ? [{ value: 'close_unpaid', label: 'Đóng hợp đồng không thu tiền' }] : []),
       ]} disabled={write.locked} onChange={value => setMode(value as ContractSettlementMode)} />
       {mode === 'partial' ? <FormField label="Số tiền thanh toán (VNĐ)" value={amount} maxLength={13} keyboardType="number-pad"

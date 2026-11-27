@@ -47,6 +47,67 @@ const quickCollectionDefs: { kind: ReturnReceiptDraft['kind']; title: string; to
   { kind: 'rental_debt', title: 'Công nợ tiền thuê', toggleLabel: 'Đã thu công nợ thuê xe' },
 ];
 
+/** Explicit visible 1-tap option button matching Web ReturnSettlementFields radio/checkbox controls (never collapses into a dropdown). */
+function SettlementOption({
+  label,
+  selected,
+  disabled,
+  onPress,
+}: {
+  label: string;
+  selected: boolean;
+  disabled?: boolean;
+  onPress: () => void;
+}) {
+  const theme = useTheme();
+  return (
+    <Pressable
+      accessibilityRole="radio"
+      accessibilityState={{ selected, disabled: Boolean(disabled) }}
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => ({
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+        minHeight: 48,
+        borderRadius: 10,
+        borderWidth: selected ? 1.5 : 1,
+        borderColor: selected ? theme.primary : theme.border,
+        backgroundColor: selected ? theme.tint : theme.surface,
+        opacity: disabled ? 0.5 : pressed ? 0.72 : 1,
+      })}
+    >
+      <View
+        style={{
+          width: 18,
+          height: 18,
+          borderRadius: 9,
+          borderWidth: 2,
+          borderColor: selected ? theme.primary : theme.muted,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        {selected && <View style={{ width: 9, height: 9, borderRadius: 4.5, backgroundColor: theme.primary }} />}
+      </View>
+      <Text
+        style={{
+          color: selected ? theme.primary : theme.text,
+          fontSize: 14,
+          fontWeight: selected ? '700' : '500',
+          lineHeight: 20,
+          flex: 1,
+        }}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
 export function ReturnEditor({ id }: { id: string }) {
   const { session, api } = useSession();
   if (!api || !session || !/^[1-9]\d{0,14}$/.test(id) || !session.user.permissions.includes('contracts.read') || !session.user.permissions.includes('contracts.return'))
@@ -57,6 +118,7 @@ export function ReturnEditor({ id }: { id: string }) {
 function ReturnForm({ id }: { id: string }) {
   const { api, session } = useSession(), theme = useTheme(), reducedMotion = useReducedMotion(), scroll = useRef<ScrollViewInstance>(null);
   const [page, setPage] = useState(1), [step, setStep] = useState(0), [lines, setLines] = useState<ReturnLineDraft[]>([]), [lineIndex, setLineIndex] = useState(0);
+  const autoPicked = useRef(false);
   const [fees, setFees] = useState<MobileReturnPreview | null>(null), [feeInput, setFeeInput] = useState<MobileReturnPreviewInput | null>(null);
   const [receipts, setReceipts] = useState<ReturnReceiptDraft[]>([]), [receiptIndex, setReceiptIndex] = useState(0);
   const [rentalRefund, setRentalRefund] = useState<ReturnMoneyDraft | null>(null), [depositRefund, setDepositRefund] = useState<ReturnMoneyDraft | null>(null);
@@ -73,6 +135,16 @@ function ReturnForm({ id }: { id: string }) {
   const data = query.data, locked = previewing || action.busy || !action.checked || !!action.key;
   const [qrPending, setQrPending] = useState<Record<string, boolean>>({});
   useEffect(() => { alive.current = true; return () => { alive.current = false; abort.current?.abort(); }; }, []);
+  // Auto-select single available vehicle matching Web ContractRowReturnDialog.tsx:80-81.
+  useEffect(() => {
+    if (!data || autoPicked.current || lines.length > 0) return;
+    const available = data.items.rows.filter(r => r.available && !r.completedAt);
+    if (data.items.total === 1 && available.length === 1) {
+      autoPicked.current = true;
+      const created = newReturnLine(available[0]);
+      setLines([syncReturnLineTiming(created, created.returnedAt, Boolean(data.ownership))]);
+    }
+  }, [data, lines.length]);
   const top = () => { Keyboard.dismiss(); scroll.current?.scrollTo({ y: 0, animated: !reducedMotion }); };
   function clearReview() { setReview(null); setReviewInput(null); setError(''); }
   function editLine(patch: Partial<ReturnLineDraft>) {
@@ -149,6 +221,26 @@ function ReturnForm({ id }: { id: string }) {
   const outstandingAfterReceipts = fees && fees.after.rentalRemaining !== null
     ? Math.max(fees.after.rentalRemaining - collectedTotal, 0)
     : null;
+  const rentalRefundSelected = rentalRefund && /^\d+$/.test(rentalRefund.amount || '') ? Number(rentalRefund.amount) : 0;
+  const depositRefundSelected = depositRefund && /^\d+$/.test(depositRefund.amount || '') ? Number(depositRefund.amount) : 0;
+  // Exact Web ReturnSettlementFields.tsx:60,80-86,132 logic.
+  const depositRefundAllowed = Boolean(fees && fees.after.closesRental && outstandingAfterReceipts === 0);
+  const depositRefundBlockReason = fees && !depositRefundAllowed && fees.after.depositHeld > 0
+    ? (!fees.after.closesRental
+      ? 'Chưa thể tick đã hoàn cọc vì hợp đồng còn xe chưa nhận lại.'
+      : outstandingAfterReceipts === null
+        ? 'Chưa thể tick đã hoàn cọc: cần đối chiếu tiền hợp đồng.'
+        : `Chưa thể tick «Đã hoàn cọc cho khách»: còn ${money(outstandingAfterReceipts)} chưa ghi nhận thu. Nếu đã nhận, tick khoản thu phía trên rồi hoàn cọc; nếu chưa thu thì chọn chưa hoàn cọc.`)
+    : '';
+  const pendingRefundAmount = fees
+    ? Math.max(fees.after.depositHeld + Math.max(fees.after.rentalRefundable - rentalRefundSelected, 0) - (outstandingAfterReceipts ?? 0), 0)
+    : 0;
+  const depositOverLimitError = fees && depositRefund && depositRefundSelected > fees.after.depositHeld
+    ? `Số tiền hoàn cọc vượt cọc còn giữ ${money(fees.after.depositHeld)} (vượt ${money(depositRefundSelected - fees.after.depositHeld)}). Tiền thuê trả sớm ghi ở mục «Đã hoàn tiền thuê do trả sớm».`
+    : '';
+  const rentalAnomalyExcess = fees && rentalRefund && rentalRefundSelected > fees.after.rentalRefundable
+    ? rentalRefundSelected - fees.after.rentalRefundable
+    : 0;
 
   function moneyFields(value: ReturnMoneyDraft, onChange: (next: ReturnMoneyDraft) => void, label: string, refund = false) {
     const change = (patch: Partial<ReturnMoneyDraft>) => { onChange({ ...value, ...patch }); clearReview(); };
@@ -159,7 +251,7 @@ function ReturnForm({ id }: { id: string }) {
         change({ method: method as ReturnMoneyDraft['method'], account: first ? String(first.id) : '' });
       }} />
       <ChoiceField label={refund ? 'Tài khoản / két chi hoàn' : 'Tài khoản / két nhận tiền'} value={value.account} disabled={locked} choices={(data?.accounts ?? []).filter(row => row.method === value.method).map(row => ({ value: String(row.id), label: row.label }))} onChange={account => change({ account })} />
-      <RentalDateTime label="thời điểm thực tế thu / hoàn" value={value.paidAt} disabled={locked} onChange={paidAt => change({ paidAt })} />
+      <RentalDateTime label="thực tế thu / hoàn" value={value.paidAt} disabled={locked} onChange={paidAt => change({ paidAt })} />
       {refund && value.method !== 'cash' && <>
         {lines[0] && <RefundQrReader id={id} itemId={lines[0].vehicle.id} value={value} onPendingChange={pending => setQrPending(old => old[label] === pending ? old : { ...old, [label]: pending })} onRead={(fields, before) => { onChange(mergeMobileRefundRecipient(value, fields, before)); clearReview(); }} />}
         <FormField label="Ngân hàng nhận của khách (tuỳ chọn)" value={value.bank} editable={!locked} onChangeText={bank => change({ bank })} maxLength={150} />
@@ -257,13 +349,13 @@ function ReturnForm({ id }: { id: string }) {
           <Text style={{ color: theme.muted, fontSize: 14, lineHeight: 21 }}>
             Hạn trả {dateTime(selected.vehicle.returnAt ?? '')} · giá ngày {selected.vehicle.dailyPrice === null ? 'cần đối chiếu' : money(selected.vehicle.dailyPrice)}
           </Text>
-          <RentalDateTime label="ngày giờ khách trả thực tế (24h)" value={selected.returnedAt} disabled={locked} onChange={changeReturnedAt} />
+          <RentalDateTime label="khách trả thực tế" value={selected.returnedAt} disabled={locked} onChange={changeReturnedAt} />
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
             <Button size="sm" secondary label="Đặt giờ hiện tại" disabled={locked} onPress={() => changeReturnedAt(returnLocalTime())} />
             <Button size="sm" secondary label="Ảnh & video trả xe" disabled={locked} onPress={() => router.push({ pathname: '/record-media/[entity]/[id]', params: { entity: 'contracts', id, kind: 'return', referenceId: String(selected.vehicle.id) } })} />
           </View>
           <Text style={{ color: theme.muted, fontSize: 12.5, lineHeight: 18 }}>
-            Nhập đúng giờ khách trả thực tế (có thể sửa nếu khách trả trước mà giờ mới ghi nhận).
+            Nhập đúng giờ khách trả thực tế. Không lấy giờ hiện tại nếu khách đã trả trước mà giờ mới ghi nhận.
           </Text>
 
           {/* Live Web-Matched Early / Late / On-time Auto-Calculation Banner */}
@@ -288,7 +380,9 @@ function ReturnForm({ id }: { id: string }) {
                   ? 'Tiền thuê sở hữu được đối chiếu theo lịch đóng tiền; không tự giảm vào kỳ đầu.'
                   : estimate.suggested > 0
                     ? `Gợi ý giảm tiền thuê do trả sớm: ${money(estimate.suggested)} (${estimate.unusedDays} ngày chưa dùng × ${money(selected.vehicle.dailyPrice)}/ngày) — đã điền sẵn, có thể sửa theo thỏa thuận.`
-                    : 'Trả sớm dưới 1 ngày (gợi ý 0 đ). Có thể nhập số giảm thỏa thuận nếu có.'
+                    : estimate.unusedDays > 0 && !selected.vehicle.dailyPrice
+                      ? `Hợp đồng chưa có đơn giá theo ngày để tự tính gợi ý (còn ${estimate.unusedDays} ngày chưa dùng). Nhập số tiền giảm thỏa thuận nếu có.`
+                      : 'Trả sớm dưới 1 ngày (gợi ý 0 đ). Có thể nhập số giảm thỏa thuận nếu có.'
               }
             />
           ) : (
@@ -390,7 +484,12 @@ function ReturnForm({ id }: { id: string }) {
           <View style={{ gap: 2 }}>
             {fees.items.map(row => <KeyValueRow key={row.id} label={row.license || row.name} value={`Trễ ${money(row.lateFee)} · Sửa ${money(row.repairFee)} · Giảm sớm ${money(row.earlyDiscount)}`} />)}
             <KeyValueRow label="Tiền thuê sau trả xe" value={money(fees.after.totalAmount)} />
-            <KeyValueRow label="Còn thiếu (không trừ cọc)" value={money(fees.after.rentalRemaining)} emphasize />
+            <KeyValueRow label="Đã thu tiền thuê" value={money(fees.after.rentalPaid)} />
+            <KeyValueRow
+              label={fees.after.rentalRemaining === 0 && fees.after.rentalRefundable > 0 ? 'Thu thừa' : 'Còn thiếu (không trừ cọc)'}
+              value={money(fees.after.rentalRemaining === 0 && fees.after.rentalRefundable > 0 ? fees.after.rentalRefundable : fees.after.rentalRemaining)}
+              emphasize
+            />
             <KeyValueRow label="Cọc đang giữ & xe còn lại" value={`${money(fees.after.depositHeld)} · Còn ${fees.after.remainingItems} xe`} />
           </View>
           <Text style={{ color: theme.muted, fontSize: 13, lineHeight: 19 }}>
@@ -412,18 +511,20 @@ function ReturnForm({ id }: { id: string }) {
               <Text style={{ color: theme.muted, fontSize: 13, lineHeight: 19 }}>
                 Gợi ý {money(suggested)} — có thể sửa theo số khách đã trả; không bắt khớp.
               </Text>
-              <ChoiceField
-                label={def.title}
-                value={enabled ? 'yes' : 'no'}
-                choices={[
-                  { value: 'no', label: 'Chưa thu khoản này' },
-                  { value: 'yes', label: def.toggleLabel },
-                ]}
-                disabled={locked}
-                onChange={v => {
-                  if ((v === 'yes') !== enabled) toggleQuickReceipt(def.kind, suggested);
-                }}
-              />
+              <View style={{ gap: 8 }}>
+                <SettlementOption
+                  label="Chưa thu khoản này"
+                  selected={!enabled}
+                  disabled={locked}
+                  onPress={() => { if (enabled) toggleQuickReceipt(def.kind, suggested); }}
+                />
+                <SettlementOption
+                  label={def.toggleLabel}
+                  selected={enabled}
+                  disabled={locked}
+                  onPress={() => { if (!enabled) toggleQuickReceipt(def.kind, suggested); }}
+                />
+              </View>
               {activeReceipt && moneyFields(
                 activeReceipt,
                 next => setReceipts(old => old.map((r, i) => i === idx ? { ...next, kind: r.kind } : r)),
@@ -461,8 +562,8 @@ function ReturnForm({ id }: { id: string }) {
           <Button size="sm" label="Thêm khoản thực thu" secondary disabled={locked || receipts.length >= 50} onPress={() => { setReceiptIndex(receipts.length); setReceipts(old => [...old, { ...defaultMoney('', true), kind: 'rental_debt' }]); clearReview(); }} />
         </Card>
 
-        {/* Early-return rental refund — Exact Web ReturnSettlementFields labels */}
-        <Card style={{ gap: 14 }}>
+        {/* Early-return rental refund — Explicit 1-tap Radio Options matching Web ReturnSettlementFields */}
+        <Card style={{ gap: 12 }}>
           <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 17, fontWeight: '700' }}>
             Tiền thuê được hoàn do trả sớm: {money(fees.after.rentalRefundable)}
           </Text>
@@ -471,61 +572,82 @@ function ReturnForm({ id }: { id: string }) {
               ? 'Ghi riêng tiền thuê đã hoàn, cộng với hoàn cọc thành tổng tiền trả khách. Chưa hoàn thì để trống; có thể ghi phiếu chi sau.'
               : 'Mức đối chiếu hiện là 0 đ. Nếu đã hoàn, khoản chi sẽ được ghi vào Bất thường HĐ.'}
           </Text>
-          <ChoiceField
-            label="Hoàn tiền thuê trả sớm"
-            value={rentalRefund ? 'yes' : 'no'}
-            choices={[
-              { value: 'no', label: 'Chưa hoàn tiền thuê' },
-              { value: 'yes', label: 'Đã hoàn tiền thuê do trả sớm' },
-            ]}
-            disabled={locked}
-            onChange={v => {
-              setRentalRefund(v === 'yes' ? defaultMoney(fees.after.rentalRefundable > 0 ? String(fees.after.rentalRefundable) : '', true) : null);
-              clearReview();
-            }}
-          />
+          <View style={{ gap: 8 }}>
+            <SettlementOption
+              label="Chưa hoàn tiền thuê"
+              selected={!rentalRefund}
+              disabled={locked}
+              onPress={() => { setRentalRefund(null); clearReview(); }}
+            />
+            <SettlementOption
+              label="Đã hoàn tiền thuê do trả sớm"
+              selected={Boolean(rentalRefund)}
+              disabled={locked}
+              onPress={() => {
+                if (!rentalRefund) {
+                  setRentalRefund(defaultMoney(fees.after.rentalRefundable > 0 ? String(fees.after.rentalRefundable) : '', true));
+                  clearReview();
+                }
+              }}
+            />
+          </View>
+          {rentalAnomalyExcess > 0 && (
+            <InfoBanner
+              tone="warning"
+              title="Khoản hoàn vượt mức đối chiếu"
+              message={`Khoản vượt ${money(rentalAnomalyExcess)} sẽ được lưu vào Bất thường HĐ.`}
+            />
+          )}
           {rentalRefund && moneyFields(rentalRefund, setRentalRefund, 'Hoàn tiền thuê do trả sớm', true)}
         </Card>
 
-        {/* Deposit refund — Exact Web ReturnSettlementFields labels */}
-        <Card style={{ gap: 14 }}>
-          <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 17, fontWeight: '700' }}>
-            Cọc còn giữ: {money(fees.after.depositHeld)}
-          </Text>
-          <Text style={{ color: theme.muted, fontSize: 13.5, lineHeight: 20 }}>
-            {fees.after.closesRental
-              ? 'Chỉ tick «Đã hoàn cọc cho khách» khi đã nhận đủ xe và thu đủ công nợ.'
-              : 'Chưa thể tick đã hoàn cọc vì hợp đồng còn xe chưa nhận lại.'}
-          </Text>
-          <ChoiceField
-            label="Quyết định hoàn cọc"
-            value={depositRefund ? 'yes' : 'no'}
-            choices={[
-              {
-                value: 'no',
-                label: fees.after.depositHeld > 0
-                  ? `Chưa hoàn cọc — chờ kế toán hoàn ${money(fees.after.depositHeld)}`
-                  : 'Chưa hoàn cọc',
-              },
-              { value: 'yes', label: 'Đã hoàn cọc cho khách' },
-            ]}
-            disabled={locked || !fees.after.closesRental || fees.after.depositHeld <= 0}
-            onChange={v => {
-              setDepositRefund(v === 'yes' ? defaultMoney(String(fees.after.depositHeld), false) : null);
-              clearReview();
-            }}
-          />
-          {depositRefund ? moneyFields(depositRefund, setDepositRefund, 'Hoàn cọc cho khách', true) : fees.after.depositHeld > 0 && <>
-            <Text style={{ color: theme.muted, fontSize: 13, lineHeight: 19 }}>
-              Mặc định giữ cọc để xác nhận trả xe. Gửi QR hoặc STK bên dưới lên Telegram nếu kế toán hoàn sau; khi đã chuyển tiền mới ghi phiếu chi.
+        {/* Deposit refund — Hidden when depositHeld === 0 (exact Web ReturnSettlementFields.tsx:126) */}
+        {fees.after.depositHeld > 0 && (
+          <Card style={{ gap: 12 }}>
+            <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 17, fontWeight: '700' }}>
+              Cọc còn giữ: {money(fees.after.depositHeld)}
             </Text>
-            {lines[0] && <RefundQrReader id={id} itemId={lines[0].vehicle.id} value={deferredRecipient} onPendingChange={pending => setQrPending(old => old.deferred === pending ? old : { ...old, deferred: pending })} onRead={(fields, before) => { setDeferredRecipient(old => mergeMobileRefundRecipient(old, fields, before)); clearReview(); }} />}
-            <FormField label="Ngân hàng nhận của khách (tuỳ chọn)" value={deferredRecipient.bank} editable={!locked} onChangeText={bank => { setDeferredRecipient(old => ({ ...old, bank })); clearReview(); }} maxLength={150} />
-            <FormField label="Số tài khoản khách nhận (tuỳ chọn)" value={deferredRecipient.recipientAccount} editable={!locked} onChangeText={recipientAccount => { setDeferredRecipient(old => ({ ...old, recipientAccount })); clearReview(); }} maxLength={150} />
-            <FormField label="Tên chủ tài khoản nhận (tuỳ chọn)" value={deferredRecipient.recipientName} editable={!locked} onChangeText={recipientName => { setDeferredRecipient(old => ({ ...old, recipientName })); clearReview(); }} maxLength={150} />
-          </>}
-        </Card>
-        <Button label="Rà soát & Xác nhận trả xe" loading={previewing} disabled={locked && !previewing || query.isError} onPress={() => { void calculateSettlement(); }} />
+            <View style={{ gap: 8 }}>
+              <SettlementOption
+                label={`Chưa hoàn cọc — trả xe ngay, tổng chờ kế toán hoàn ${money(pendingRefundAmount)}`}
+                selected={!depositRefund}
+                disabled={locked}
+                onPress={() => { setDepositRefund(null); clearReview(); }}
+              />
+              <SettlementOption
+                label="Đã hoàn cọc cho khách"
+                selected={Boolean(depositRefund)}
+                disabled={locked || !depositRefundAllowed}
+                onPress={() => {
+                  if (!depositRefund && depositRefundAllowed) {
+                    setDepositRefund(defaultMoney(String(fees.after.depositHeld), false));
+                    clearReview();
+                  }
+                }}
+              />
+            </View>
+            {!!depositRefundBlockReason && <InlineError message={depositRefundBlockReason} />}
+            {!!depositOverLimitError && <InlineError message={depositOverLimitError} />}
+            {depositRefund ? moneyFields(depositRefund, setDepositRefund, 'Hoàn cọc cho khách', true) : <>
+              <Text style={{ color: theme.muted, fontSize: 13, lineHeight: 19 }}>
+                Mặc định giữ cọc để xác nhận trả xe. Gửi QR hoặc STK bên dưới lên Telegram nếu kế toán hoàn sau; khi đã chuyển tiền mới ghi phiếu chi.
+              </Text>
+              {lines[0] && <RefundQrReader id={id} itemId={lines[0].vehicle.id} value={deferredRecipient} onPendingChange={pending => setQrPending(old => old.deferred === pending ? old : { ...old, deferred: pending })} onRead={(fields, before) => { setDeferredRecipient(old => mergeMobileRefundRecipient(old, fields, before)); clearReview(); }} />}
+              <FormField label="Ngân hàng nhận của khách (tuỳ chọn)" value={deferredRecipient.bank} editable={!locked} onChangeText={bank => { setDeferredRecipient(old => ({ ...old, bank })); clearReview(); }} maxLength={150} />
+              <FormField label="Số tài khoản khách nhận (tuỳ chọn)" value={deferredRecipient.recipientAccount} editable={!locked} onChangeText={recipientAccount => { setDeferredRecipient(old => ({ ...old, recipientAccount })); clearReview(); }} maxLength={150} />
+              <FormField label="Tên chủ tài khoản nhận (tuỳ chọn)" value={deferredRecipient.recipientName} editable={!locked} onChangeText={recipientName => { setDeferredRecipient(old => ({ ...old, recipientName })); clearReview(); }} maxLength={150} />
+            </>}
+          </Card>
+        )}
+
+        {(fees.after.rentalRefundable > 0 || Boolean(rentalRefund) || Boolean(depositRefund)) && (
+          <Card style={{ gap: 4 }}>
+            <KeyValueRow label="Tổng tiền đã chọn hoàn" strong valueColor={theme.primary} value={money(depositRefundSelected + rentalRefundSelected)} />
+            <KeyValueRow label="Hoàn cọc · Hoàn thuê trả sớm" value={`${money(depositRefundSelected)} · ${money(rentalRefundSelected)}`} />
+          </Card>
+        )}
+
+        <Button label="Rà soát & Xác nhận trả xe" loading={previewing} disabled={locked && !previewing || query.isError || Boolean(depositOverLimitError)} onPress={() => { void calculateSettlement(); }} />
         <Button label="Sửa giờ và phí xe" secondary disabled={locked} onPress={() => { setStep(1); clearReview(); top(); }} />
       </>}
       {step === 3 && review && <>

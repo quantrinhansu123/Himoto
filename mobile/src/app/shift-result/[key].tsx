@@ -8,7 +8,9 @@ import { pendingWrites } from "@/lib/pending-writes";
 import { useTheme } from "@/theme";
 import { Button,Card,InfoBanner,InlineError,KeyValueRow,StateView,StatusBadge } from "@/components/ui";
 import { ShiftSummary } from "@/components/shift-summary";
-function Result({requestKey,evidence}:{requestKey:string;evidence?:"batteries"|"door"}){
+type EvidenceCategory = "batteries" | "cash" | "personal" | "company" | "door";
+const EVIDENCE_CATEGORIES: readonly EvidenceCategory[] = ["batteries", "cash", "personal", "company", "door"];
+function Result({requestKey,evidence}:{requestKey:string;evidence?:EvidenceCategory}){
   const{api,session}=useSession(),theme=useTheme(),cache=useQueryClient(),[busy,setBusy]=useState(false),[error,setError]=useState("");const alive=useRef(true);useEffect(()=>{alive.current=true;return()=>{alive.current=false;};},[]);
   const query=useQuery({queryKey:["shift-result",session!.user.id,requestKey],queryFn:({signal})=>api!.shiftResult(requestKey,signal),retry:false});
   if(query.isPending)return <StateView title="Đang đọc xác nhận báo cáo ca" loading />;if(query.isError)return <StateView title="Chưa đọc được xác nhận báo cáo ca" message={query.error.message} retry={()=>{void query.refetch();}} />;
@@ -30,4 +32,4 @@ function Result({requestKey,evidence}:{requestKey:string;evidence?:"batteries"|"
     </ScrollView>
   </SafeAreaView>;
 }
-export default function Route(){const{key,evidence}=useLocalSearchParams<{key:string;evidence?:string}>(),{api,session}=useSession();if(!api||!session||!/^[0-9a-f-]{36}$/.test(key))return <StateView title="Không mở được mã báo cáo ca" />;return <Result key={`${key}:${api.origin}:${session.token}:${session.user.storeId}:${session.user.allStores}:${session.user.permissions.join(",")}`} requestKey={key} evidence={evidence==="batteries"||evidence==="door"?evidence:undefined} />;}
+export default function Route(){const{key,evidence}=useLocalSearchParams<{key:string;evidence?:string}>(),{api,session}=useSession();if(!api||!session||!/^[0-9a-f-]{36}$/.test(key))return <StateView title="Không mở được mã báo cáo ca" />;const picked=EVIDENCE_CATEGORIES.includes(evidence as EvidenceCategory)?(evidence as EvidenceCategory):undefined;return <Result key={`${key}:${api.origin}:${session.token}:${session.user.storeId}:${session.user.allStores}:${session.user.permissions.join(",")}`} requestKey={key} evidence={picked} />;}

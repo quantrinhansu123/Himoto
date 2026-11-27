@@ -71,7 +71,7 @@ export const catalogueConfig: Record<
   customers: {
     title: "Khách hàng",
     noun: "khách hàng",
-    placeholder: "Tìm tên hoặc số điện thoại",
+    placeholder: "Tìm tên, số điện thoại hoặc giấy tờ…",
     quickStatuses: ["", "active", "warning", "blacklist", "draft"],
     allStatuses: ["active", "warning", "blacklist", "draft"],
   },
@@ -99,7 +99,7 @@ export function contextualStatusLabel(
   }
   if (kind === "customers") {
     if (status === "draft") return "Chưa hoàn tất";
-    if (status === "blacklist") return "Nợ xấu / Cấm thuê";
+    if (status === "blacklist") return "Blacklist (khách nợ xấu)";
   }
   return statuses[status];
 }

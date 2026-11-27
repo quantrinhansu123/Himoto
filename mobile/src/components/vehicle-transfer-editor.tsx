@@ -92,7 +92,7 @@ function TransferForm({id}:{id:string}){
       <View style={{gap:2}}>
         <KeyValueRow label="Xe" value={vehicle?.license||vehicle?.name||('#'+id)} emphasize />
         {vehicle&&<>
-          <KeyValueRow label="Kho hiện tại" value={vehicle.storeName||'Chưa rõ kho hiện tại'} />
+          <KeyValueRow label="Cơ sở hiện tại" value={vehicle.storeName||'Chưa rõ cơ sở hiện tại'} />
           <KeyValueRow label="Cơ sở sở hữu hiện tại" value={vehicle.ownerStoreName||'Chưa xác định'} />
         </>}
       </View>
@@ -121,8 +121,8 @@ function TransferForm({id}:{id:string}){
           <Button label="Tìm cơ sở nhận" secondary disabled={locked} onPress={()=>{setApplied(search.trim());setPage(1);Keyboard.dismiss();}}/>
         </>:<>
           <View style={{gap:2}}>
-            <KeyValueRow label="Kho đi" value={selection.data.transfer?.fromStoreName||'Chưa rõ kho đi'} />
-            <KeyValueRow label="Kho đến" value={selection.data.transfer?.toStoreName||'Chưa rõ kho đến'} emphasize />
+            <KeyValueRow label="Cơ sở hiện tại" value={selection.data.transfer?.fromStoreName||'Chưa rõ cơ sở chuyển đi'} />
+            <KeyValueRow label="Cơ sở nhận xe" value={selection.data.transfer?.toStoreName||'Chưa rõ cơ sở nhận xe'} emphasize />
           </View>
           <Text style={{color:theme.muted,fontSize:13.5,lineHeight:20}}>{selection.action==='receive'?transferEffects.received:selection.action==='reject'?transferEffects.rejected:transferEffects.cancelled}</Text>
         </>}
@@ -143,7 +143,7 @@ function TransferForm({id}:{id:string}){
         </View>
         <Button label="Tải lại kho đến" secondary loading={stores.isFetching} disabled={locked} onPress={()=>{void stores.refetch();}}/>
       </Card>}
-      {selection.action==='transfer'&&destination&&<Card><KeyValueRow label="Kho đến đã chọn" value={destination.name} emphasize /></Card>}
+      {selection.action==='transfer'&&destination&&<Card><KeyValueRow label="Cơ sở nhận xe đã chọn" value={destination.name} emphasize /></Card>}
       <Card style={{gap:12}}><FormField label="Ghi chú thao tác kho" value={note} onChangeText={value=>{setNote(value);clearReview();}} maxLength={500} multiline editable={!locked}/></Card>
       <Button label="Rà soát thao tác kho" loading={previewing} disabled={locked||selection.action==='transfer'&&(!destination||stores.isFetching||stores.isError)} onPress={()=>{void preview();}}/>
       <View style={{flexDirection:'row',gap:10}}>
@@ -159,16 +159,16 @@ function TransferForm({id}:{id:string}){
         </View>
         <View style={{gap:2}}>
           <KeyValueRow label="Thao tác & xe" value={`${transferLabels[review.action]} · ${review.vehicle.license||review.vehicle.name}`} emphasize />
-          <KeyValueRow label="Kho đi" value={review.fromStore?.name||'Chưa rõ kho đi'} />
-          <KeyValueRow label="Kho đến" value={review.toStore.name} emphasize />
-          <KeyValueRow label="Kho sau khi ghi" value={review.after.storeId===review.toStore.id?review.toStore.name:review.fromStore?.name} />
+          <KeyValueRow label="Cơ sở chuyển đi" value={review.fromStore?.name||'Chưa rõ cơ sở chuyển đi'} />
+          <KeyValueRow label="Cơ sở nhận xe" value={review.toStore.name} emphasize />
+          <KeyValueRow label="Cơ sở sau khi ghi" value={review.after.storeId===review.toStore.id?review.toStore.name:review.fromStore?.name} />
           <KeyValueRow label="Cơ sở sở hữu trước → sau" value={`${review.vehicle.ownerStoreName||'Chưa xác định'} → ${review.after.ownerStoreId===review.toStore.id?review.toStore.name:review.fromStore?.name}`} />
           {!!review.note&&<KeyValueRow label="Ghi chú" value={review.note} />}
         </View>
         <Text style={{color:theme.text,fontSize:13.5,lineHeight:20}}>{transferEffects[review.effect]}</Text>
         <Text style={{color:theme.muted,fontSize:13.5,lineHeight:20}}>Không thay đổi hợp đồng, kỳ thuê, tiền cọc hoặc khoản đã thu/hoàn.</Text>
       </Card>
-      <Button label="Ghi thao tác kho" loading={write.busy} disabled={locked||!input} onPress={()=>setConfirm(true)}/>
+      <Button label={review.action==='receive'?'Xác nhận đã nhận xe':review.action==='reject'?'Xác nhận từ chối điều chuyển':review.action==='cancel'?'Xác nhận huỷ điều chuyển':'Chuyển xe'} loading={write.busy} disabled={locked||!input} onPress={()=>setConfirm(true)}/>
       <View style={{flexDirection:'row',gap:10}}>
         <Button size="sm" equalWidth label="Sửa thông tin thao tác" secondary disabled={locked} onPress={()=>{setStep(1);clearReview();top();}}/>
         <Button size="sm" equalWidth label="Tải lại để nhập lại" secondary disabled={locked} onPress={()=>setReload(true)}/>

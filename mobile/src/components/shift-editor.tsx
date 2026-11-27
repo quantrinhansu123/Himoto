@@ -71,7 +71,7 @@ export function ShiftEditor({ record, options, initialStore, initialReportType =
   const [baseline] = useState(() => JSON.stringify(input)), [tab, setTab] = useState("information"), [busy, setBusy] = useState(false), [pending, setPending] = useState(false), [error, setError] = useState(""), [confirm, setConfirm] = useState<"draft" | "submitted" | null>(null), [exit, setExit] = useState<(() => void) | null>(null), [filled, setFilled] = useState<Record<string, ShiftAutofillResult>>({}), [leaving, setLeaving] = useState(false);
   const [inventoryDetailOpen, setInventoryDetailOpen] = useState(false);
   const [reviewing, setReviewing] = useState(false), [stockIssue, setStockIssue] = useState(""), [duplicate, setDuplicate] = useState(false);
-  const [evidence, setEvidence] = useState<"batteries" | "door" | undefined>();
+  const [evidence, setEvidence] = useState<"batteries" | "cash" | "personal" | "company" | "door" | undefined>();
   const scroll = useRef<ScrollViewInstance>(null);
   const inventoryPositions = useRef<Partial<Record<NonNullable<ShiftFormIssue["inventory"]>, number>>>({});
   const targetInventory = useRef<ShiftFormIssue["inventory"]>(undefined);
@@ -163,7 +163,7 @@ export function ShiftEditor({ record, options, initialStore, initialReportType =
   const issues = [...fieldIssues, ...stockMissing];
   const savePayload = () => parseShiftInput(endShift ? serializeShiftDraft(input, stockPhotosRequired, session!.user.name || "") : input);
 
-  function review(status: "draft" | "submitted", category?: "batteries" | "door") {
+  function review(status: "draft" | "submitted", category?: "batteries" | "cash" | "personal" | "company" | "door") {
     setError("");
     setEvidence(category);
     try {
@@ -194,7 +194,7 @@ export function ShiftEditor({ record, options, initialStore, initialReportType =
     }
   }
 
-  function openEvidence(category: "batteries" | "door") {
+  function openEvidence(category: "batteries" | "cash" | "personal" | "company" | "door") {
     if (record) router.push({ pathname: "/shift/[id]", params: { id: String(record.id), evidence: category } });
     else review("draft", category);
   }
@@ -359,9 +359,21 @@ export function ShiftEditor({ record, options, initialStore, initialReportType =
     </>}
     {tab === "summary" && <Card style={{ gap: 16 }}>{SHIFT_SUMMARY_FIELDS.map(([key, label, currency]) => <View key={key} style={{ gap: 5 }}><ShiftNumberField label={label} nullable={endShift} value={input.summary?.[key] ?? 0} disabled={busy || pending} onChange={value => update("summary", { ...input.summary || emptyShiftSummary(), [key]: value ?? NaN })} />{currency && <Text style={{ color: theme.muted }}>{money(Number.isFinite(input.summary?.[key]) ? input.summary![key] : null)}</Text>}</View>)}</Card>}
     {tab === "accounts" && <Card style={{ gap: 16 }}>
-      <View style={{ gap: 4 }}>{n("cash", "Tiền mặt thực tế (đồng)")}<Text style={{ color: theme.muted, fontSize: 13 }}>{money(Number.isFinite(input.cash) ? input.cash : null)}</Text></View>
-      <View style={{ gap: 4 }}>{n("personal", "TK cá nhân được phân công (đồng)")}<Text style={{ color: theme.muted, fontSize: 13 }}>{money(Number.isFinite(input.personal) ? input.personal : null)}</Text></View>
-      <View style={{ gap: 4 }}>{n("company", "TK Công ty (đồng)")}<Text style={{ color: theme.muted, fontSize: 13 }}>{money(Number.isFinite(input.company) ? input.company : null)}</Text></View>
+      <View style={{ gap: 6 }}>
+        {n("cash", "Tiền mặt thực tế (đồng)")}
+        <Text style={{ color: theme.muted, fontSize: 13 }}>{money(Number.isFinite(input.cash) ? input.cash : null)}</Text>
+        <Button size="sm" secondary label={record ? "Ảnh tiền mặt thực tế" : "Lưu nháp để chụp ảnh tiền mặt"} disabled={busy || pending} onPress={() => openEvidence("cash")} />
+      </View>
+      <View style={{ gap: 6 }}>
+        {n("personal", "TK cá nhân được phân công (đồng)")}
+        <Text style={{ color: theme.muted, fontSize: 13 }}>{money(Number.isFinite(input.personal) ? input.personal : null)}</Text>
+        <Button size="sm" secondary label={record ? "Ảnh tài khoản cá nhân" : "Lưu nháp để chụp ảnh TK cá nhân"} disabled={busy || pending} onPress={() => openEvidence("personal")} />
+      </View>
+      <View style={{ gap: 6 }}>
+        {n("company", "TK Công ty (đồng)")}
+        <Text style={{ color: theme.muted, fontSize: 13 }}>{money(Number.isFinite(input.company) ? input.company : null)}</Text>
+        <Button size="sm" secondary label={record ? "Ảnh tài khoản Công ty" : "Lưu nháp để chụp ảnh TK Công ty"} disabled={busy || pending} onPress={() => openEvidence("company")} />
+      </View>
     </Card>}
     {tab === "safety" && <Card style={{ gap: 16 }}>
       <FormField label="Thiết bị điện đã tắt gồm" value={input.electrical_devices || ""} onChangeText={v => update("electrical_devices", v)} editable={!busy && !pending} maxLength={1000} multiline />

@@ -106,12 +106,13 @@ function PreparationForm({ id }: { id: string }) {
     const next: CollectionRow[] = [];
     const rentalRemain = data.totalAmount != null && data.rentalPaid != null ? Math.max(0, data.totalAmount - data.rentalPaid) : 0;
     const depositRemain = data.depositAmount != null ? Math.max(0, data.depositAmount - data.depositPaid) : 0;
-    if (rentalRemain > 0) {
-      const method = methodFromText(data.expectedRentalMethod);
+    const initialRentalAmount = reserving ? (depositRemain > 0 ? depositRemain : rentalRemain) : rentalRemain;
+    if (initialRentalAmount > 0) {
+      const method = methodFromText(reserving ? (data.expectedDepositMethod || data.expectedRentalMethod) : data.expectedRentalMethod);
       next.push({
         key: 1,
         purpose: "rental",
-        amount: String(rentalRemain),
+        amount: String(initialRentalAmount),
         method,
         account: pickAccount(method),
         paidAt,
@@ -152,12 +153,14 @@ function PreparationForm({ id }: { id: string }) {
       .filter((row) => row.purpose === "deposit" && validAmount(row.amount))
       .reduce((sum, row) => sum + Number(row.amount), 0);
   const label = handover
-    ? "Xác nhận giao xe"
+    ? "Giao xe đã đặt cọc"
     : reserving
-      ? "Nhận cọc giữ xe"
-      : data?.historical
-        ? "Phát hành hợp đồng đã trả"
-        : "Phát hành và giao xe";
+      ? "Xác nhận đã nhận cọc giữ xe"
+      : data?.requiresManager
+        ? "Xác nhận duyệt hợp đồng"
+        : data?.historical
+          ? "Phát hành hợp đồng đã trả"
+          : "Xác nhận lưu chính thức";
   function update(key: number, patch: Partial<CollectionRow>) {
     setRows((old) =>
       old.map((row) => (row.key === key ? { ...row, ...patch } : row)),
@@ -336,7 +339,15 @@ function PreparationForm({ id }: { id: string }) {
       style={{ flex: 1, backgroundColor: theme.background }}
     >
       <Stack.Screen
-        options={{ title: handover ? "Giao xe giữ chỗ" : "Rà soát phát hành" }}
+        options={{
+          title: handover
+            ? "Giao xe đã đặt cọc"
+            : reserving
+              ? "Xác nhận cọc giữ xe"
+              : data?.requiresManager
+                ? "Duyệt hợp đồng thuê sở hữu"
+                : "Xác nhận thanh toán",
+        }}
       />
       <KeyboardAvoidingView
         style={{ flex: 1 }}

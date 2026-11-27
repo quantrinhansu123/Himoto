@@ -54,7 +54,7 @@ function ShiftReportsList({ initialReportType }: { initialReportType: ShiftRepor
               size="sm"
               equalWidth
               icon={<Plus size={15} color={theme.primaryText} />}
-              label={`Tạo ${title.toLowerCase()}`}
+              label="Tạo báo cáo"
               onPress={() => router.push({ pathname: '/shift-editor/[id]', params: { id: 'new', report_type: reportType, ...(createStore ? { store_id: createStore } : {}) } })}
             />
           )}
@@ -65,12 +65,12 @@ function ShiftReportsList({ initialReportType }: { initialReportType: ShiftRepor
             onPress={() => setFiltersOpen(v => !v)}
           />
         </View>
+        <FilteredListExport kind="shifts" label="Tải Excel theo bộ lọc" filters={new URLSearchParams({ ...Object.fromEntries(new URLSearchParams(params)), status }).toString()} disabled={query.isPending || query.isError || query.isFetching} limitText="Xuất toàn bộ báo cáo theo loại, cơ sở, ngày và tiến độ đang chọn." />
         {filtersOpen && (
           <Card style={{ gap: 12 }}>
             <ChoiceField label="Cơ sở" value={store} searchable choices={[...(canReadAll ? [{ value: 'all', label: 'Tất cả cơ sở' }] : []), ...(options.data?.stores || []).filter(s => canReadAll || s.id === session!.user.storeId).map(s => ({ value: String(s.id), label: s.name }))]} onChange={setStore} />
             <DateField label="Xem ngày" value={date} onChange={setDate} />
             <ChoiceField label="Tiến độ báo cáo" value={status} choices={[...SHIFT_REPORT_PROGRESS]} onChange={value => setStatus(value as ShiftReportProgress)} />
-            <FilteredListExport kind="shifts" filters={new URLSearchParams({ ...Object.fromEntries(new URLSearchParams(params)), status }).toString()} disabled={query.isPending || query.isError || query.isFetching} limitText="Xuất toàn bộ báo cáo theo loại, cơ sở, ngày và tiến độ đang chọn." />
           </Card>
         )}
         {options.isError && <InlineError message={options.error.message} />}
@@ -79,7 +79,7 @@ function ShiftReportsList({ initialReportType }: { initialReportType: ShiftRepor
       </View>}
       renderItem={({ item: row }) => {
         const auditStatus = row.status === 'draft' ? 'draft' : row.audit?.status === 'confirmed' ? (row.audit.result === 'matched' ? 'matched' : 'warning') : 'pending';
-        const auditLabel = row.status === 'draft' ? 'KTNB: Chưa gửi' : row.audit?.status === 'confirmed' ? (row.audit.result === 'matched' ? 'KTNB: Khớp' : 'KTNB: Chênh lệch') : row.audit ? 'KTNB: Đang đối soát' : 'KTNB: Chờ đối soát';
+        const auditLabel = row.status === 'draft' ? 'Chưa gửi' : row.audit?.status === 'confirmed' ? (row.audit.result === 'matched' ? 'Đã xác nhận · Khớp' : 'Có chênh lệch') : row.audit ? 'Đang đối soát' : 'Chờ đối soát';
         return (
           <Card style={{ gap: 9 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>

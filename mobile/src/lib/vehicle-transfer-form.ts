@@ -1,7 +1,7 @@
 import {vehicleTransferActions,type MobileVehicleTransferAction,type MobileVehicleTransferPreparation,type MobileTransferStore,type MobileVehicleTransferInput} from '../../../shared/mobile-vehicle-transfers';
 import {pendingWrites} from './pending-writes';
 
-export const transferLabels:Record<MobileVehicleTransferAction,string>={transfer:'Chuyển kho',receive:'Nhận xe',reject:'Từ chối điều chuyển',cancel:'Hủy điều chuyển'};
+export const transferLabels:Record<MobileVehicleTransferAction,string>={transfer:'Chuyển xe',receive:'Nhận xe',reject:'Từ chối điều chuyển',cancel:'Huỷ điều chuyển'};
 export const transferEffects={awaiting_receipt:'Xe sẽ chờ người nhận xác nhận ở kho đến.',immediate_transfer:'Xe chuyển kho ngay và giữ nguyên trạng thái hiện tại.',
   received:'Xe được ghi nhận Lưu kho tại cơ sở nhận.',rejected:'Xe quay về Lưu kho tại cơ sở chuyển đi.',cancelled:'Lượt chuyển được hủy; xe quay về Lưu kho tại cơ sở chuyển đi.'};
 export type TransferPending={action:MobileVehicleTransferAction;key:string};

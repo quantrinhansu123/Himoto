@@ -685,7 +685,7 @@ function DraftForm({
                       }
                     />
                   )}
-                  {session?.user.permissions.includes("settings.write") && session.user.permissions.includes("finance.write") && <Button secondary label="Quản lý loại hợp đồng ngay khi soạn" disabled={disabled} onPress={() => setTypeManager(true)} />}
+                  {session?.user.permissions.includes("settings.write") && session.user.permissions.includes("finance.write") && <Button secondary label="Thêm / quản lý loại hợp đồng" disabled={disabled} onPress={() => setTypeManager(true)} />}
                   <ChoiceField
                     label="Liên kết nguồn khách"
                     value={d.store_id}
@@ -704,7 +704,7 @@ function DraftForm({
                     searchable
                   />
                   <FormField
-                    label="Số hợp đồng giấy"
+                    label="Mã hợp đồng / Số HĐ giấy"
                     value={d.contract_number}
                     editable={!disabled}
                     maxLength={32}
@@ -809,7 +809,7 @@ function DraftForm({
                     onPress={() => { Keyboard.dismiss(); const value = lookup.trim(); if (value === submittedLookup) void exactCustomer.refetch(); else setSubmittedLookup(value); }} />
                   {!!submittedLookup && exactCustomer.isError && <InlineError message={exactCustomer.error.message} />}
                   {!!submittedLookup && exactCustomer.data?.rows.length === 0 && <Text accessibilityLiveRegion="polite" style={{ color: theme.muted }}>
-                    {session?.user.permissions.includes('customers.write') ? 'Chưa tìm thấy hồ sơ. Kiểm tra thông tin hoặc bấm Thêm mới khách hàng.' : 'Chưa tìm thấy hồ sơ. Kiểm tra lại thông tin tra cứu.'}
+                    {session?.user.permissions.includes('customers.write') ? 'Chưa tìm thấy hồ sơ. Kiểm tra thông tin hoặc bấm Thêm mới.' : 'Chưa tìm thấy hồ sơ. Kiểm tra lại thông tin tra cứu.'}
                   </Text>}
                   {!!submittedLookup && exactCustomer.data?.rows.map(customer => <Button key={customer.id} secondary
                     label={`${customer.details.name} · ${customer.details.phone || customer.details.id_card || customer.id}`}
@@ -829,7 +829,7 @@ function DraftForm({
                 {session?.user.permissions.includes("customers.read") && session.user.permissions.includes("customers.write") && (
                   <Button
                     secondary
-                    label="Thêm mới khách hàng"
+                    label="Thêm mới"
                     disabled={disabled || !d.store_id}
                     onPress={() => {
                       Keyboard.dismiss();
@@ -919,7 +919,7 @@ function DraftForm({
 
                 <Button
                   secondary
-                  label="Thêm xe vào bản nháp"
+                  label="Thêm xe"
                   disabled={disabled || selected.length >= 50}
                   onPress={() => {
                     Keyboard.dismiss();
@@ -1007,7 +1007,7 @@ function DraftForm({
                     error={errors.authorization_date}
                   />
                   <FormField
-                    label="Ghi chú bản nháp"
+                    label="Ghi chú hợp đồng"
                     value={input.notes}
                     onChangeText={(notes) => change({ ...input, notes })}
                     editable={!disabled}
@@ -1088,7 +1088,7 @@ function DraftForm({
                   )}
                   <Button
                     equalWidth
-                    label="Lưu nháp"
+                    label={needsApproval && !canIssue ? "Lưu nháp chờ duyệt" : "Lưu nháp"}
                     loading={write.busy}
                     disabled={
                       !write.checked || !!write.receipt || !!pendingCustomer || customerCreate || photos.picking || photos.reading || localSave.scopeChanged || localSave.waiting
@@ -1099,7 +1099,7 @@ function DraftForm({
                     <Button
                       equalWidth
                       secondary
-                      label="Tiếp theo"
+                      label="Tiếp tục"
                       disabled={disabled}
                       onPress={() => jump(step + 1)}
                     />

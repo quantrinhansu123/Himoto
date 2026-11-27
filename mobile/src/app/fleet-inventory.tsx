@@ -9,7 +9,8 @@ import {useTheme} from '@/theme';
 import {Button,Card,InlineError,KeyValueRow,PaginationBar,SkeletonList,StateView,StatusBadge} from '@/components/ui';
 import {ChoiceField,FormField} from '@/components/form-fields';
 
-function Inventory({transfer,initialStore}:{transfer:boolean;initialStore:string}){
+function Inventory({mode,initialStore}:{mode:'browse'|'transfer'|'status';initialStore:string}){
+  const transfer=mode==='transfer',statusMode=mode==='status';
   const{api,session}=useSession(),theme=useTheme(),list=useRef<FlatList<MobileFleetVehicle>>(null);
   const[search,setSearch]=useState(''),[applied,setApplied]=useState(''),[store,setStore]=useState(initialStore),[availability,setAvailability]=useState(''),[page,setPage]=useState(1);
   const filter=new URLSearchParams({search:applied,store,availability,page:String(page)}).toString();
@@ -19,8 +20,8 @@ function Inventory({transfer,initialStore}:{transfer:boolean;initialStore:string
   return <SafeAreaView edges={['left','right','bottom']} style={{flex:1,backgroundColor:theme.background}}>
     <FlatList ref={list} data={waiting||query.isError?[]:data?.rows||[]} keyExtractor={row=>String(row.id)} keyboardShouldPersistTaps="handled" contentContainerStyle={{padding:16,paddingBottom:40,gap:12,maxWidth:760,width:'100%',alignSelf:'center'}} refreshControl={<RefreshControl refreshing={query.isRefetching&&!query.isPlaceholderData} tintColor={theme.primary} onRefresh={()=>void query.refetch()}/>}
       ListHeaderComponent={<View style={{gap:12,marginBottom:4}}>
-        {transfer&&<Text accessibilityRole="header" style={{color:theme.text,fontSize:19,fontWeight:'800'}}>Chọn xe cần chuyển</Text>}
-        <Text style={{color:theme.muted,fontSize:13,lineHeight:19}}>{transfer?'Có thể chọn xe ở mọi cơ sở để điều chuyển (xe Lưu kho sẽ chờ cơ sở đích nhận; xe ở trạng thái khác sẽ chuyển kho ngay).':'Tra cứu xe giữa các cơ sở và kiểm tra khả năng điều chuyển. Nhận xe tại cơ sở đích trước khi lập hợp đồng.'}</Text>
+        {(transfer||statusMode)&&<Text accessibilityRole="header" style={{color:theme.text,fontSize:19,fontWeight:'800'}}>{statusMode?'Chọn xe cần đổi trạng thái':'Chọn xe cần chuyển'}</Text>}
+        <Text style={{color:theme.muted,fontSize:13,lineHeight:19}}>{statusMode?'Chọn xe để đổi trạng thái độc lập (Lưu kho, Đang sửa chữa, Hỏng, Đã bán, Nợ xấu → Lưu kho) mà không đổi cơ sở hoặc hợp đồng.':transfer?'Có thể chọn xe ở mọi cơ sở để điều chuyển (xe Lưu kho sẽ chờ cơ sở đích nhận; xe ở trạng thái khác sẽ chuyển kho ngay).':'Tra cứu xe giữa các cơ sở và kiểm tra khả năng điều chuyển. Nhận xe tại cơ sở đích trước khi lập hợp đồng.'}</Text>
         <Card style={{gap:12}}>
           <FormField label="Tìm trong kho xe chung" value={search} onChangeText={setSearch} maxLength={100} hint="Biển số, tên xe hoặc cơ sở" onSubmitEditing={()=>{setApplied(search.trim());move(1);}} returnKeyType="search"/>
           <Button size="sm" secondary label="Tìm xe trong kho chung" onPress={()=>{setApplied(search.trim());move(1);}}/>
@@ -44,7 +45,7 @@ function Inventory({transfer,initialStore}:{transfer:boolean;initialStore:string
         </View>
         <View style={{flexDirection:'row',gap:10}}>
           <Button size="sm" equalWidth secondary label={`Mở hồ sơ xe ${item.license||item.id}`} onPress={()=>router.push({pathname:'/vehicle/[id]',params:{id:String(item.id)}})}/>
-          {session!.user.permissions.some(p=>p==='vehicles.transfer'||p==='vehicles.receive')&&<Button size="sm" equalWidth secondary label={`Điều chuyển xe ${item.license||item.id}`} onPress={()=>router.push({pathname:'/vehicle-transfer-editor/[id]',params:{id:String(item.id)}})}/>}
+          {statusMode&&session!.user.permissions.includes('vehicles.write')?<Button size="sm" equalWidth label="Đổi trạng thái" onPress={()=>router.push({pathname:'/vehicle-status-editor/[id]',params:{id:String(item.id)}})}/>:session!.user.permissions.some(p=>p==='vehicles.transfer'||p==='vehicles.receive')&&<Button size="sm" equalWidth secondary label={`Chuyển xe ${item.license||item.id}`} onPress={()=>router.push({pathname:'/vehicle-transfer-editor/[id]',params:{id:String(item.id)}})}/>}
         </View>
       </Card>}
       ListFooterComponent={!waiting&&data&&data.pages>1?<PaginationBar page={data.page} pages={data.pages} total={data.total} unit="xe" loading={query.isFetching} onPrev={()=>move(data.page-1)} onNext={()=>move(data.page+1)}/>:undefined}
@@ -53,11 +54,11 @@ function Inventory({transfer,initialStore}:{transfer:boolean;initialStore:string
 }
 export default function Route(){
   const{api,session}=useSession(),params=useLocalSearchParams<{purpose?:string;store?:string}>();
-  const transfer=params.purpose==='transfer';
-  if(!api||!session?.user.permissions.includes('vehicles.read')||transfer&&!session.user.permissions.includes('vehicles.transfer'))return <StateView title="Không có quyền thực hiện thao tác kho xe"/>;
-  if(transfer&&!session.user.allStores&&!session.user.storeId)return <StateView title="Tài khoản chưa được phân cơ sở chuyển xe"/>;
-  const initialStore=!transfer?'':/^[1-9]\d{0,14}$/.test(params.store??'')?params.store!:'';
-  return <><Stack.Screen options={{title:transfer?'Chuyển xe':'Kho xe toàn hệ thống'}} />
-    <Inventory key={`${api.origin}:${session.token}:${session.user.storeId}:${session.user.allStores}:${session.user.permissions.join(',')}:${transfer}:${initialStore}`} transfer={transfer} initialStore={initialStore}/>
+  const mode=params.purpose==='transfer'?'transfer':params.purpose==='status'?'status':'browse';
+  if(!api||!session?.user.permissions.includes('vehicles.read')||(mode==='transfer'&&!session.user.permissions.includes('vehicles.transfer'))||(mode==='status'&&!session.user.permissions.includes('vehicles.write')))return <StateView title="Không có quyền thực hiện thao tác kho xe"/>;
+  if(mode==='transfer'&&!session.user.allStores&&!session.user.storeId)return <StateView title="Tài khoản chưa được phân cơ sở chuyển xe"/>;
+  const initialStore=mode==='browse'?'':/^[1-9]\d{0,14}$/.test(params.store??'')?params.store!:'';
+  return <><Stack.Screen options={{title:mode==='transfer'?'Chuyển xe':mode==='status'?'Đổi trạng thái xe':'Kho xe toàn hệ thống'}} />
+    <Inventory key={`${api.origin}:${session.token}:${session.user.storeId}:${session.user.allStores}:${session.user.permissions.join(',')}:${mode}:${initialStore}`} mode={mode} initialStore={initialStore}/>
   </>;
 }

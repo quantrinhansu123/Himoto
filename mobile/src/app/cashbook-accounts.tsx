@@ -37,9 +37,9 @@ function Accounts({ initialStore,initialStatus }: { initialStore?: string;initia
     ListHeaderComponent={<View style={{ gap: 12 }}>
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
         <Text style={{ color: theme.muted, fontSize: 13, flex: 1 }}>Số dư = đầu kỳ + tổng thu − tổng chi</Text>
-        {session!.user.permissions.includes("finance.write") && <Button size="sm" icon={<Plus size={14} color={theme.primaryText} />} label="Thêm TK" onPress={() => router.push({ pathname: "/cashbook-account-editor/[kind]/[id]", params: { kind: "cash", id: "new", store } })} />}
+        {session!.user.permissions.includes("finance.write") && <Button size="sm" icon={<Plus size={14} color={theme.primaryText} />} label="Thêm tài khoản" onPress={() => router.push({ pathname: "/cashbook-account-editor/[kind]/[id]", params: { kind: "cash", id: "new", store } })} />}
       </View>
-      <SegmentedBar value={status} onChange={setStatus} options={[{ value: "active", label: "Đang dùng" }, { value: "inactive", label: "Ngừng dùng" }, { value: "all", label: "Tất cả" }]} />
+      <SegmentedBar value={status} onChange={setStatus} options={[{ value: "active", label: "Đang sử dụng" }, { value: "inactive", label: "Ngừng sử dụng" }, { value: "all", label: "Tất cả tài khoản" }]} />
       <ChoiceField label="Cơ sở tài khoản" value={store} choices={[...(canReadAll ? [{ value: "all", label: "Tất cả cơ sở" }] : []), ...stores.map(row => ({ value: String(row.id), label: row.name }))]} searchable onChange={setStore} />
       {query.data && <Card style={{ gap: 6, padding: 14 }}>
         <KeyValueRow label="Số lượng tài khoản" value={`${rows.length} tài khoản`} />

@@ -235,30 +235,50 @@ function InlineCashflowTab({
               size="sm"
               equalWidth
               secondary
-              label="Nhập phiếu chi"
+              label="Mã QR"
               icon={<QrCode size={14} color={theme.text} />}
               onPress={() => router.push({ pathname: "/contract-qr/[id]", params: { id } })}
             />
           )}
         </View>
         {canPay && (
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-            <Button
-              size="sm"
-              equalWidth
-              secondary
-              label={`Thu công nợ${remaining && remaining > 0 ? ` (${money(remaining)})` : ""}`}
-              disabled={remaining === 0}
-              onPress={() => router.push({ pathname: "/payment/[id]", params: { id } })}
-            />
-            <Button
-              size="sm"
-              equalWidth
-              secondary
-              label={`Trả cọc${depositHeld != null && depositHeld > 0 ? ` (${money(depositHeld)})` : ""}`}
-              disabled={depositHeld == null || depositHeld <= 0}
-              onPress={() => router.push({ pathname: "/payment/[id]", params: { id } })}
-            />
+          <View style={{ gap: 8 }}>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+              <Button
+                size="sm"
+                equalWidth
+                secondary
+                label={`Thu công nợ${remaining && remaining > 0 ? ` (${money(remaining)})` : ""}`}
+                disabled={remaining === 0}
+                onPress={() => router.push({ pathname: "/payment/[id]", params: { id, purpose: "debt" } })}
+              />
+              <Button
+                size="sm"
+                equalWidth
+                secondary
+                label={`Trả cọc${depositHeld != null && depositHeld > 0 ? ` (${money(depositHeld)})` : ""}`}
+                disabled={depositHeld == null || depositHeld <= 0}
+                onPress={() => router.push({ pathname: "/payment/[id]", params: { id, purpose: "deposit_refund" } })}
+              />
+            </View>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+              {["renting", "overdue"].includes(status) && (
+                <Button
+                  size="sm"
+                  equalWidth
+                  secondary
+                  label="Thu gia hạn"
+                  onPress={() => router.push({ pathname: "/payment/[id]", params: { id, purpose: "renewal" } })}
+                />
+              )}
+              <Button
+                size="sm"
+                equalWidth
+                secondary
+                label="Thu thêm"
+                onPress={() => router.push({ pathname: "/payment/[id]", params: { id, purpose: "extra" } })}
+              />
+            </View>
           </View>
         )}
         {receipts && (
@@ -631,6 +651,27 @@ export function ContractDetailView({
               />
             </View>
 
+            <View style={styles.priorityBtnRow}>
+              <Button
+                size="sm"
+                equalWidth
+                secondary
+                label="Mã QR"
+                icon={<QrCode size={15} color={theme.text} />}
+                onPress={() => router.push({ pathname: "/contract-qr/[id]", params: { id } })}
+              />
+              {canEdit && (
+                <Button
+                  size="sm"
+                  equalWidth
+                  secondary
+                  label="Sửa hợp đồng"
+                  icon={<FilePenLine size={15} color={theme.text} />}
+                  onPress={() => router.push({ pathname: "/contract-edit/[id]", params: { id } })}
+                />
+              )}
+            </View>
+
             {record.reminderEligible && permissions.some((p) => p === "contracts.draft" || p === "finance.write") && (
               <Button
                 size="sm"
@@ -647,6 +688,76 @@ export function ContractDetailView({
                 label="Đóng hợp đồng nợ xấu"
                 icon={<FileCheck size={15} color={theme.primaryText} />}
                 onPress={() => router.push({ pathname: "/contract-operation/[action]/[id]", params: { action: "payment_settlement", id, mode: "close_unpaid" } })}
+              />
+            )}
+          </Card>
+        )}
+
+        {/* Quick Action Card for completed / reserved / cancelled contracts matching Web ContractDetail footer */}
+        {!isRenting && !isBadDebt && !isDraft && (
+          <Card style={[styles.priorityCard, { borderColor: theme.border, backgroundColor: theme.surface }]}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+              <Text style={{ color: theme.text, fontSize: 15, fontWeight: "800" }}>
+                Thao tác tại quầy
+              </Text>
+              <StatusBadge status={status} label={contextualStatusLabel("contracts", status)} />
+            </View>
+            <View style={styles.priorityBtnRow}>
+              {canPay && (
+                <Button
+                  size="sm"
+                  equalWidth
+                  label="Điền sổ quỹ"
+                  icon={<Wallet size={15} color={theme.primaryText} />}
+                  onPress={() => router.push({ pathname: "/finance/[id]", params: { id } })}
+                />
+              )}
+              {status === "completed" && permissions.includes("contracts.return") && (
+                <Button
+                  size="sm"
+                  equalWidth
+                  secondary
+                  label="Hồ sơ trả xe"
+                  icon={<RotateCcw size={15} color={theme.text} />}
+                  onPress={() => router.push({ pathname: "/return-correction/[id]", params: { id } })}
+                />
+              )}
+              {status !== "cancelled" && status !== "completed" && (
+                <Button
+                  size="sm"
+                  equalWidth
+                  secondary
+                  label="Mã QR"
+                  icon={<QrCode size={15} color={theme.text} />}
+                  onPress={() => router.push({ pathname: "/contract-qr/[id]", params: { id } })}
+                />
+              )}
+            </View>
+            <View style={styles.priorityBtnRow}>
+              <Button
+                size="sm"
+                equalWidth
+                secondary
+                label={status === "cancelled" ? "Lịch sử Telegram" : "Gửi Telegram"}
+                icon={<MessageCircle size={15} color={theme.text} />}
+                onPress={() => setActiveTab("telegram")}
+              />
+              <Button
+                size="sm"
+                equalWidth
+                secondary
+                label="In hợp đồng"
+                icon={<Printer size={15} color={theme.text} />}
+                onPress={() => router.push({ pathname: "/print/[kind]/[id]", params: { kind: "contracts", id } })}
+              />
+            </View>
+            {canEdit && (
+              <Button
+                size="sm"
+                secondary
+                label="Sửa hợp đồng"
+                icon={<FilePenLine size={15} color={theme.text} />}
+                onPress={() => router.push({ pathname: "/contract-edit/[id]", params: { id } })}
               />
             )}
           </Card>
@@ -1066,7 +1177,7 @@ export function ContractDetailView({
                     size="sm"
                     equalWidth
                     secondary
-                    label="Nhập phiếu chi"
+                    label="Mã QR"
                     icon={<QrCode size={15} color={theme.text} />}
                     onPress={() => router.push({ pathname: "/contract-qr/[id]", params: { id } })}
                   />

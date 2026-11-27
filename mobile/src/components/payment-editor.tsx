@@ -82,9 +82,11 @@ function defaultAmountFor(
 export function PaymentEditor({
   id,
   backfill = false,
+  initialPurpose,
 }: {
   id: string;
   backfill?: boolean;
+  initialPurpose?: MobilePaymentPurpose;
 }) {
   const { session } = useSession();
   if (
@@ -100,17 +102,28 @@ export function PaymentEditor({
     );
   return (
     <PaymentForm
-      key={`${session.token}:${session.user.storeId}:${session.user.allStores}:${session.user.permissions.join(",")}:${id}:${backfill}`}
+      key={`${session.token}:${session.user.storeId}:${session.user.allStores}:${session.user.permissions.join(",")}:${id}:${backfill}:${initialPurpose ?? ""}`}
       id={id}
       backfill={backfill}
+      initialPurpose={initialPurpose}
     />
   );
 }
 
-function PaymentForm({ id, backfill }: { id: string; backfill: boolean }) {
+function PaymentForm({
+  id,
+  backfill,
+  initialPurpose,
+}: {
+  id: string;
+  backfill: boolean;
+  initialPurpose?: MobilePaymentPurpose;
+}) {
   const theme = useTheme(),
     { api, session } = useSession();
-  const [purpose, setPurpose] = useState<MobilePaymentPurpose | null>(null);
+  const [purpose, setPurpose] = useState<MobilePaymentPurpose | null>(
+    initialPurpose ?? null,
+  );
   const [amount, setAmount] = useState("");
   const [amountTouched, setAmountTouched] = useState(false);
   const [method, setMethod] = useState<MobileCollectionMethod>(
@@ -134,7 +147,7 @@ function PaymentForm({ id, backfill }: { id: string; backfill: boolean }) {
 
   const dirty =
     (amountTouched && !!amount) ||
-    purpose !== null ||
+    purpose !== (initialPurpose ?? null) ||
     method !== (backfill ? "cash" : "transfer") ||
     !!account ||
     paidAt !== initialTime ||
@@ -173,13 +186,33 @@ function PaymentForm({ id, backfill }: { id: string; backfill: boolean }) {
   });
 
   const data = query.data;
-  const selected: MobilePaymentPurpose = purpose ?? data?.purposes[0] ?? "debt";
+  const selected: MobilePaymentPurpose =
+    purpose && (!data || data.purposes.includes(purpose))
+      ? purpose
+      : data?.purposes[0] ?? "debt";
   const isRefund = isRefundPurpose(selected);
   const effectiveAmount = amountTouched
     ? amount
     : data
       ? defaultAmountFor(data, selected)
       : "";
+  const rentalRefundOverage =
+    selected === "rental_refund" &&
+    data &&
+    /^[1-9]\d{0,12}$/.test(effectiveAmount) &&
+    Number(effectiveAmount) > data.rentalRefundable
+      ? Number(effectiveAmount) - data.rentalRefundable
+      : 0;
+  const submitLabel =
+    selected === "deposit_refund"
+      ? "Ghi phiếu chi trả cọc"
+      : selected === "rental_refund"
+        ? "Ghi nhận đã hoàn tiền thuê"
+        : selected === "renewal"
+          ? "Thu tiền và gia hạn"
+          : selected === "extra"
+            ? "Ghi phiếu thu vào Sổ quỹ"
+            : "Ghi nhận thanh toán";
   const picks =
     renewalPicks ??
     (data?.renewalItems?.length === 1
@@ -244,9 +277,7 @@ function PaymentForm({ id, backfill }: { id: string; backfill: boolean }) {
           ? data.depositRemaining
           : selected === "deposit_refund"
             ? data.depositHeld
-            : selected === "rental_refund"
-              ? data.rentalRefundable
-              : null;
+            : null;
       if (limit !== null && Number(recordedAmount) > limit)
         throw Error(
           `Số tiền nhập vượt giới hạn ${money(limit)} của nghiệp vụ đã chọn.`,
@@ -479,7 +510,16 @@ function PaymentForm({ id, backfill }: { id: string; backfill: boolean }) {
 
         <Card style={{ gap: 6, padding: 14 }}>
           <KeyValueRow
-            label="Tiền thuê còn thiếu"
+            label="Tiền thuê hợp đồng"
+            value={money(data.totalAmount)}
+          />
+          <KeyValueRow
+            label="Đã thu tiền thuê"
+            value={money(data.rentalPaid)}
+            valueColor={theme.success}
+          />
+          <KeyValueRow
+            label="Còn thiếu (không trừ cọc)"
             value={money(data.rentalRemaining)}
             valueColor={
               (data.rentalRemaining ?? 0) > 0 ? theme.danger : theme.success
@@ -487,17 +527,25 @@ function PaymentForm({ id, backfill }: { id: string; backfill: boolean }) {
             strong
           />
           <KeyValueRow
+            label="Tiền cọc đã thu"
+            value={money(data.depositPaid)}
+          />
+          <KeyValueRow
+            label="Đã trả cọc"
+            value={money(data.depositRefunded)}
+          />
+          <KeyValueRow
             label="Cọc đang giữ"
             value={money(data.depositHeld)}
             strong
           />
-          <KeyValueRow
-            label="Cọc còn thiếu"
-            value={money(data.depositRemaining)}
-            valueColor={
-              data.depositRemaining > 0 ? theme.warning : theme.muted
-            }
-          />
+          {data.depositRemaining > 0 && (
+            <KeyValueRow
+              label="Cọc còn thiếu"
+              value={money(data.depositRemaining)}
+              valueColor={theme.warning}
+            />
+          )}
           {data.rentalRefundable > 0 && (
             <KeyValueRow
               label="Tiền thuê có thể hoàn"
@@ -531,7 +579,7 @@ function PaymentForm({ id, backfill }: { id: string; backfill: boolean }) {
                 size="sm"
                 secondary
                 icon={<CheckCircle2 size={14} color={theme.text} />}
-                label="Thanh toán & Đóng HĐ"
+                label="Thanh toán & đóng hợp đồng"
                 onPress={() =>
                   router.push({
                     pathname: "/contract-operation/[action]/[id]",
@@ -571,6 +619,8 @@ function PaymentForm({ id, backfill }: { id: string; backfill: boolean }) {
               }))}
               onChange={(value) => {
                 setPurpose(value as MobilePaymentPurpose);
+                setAmount("");
+                setAmountTouched(false);
                 setRenewalPicks(null);
                 setRenewalDays("1");
                 setLocalError("");
@@ -580,6 +630,13 @@ function PaymentForm({ id, backfill }: { id: string; backfill: boolean }) {
               <InfoBanner
                 tone="warning"
                 message="Khoản thu thêm làm tăng cả giá trị hợp đồng và tiền đã thu. Ghi rõ nội dung khoản thu."
+              />
+            )}
+            {rentalRefundOverage > 0 && (
+              <InfoBanner
+                tone="warning"
+                title={`Hoàn vượt mức gợi ý ${money(rentalRefundOverage)}`}
+                message="Khoản vượt mức được lưu vào Bất thường HĐ."
               />
             )}
             {selected === "renewal" ? (
@@ -717,7 +774,7 @@ function PaymentForm({ id, backfill }: { id: string; backfill: boolean }) {
             />
           ) : (
             <Button
-              label="Ghi nhận khoản thu/chi"
+              label={submitLabel}
               disabled={
                 locked ||
                 query.isError ||

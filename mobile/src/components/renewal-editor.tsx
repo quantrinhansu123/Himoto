@@ -31,7 +31,7 @@ function RenewalForm({ id,backfill }: { id: string;backfill:boolean }) {
   const [itemId, setItemId] = useState(""), [customReturnAt, setReturnAt] = useState<string | null>(null), [customAmount, setAmount] = useState<string | null>(null);
   const [extraAmount,setExtraAmount]=useState(""),[extraName,setExtraName]=useState("Phí VAT");
   const [outsideAmount, setOutsideAmount] = useState(""), [outsideName, setOutsideName] = useState("Phí thu thêm"), [note, setNote] = useState("");
-  const [collected, setCollected] = useState(false),[collectionChosen,setCollectionChosen]=useState(false), [customMethod, setMethod] = useState<MobileCollectionMethod|null>(null), [account, setAccount] = useState("");
+  const [collected, setCollected] = useState(true),[collectionChosen,setCollectionChosen]=useState(true), [customMethod, setMethod] = useState<MobileCollectionMethod|null>(null), [account, setAccount] = useState("");
   const [initialOccurredAt] = useState("");
   const [initialPaidAt] = useState(() => renewalLocalTime(Date.now()));
   const [paidAt, setPaidAt] = useState(initialPaidAt);
@@ -39,7 +39,7 @@ function RenewalForm({ id,backfill }: { id: string;backfill:boolean }) {
   const [readyBill, setReadyBill] = useState(""), [reviewedBill, setReviewedBill] = useState(""), [localError, setLocalError] = useState("");
   const [customOccurredAt,setOccurredAt]=useState<string|null>(null);
   const [confirm, setConfirm] = useState<MobileRenewalInput | null>(null), [resolving, setResolving] = useState(false);
-  const dirty = !!itemId || customReturnAt !== null || customAmount !== null || !!outsideAmount || outsideName !== "Phí thu thêm" || !!extraAmount || extraName!=="Phí VAT" || !!note || collected || collectionChosen || customMethod !== null || !!account || customOccurredAt !== null || unit!=="day" || count!=="1" || customRate!==null;
+  const dirty = !!itemId || customReturnAt !== null || customAmount !== null || !!outsideAmount || outsideName !== "Phí thu thêm" || !!extraAmount || extraName!=="Phí VAT" || !!note || !collected || customMethod !== null || !!account || customOccurredAt !== null || unit!=="day" || count!=="1" || customRate!==null;
   const action = useRenewalWrite(id, dirty), scroll = useRef<ScrollViewInstance>(null);
   const query = useQuery({ queryKey: ["renewal-preparation", session?.user.id, session?.user.storeId, session?.user.allStores, id, "editor", backfill, page, search],
     queryFn: ({ signal }) => api!.renewalPreparation(id, page, search, signal,backfill), enabled: !!api, staleTime: 30_000, gcTime: 300_000, refetchOnWindowFocus: false, refetchOnReconnect: false });
@@ -144,7 +144,7 @@ function RenewalForm({ id,backfill }: { id: string;backfill:boolean }) {
             <FormField label="Tìm xe đang thuê" value={searchDraft} editable={!locked} maxLength={80} onChangeText={setSearchDraft} />
             <Button secondary label="Tìm xe gia hạn" disabled={locked || query.isFetching} onPress={() => { Keyboard.dismiss(); setSearch(searchDraft.trim()); changePage(1); }} />
           </>}
-          <ChoiceField label="Xe gia hạn" value={item ? String(item.id) : ""} disabled={locked || query.isFetching}
+          <ChoiceField label="Xe cần gia hạn" value={item ? String(item.id) : ""} disabled={locked || query.isFetching}
             choices={data.items.rows.map(row => ({ value: String(row.id), label: `${row.license} · ${row.name}` }))}
             onChange={value => { setItemId(value);setUnit("day");setCount("1");setRate(null); setReturnAt(null); setAmount(null); setLocalError(""); }} />
           {data.items.pages > 1 && <View style={{ gap: 8 }}>
@@ -159,8 +159,8 @@ function RenewalForm({ id,backfill }: { id: string;backfill:boolean }) {
           <Text style={{color:theme.muted,lineHeight:24}}>Nếu đã nhận tiền, phiếu thu ghi nhận cùng ngày giờ bắt đầu gia hạn. Hẹn trả mới tính từ hẹn trả hiện tại của xe.</Text>
           <ChoiceField label="Gia hạn theo" value={unit} choices={[{value:"day",label:"Ngày"},{value:"hour",label:"Giờ"}]} disabled={locked||!item} onChange={value=>{setUnit(value as "day"|"hour");setCount("1");setReturnAt(null);setRate(null);setAmount(null);}} />
           <FormField label={unit==="day"?"Số ngày gia hạn":"Số giờ gia hạn"} value={countValue} editable={!locked&&!!item} keyboardType="number-pad" maxLength={3} onChangeText={value=>{setCount(value);setReturnAt(null);}} hint={`Từ 1 đến ${maxCount} ${unit==="day"?"ngày":"giờ"}.`} />
-          <FormField label={unit==="day"?"Đơn giá / ngày (VNĐ)":"Đơn giá / giờ (VNĐ)"} value={rate} onChangeText={setRate} keyboardType="number-pad" maxLength={9} editable={!locked&&!!item} />
-          <RentalDateTime label="ngày trả mới (24h)" value={returnAt} onChange={setReturnAt} disabled={locked || !item} />
+          <FormField label={unit==="day"?"Đơn giá / ngày (VNĐ)":"Đơn giá / giờ (VNĐ)"} value={rate} onChangeText={value => { setRate(value); setAmount(null); }} keyboardType="number-pad" maxLength={9} editable={!locked&&!!item} />
+          <RentalDateTime label="trả mới" value={returnAt} onChange={setReturnAt} disabled={locked || !item} />
           {!!returnAt && Number.isFinite(Date.parse(`${returnAt}:00+07:00`)) && Date.parse(`${returnAt}:00+07:00`) < Date.parse(`${initialPaidAt}:00+07:00`) && (
             <View style={{ padding: 10, borderRadius: 8, backgroundColor: theme.warningBackground, borderWidth: 1, borderColor: theme.warning }}>
               <Text style={{ color: theme.warning, fontSize: 13.5, fontWeight: "700", lineHeight: 20 }}>
@@ -186,12 +186,18 @@ function RenewalForm({ id,backfill }: { id: string;backfill:boolean }) {
         <Card style={{ gap: 16 }}>
           <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 19, fontWeight: "700" }}>2. Kiểm tra khoản thu</Text>
           <ChoiceField label="Trạng thái thu tiền gia hạn" value={!collectionChosen?"":collected ? "paid" : "unpaid"} disabled={locked}
-            choices={[{ value: "unpaid", label: "Chưa nhận tiền — ghi công nợ gia hạn" }, { value: "paid", label: "Đã thực nhận tiền gia hạn — ghi phiếu thu cùng lúc lưu" }]} onChange={value => { setCollected(value === "paid");setCollectionChosen(true); setReviewedBill(""); }} />
+            choices={[{ value: "paid", label: "Đã thực nhận tiền gia hạn — ghi phiếu thu cùng lúc lưu" }, { value: "unpaid", label: "Chưa nhận tiền — ghi công nợ gia hạn" }]} onChange={value => { setCollected(value === "paid");setCollectionChosen(true); setReviewedBill(""); }} />
           {collected ? <>
             <Text style={{ color: theme.muted, fontSize: 15, lineHeight: 24 }}>Chỉ xác nhận khoản đã thực nhận. Thu một phần sau gia hạn được thực hiện bằng phiếu liên kết phiên bản.</Text>
-            <ChoiceField label="Hình thức thu gia hạn" value={method} choices={methods} disabled={locked} onChange={value => { setMethod(value as MobileCollectionMethod); setAccount(""); }} />
-            <ChoiceField label="Tài khoản nhận gia hạn" value={effectiveAccount} disabled={locked} searchable choices={data.accounts.filter(row => row.method === method).map(row => ({ value: `${row.method}:${row.id}`, label: row.label }))} onChange={setAccount} />
-            <RentalDateTime label="thực thu gia hạn" value={paidAt} onChange={setPaidAt} disabled={locked} />
+            <ChoiceField label="Hình thức thanh toán" value={method} choices={methods} disabled={locked} onChange={value => { setMethod(value as MobileCollectionMethod); setAccount(""); }} />
+            <ChoiceField label="Tài khoản nhận" value={effectiveAccount} disabled={locked} searchable choices={data.accounts.filter(row => row.method === method).map(row => ({ value: `${row.method}:${row.id}`, label: row.label }))} onChange={setAccount} />
+            {availableAccounts.length === 0 && (
+              <InlineError message={method === "company_transfer" ? "Chưa có tài khoản công ty đang hoạt động. Đổi hình thức hoặc thêm TK công ty trong Sổ quỹ." : "Chưa có tài khoản nhận đúng cơ sở hợp đồng cho hình thức này (Tiền mặt = két; Chuyển khoản = ngân hàng cơ sở)."} />
+            )}
+            {Number(outsideAmount || 0) > 0 && method === "company_transfer" && (
+              <InlineError message="Phí thu thêm (thu ngoài) không ghi vào tài khoản công ty. Chọn tiền mặt hoặc chuyển khoản cá nhân." />
+            )}
+            <RentalDateTime label="thực thu" value={paidAt} onChange={setPaidAt} disabled={locked} />
             <Text style={{ color: theme.text, fontSize: 16, fontWeight: "700" }}>Bill cho phiên bản #{data.nextVersion}</Text>
             {bill.isError && <InlineError message={bill.error.message} />}
             {source ? <BillPhoto key={billKey} source={source} label="Bill gia hạn đã lưu" onReady={ready => setReadyBill(ready ? billKey : "")} /> : <Text style={{ color: theme.muted, fontSize: 15 }}>{bill.isPending ? "Đang kiểm tra bill…" : "Chưa có bill chính cho phiên bản này."}</Text>}

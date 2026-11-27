@@ -111,14 +111,14 @@ function FinanceContent({ id }: { id: string }) {
         .map((row) => [row.id, row]),
     ).values(),
   ];
-  const approvedInTotal = rows.reduce(
-    (sum, r) => sum + (r.status !== "cancelled" && r.direction !== "out" ? r.amount : 0),
-    0,
+  const approvedInRows = rows.filter(
+    (r) => r.status !== "cancelled" && r.direction !== "out",
   );
-  const approvedOutTotal = rows.reduce(
-    (sum, r) => sum + (r.status !== "cancelled" && r.direction === "out" ? r.amount : 0),
-    0,
+  const approvedOutRows = rows.filter(
+    (r) => r.status !== "cancelled" && r.direction === "out",
   );
+  const approvedInTotal = approvedInRows.reduce((sum, r) => sum + r.amount, 0);
+  const approvedOutTotal = approvedOutRows.reduce((sum, r) => sum + r.amount, 0);
   const perms = session?.user.permissions ?? [];
   const canSettle = perms.includes("contracts.settle");
   const canCorrectReceipts =
@@ -314,7 +314,7 @@ function FinanceContent({ id }: { id: string }) {
                     secondary
                     equalWidth
                     icon={<CheckCircle2 size={15} color={theme.text} />}
-                    label="Thanh toán & Đóng HĐ"
+                    label="Thanh toán & đóng hợp đồng"
                     onPress={() =>
                       router.push({
                         pathname: "/contract-operation/[action]/[id]",
@@ -345,7 +345,7 @@ function FinanceContent({ id }: { id: string }) {
                     size="sm"
                     secondary
                     icon={<Pencil size={14} color={theme.text} />}
-                    label="Sửa cọc / khoản đã thu"
+                    label="Sửa khoản đã thu"
                     onPress={() =>
                       router.push({
                         pathname: "/contract-correction/[kind]/[id]",
@@ -395,7 +395,7 @@ function FinanceContent({ id }: { id: string }) {
             <View style={{ flexDirection: "row", gap: 10 }}>
               <Card style={{ flex: 1, gap: 3, padding: 12 }}>
                 <Text style={{ color: theme.muted, fontSize: 12 }}>
-                  Tổng thu đã duyệt ({rows.length} phiếu)
+                  Tổng thu đã duyệt ({approvedInRows.length} phiếu)
                 </Text>
                 <Text
                   style={{
@@ -409,7 +409,7 @@ function FinanceContent({ id }: { id: string }) {
               </Card>
               <Card style={{ flex: 1, gap: 3, padding: 12 }}>
                 <Text style={{ color: theme.muted, fontSize: 12 }}>
-                  Tổng chi đã duyệt ({rows.length} phiếu)
+                  Tổng chi đã duyệt ({approvedOutRows.length} phiếu)
                 </Text>
                 <Text
                   style={{

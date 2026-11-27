@@ -13,7 +13,7 @@ import {BillPhoto} from './bill-photo';
 import {ConfirmEdit} from './editor-sheet';
 import {RecordVideoPlayer} from './record-video-player';
 import {ShiftTelegramStatus} from './shift-telegram-status';
-export function ShiftEvidence({report,initialCategory,onChanged}:{report:ShiftReport;initialCategory?:'batteries'|'door';onChanged:()=>void}){
+export function ShiftEvidence({report,initialCategory,onChanged}:{report:ShiftReport;initialCategory?:'batteries'|'cash'|'personal'|'company'|'door';onChanged:()=>void}){
   const{api,session}=useSession(),theme=useTheme(),[stage,setStage]=useState<'pgd'|'audit'>('pgd'),[category,setCategory]=useState<string>(initialCategory??'vehicles'),[busy,setBusy]=useState(false),[error,setError]=useState(''),[deleting,setDeleting]=useState<string|null>(null);
   const latestRevision=useRef<{key:string;revision:number|null}>({key:'',revision:null}),batchKey=`${report.id}:${stage}:${category}`;
   const writable=stage==='pgd'?report.status==='draft'&&(session!.user.allStores||session!.user.storeId===report.payload.store_id)&&session!.user.permissions.some(p=>p==='contracts.draft'||p==='finance.write'):report.status==='submitted'&&report.audit?.status!=='confirmed'&&session!.user.permissions.includes('shift.review');
