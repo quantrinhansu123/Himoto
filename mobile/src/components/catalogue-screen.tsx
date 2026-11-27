@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { cataloguePageWindow, CATALOGUE_MAX_PAGES } from '@/lib/catalogue-pages';
-import { router, Stack } from "expo-router";
+import { router, Stack, type Href } from "expo-router";
 import {
   ActivityIndicator,
   FlatList,
@@ -657,7 +657,7 @@ export function CatalogueScreen({
             size="sm"
             equalWidth
             secondary
-            label="Cọc giữ xe"
+            label="Nhận cọc giữ xe"
             icon={<Plus size={15} color={theme.text} />}
             onPress={() => router.push({ pathname: "/draft/new", params: { store_id: store, reservation: "1" } })}
           />
@@ -728,7 +728,16 @@ export function CatalogueScreen({
             onPress={() => router.push({ pathname: "/backfill", params: { store_id: store } })}
             style={({ pressed }) => [styles.actionPill, { borderColor: theme.border, backgroundColor: theme.surface, opacity: pressed ? 0.72 : 1 }]}
           >
-            <Text style={{ color: theme.text, fontSize: 12.5, fontWeight: "600" }}>+ Bổ sung giao dịch</Text>
+            <Text style={{ color: theme.text, fontSize: 12.5, fontWeight: "600" }}>Nhập bổ sung giao dịch</Text>
+          </Pressable>
+        )}
+        {kind === "contracts" && !operationsCatalogue && !scope && session?.user.permissions.includes("contracts.read") && (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push("/contract-anomalies" as Href)}
+            style={({ pressed }) => [styles.actionPill, { borderColor: theme.border, backgroundColor: theme.surface, opacity: pressed ? 0.72 : 1 }]}
+          >
+            <Text style={{ color: theme.text, fontSize: 12.5, fontWeight: "600" }}>Bất thường HĐ</Text>
           </Pressable>
         )}
         {!operationsCatalogue && (
@@ -746,7 +755,7 @@ export function CatalogueScreen({
             ]}
           >
             <Download size={13} color={theme.text} accessible={false} />
-            <Text style={{ color: theme.text, fontSize: 12.5, fontWeight: "600" }}>Xuất Excel</Text>
+            <Text style={{ color: theme.text, fontSize: 12.5, fontWeight: "600" }}>Tải Excel theo bộ lọc</Text>
           </Pressable>
         )}
         {actions.length > 0 && (

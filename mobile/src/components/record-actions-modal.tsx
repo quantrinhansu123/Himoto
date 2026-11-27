@@ -132,12 +132,12 @@ export function RecordActionsModal({
         }),
     });
 
-    // 4. Mã QR chuyển khoản (khớp Web: ẩn khi đã hủy)
+    // 4. Nhập phiếu chi (QR SePay — khớp Web DataTable.tsx: ẩn khi đã hủy)
     if (status !== "cancelled") {
       actions.push({
         id: "qr",
-        label: "Mã QR chuyển khoản",
-        description: "Tạo QR SePay theo công nợ",
+        label: "Nhập phiếu chi",
+        description: "Tạo mã QR chuyển khoản SePay theo công nợ",
         icon: QrCode,
         color: "#2563EB",
         onPress: () =>
@@ -164,8 +164,8 @@ export function RecordActionsModal({
       });
     }
 
-    // 6. Thanh toán (khớp Web: ẩn trên draft / cancelled)
-    if (has("finance.write") && !["draft", "cancelled"].includes(status)) {
+    // 6. Thanh toán (khớp Web DataTable.tsx 0de4d72: hiển thị trên mọi HĐ không phải nháp, kể cả đã hủy)
+    if (has("finance.write") && status !== "draft") {
       actions.push({
         id: "payment",
         label: "Thanh toán",
@@ -407,6 +407,21 @@ export function RecordActionsModal({
             params: { id },
           }),
       });
+      // Khớp Web DataTable.tsx 6a192fe: Sửa giá thuê cho hợp đồng thuê thường đã phát hành
+      if (!isOwnership) {
+        actions.push({
+          id: "rental_terms",
+          label: "Sửa giá thuê",
+          description: "Điều chỉnh đơn giá, ngày thuê và tổng tiền hợp đồng",
+          icon: FilePenLine,
+          color: "#0284C7",
+          onPress: () =>
+            router.push({
+              pathname: "/rental-terms/[id]",
+              params: { id },
+            }),
+        });
+      }
     }
 
     // 17. Xóa bản nháp / Xóa hợp đồng cọc / Ẩn hợp đồng
@@ -429,10 +444,10 @@ export function RecordActionsModal({
       });
     }
   } else if (kind === "vehicles") {
-    // Vehicles actions
+    // Vehicles actions (khớp Web DataTable.tsx)
     actions.push({
       id: "view",
-      label: "Xem chi tiết xe",
+      label: "Xem chi tiết",
       icon: Eye,
       onPress: () =>
         router.push({
@@ -444,7 +459,7 @@ export function RecordActionsModal({
     if (has("vehicles.write")) {
       actions.push({
         id: "edit",
-        label: "Sửa thông tin xe",
+        label: "Chỉnh sửa",
         description: "Biển số, loại xe, giá thuê, số khung / số máy",
         icon: FilePenLine,
         color: "#2563EB",
@@ -456,7 +471,7 @@ export function RecordActionsModal({
       });
       actions.push({
         id: "status",
-        label: "Đổi trạng thái xe",
+        label: "Đổi trạng thái",
         description: "Lưu kho, bảo dưỡng, sẵn sàng",
         icon: RotateCcw,
         color: "#059669",
@@ -484,7 +499,7 @@ export function RecordActionsModal({
       if (record.status === "in_transit" || record.status === "sold") {
         actions.push({
           id: "transfer",
-          label: "Điều chuyển cơ sở",
+          label: "Chuyển xe",
           blockedReason: record.status === "in_transit"
             ? "Xe đang Chờ luân chuyển — cơ sở đích cần Nhận xe hoặc Từ chối trước khi chuyển tiếp."
             : "Xe đã bán — không điều chuyển cơ sở.",
@@ -493,7 +508,7 @@ export function RecordActionsModal({
       } else {
         actions.push({
           id: "transfer",
-          label: "Điều chuyển cơ sở",
+          label: "Chuyển xe",
           description: "Chuyển xe sang cơ sở khác",
           icon: ArrowLeftRight,
           color: "#4F46E5",
@@ -531,10 +546,10 @@ export function RecordActionsModal({
         }),
     });
   } else if (kind === "customers") {
-    // Customer actions
+    // Customer actions (khớp Web DataTable.tsx)
     actions.push({
       id: "view",
-      label: "Xem hồ sơ khách hàng",
+      label: "Xem chi tiết",
       icon: Eye,
       onPress: () =>
         router.push({
@@ -546,7 +561,7 @@ export function RecordActionsModal({
     if (has("customers.write")) {
       actions.push({
         id: "edit",
-        label: "Sửa hồ sơ / Blacklist khách",
+        label: "Chỉnh sửa",
         description: "Cập nhật thông tin, cảnh báo hoặc Blacklist",
         icon: FilePenLine,
         color: "#2563EB",

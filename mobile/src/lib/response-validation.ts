@@ -83,7 +83,9 @@ export function isMobileUser(value: unknown): value is MobileUser {
     value.permissions.every((permission) => typeof permission === "string") &&
     (value.storeId === null || integer(value.storeId, 1)) &&
     typeof value.allStores === "boolean" &&
-    (value.allStoresRead === undefined || typeof value.allStoresRead === "boolean")
+    (value.allStoresRead === undefined || typeof value.allStoresRead === "boolean") &&
+    (value.allContractsRead === undefined || typeof value.allContractsRead === "boolean") &&
+    (value.has_hr_position === undefined || typeof value.has_hr_position === "boolean")
   );
 }
 export function isSession(

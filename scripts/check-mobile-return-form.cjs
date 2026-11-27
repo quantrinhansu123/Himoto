@@ -35,6 +35,14 @@ assert.throws(()=>form.returnSettlementInput(preparation,fees,selected,[],{...mo
 assert.throws(()=>form.returnSettlementInput({...preparation,revision:'101'},fees,selected,[],null,null,false,now));
 const noRefund=form.returnSettlementInput(preparation,{...fees,after:{depositHeld:0}},selected,[],null,null,false,now);
 assert.deepEqual(noRefund.settlement,{receipts:[]});
-checks.push('Actual income/refund intent validates method-qualified accounts, positive whole amounts, dates and recipients; omitted deposit refund is explicitly deferred while stale fee revision requires review');
+const earlyEst=form.estimateReturnLine(vehicle,'2026-10-13T08:00','20000');
+assert.equal(earlyEst.early,true);assert.equal(earlyEst.late,false);assert.equal(earlyEst.unusedDays,2);assert.equal(earlyEst.suggested,200000);
+const syncedEarly=form.syncReturnLineTiming(form.newReturnLine(vehicle,now),'2026-10-13T08:00',false);
+assert.equal(syncedEarly.earlyDiscount,'200000');
+const lateEst=form.estimateReturnLine(vehicle,'2026-10-15T17:00','20000');
+assert.equal(lateEst.late,true);assert.equal(lateEst.lateDays,1);assert.equal(lateEst.hours,0);assert.equal(lateEst.suggested,100000);
+const syncedLate=form.syncReturnLineTiming(syncedEarly,'2026-10-15T17:00',false);
+assert.equal(syncedLate.earlyDiscount,'');
+checks.push('Actual income/refund intent validates method-qualified accounts, positive whole amounts, dates and recipients; live early-return and late-return suggestions match web formulas exactly');
 const result={passed:checks.length,checks,operationalWrites:0,completedAt:new Date().toISOString()};
 fs.mkdirSync('.backups',{recursive:true});fs.writeFileSync('.backups/mobile-return-form-results.json',JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));

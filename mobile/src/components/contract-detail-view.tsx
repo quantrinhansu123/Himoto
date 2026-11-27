@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import {
   Linking,
-  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -40,15 +39,344 @@ import { SectionTabs } from "./section-tabs";
 import { ContractApprovalSummary } from "./contract-approval-summary";
 import { ContractPhotosTab } from "./contract-photos-tab";
 
-type ContractTab = "overview" | "customer" | "finance" | "photos" | "actions";
+// Exact 11 tabs matching Web ContractDetail.tsx (SECTIONS) in order and labels.
+type ContractTab =
+  | "vehicle"
+  | "contract"
+  | "lifecycle"
+  | "customer"
+  | "payment"
+  | "battery"
+  | "signing"
+  | "changes"
+  | "cashflow"
+  | "photos"
+  | "telegram";
 
 const CONTRACT_TABS = [
-  { id: "overview" as ContractTab, label: "Hợp đồng & Xe" },
-  { id: "customer" as ContractTab, label: "Khách hàng" },
-  { id: "finance" as ContractTab, label: "Chi phí & Thu chi" },
+  { id: "vehicle" as ContractTab, label: "Thông tin phương tiện" },
+  { id: "contract" as ContractTab, label: "Hợp đồng" },
+  { id: "lifecycle" as ContractTab, label: "Nợ xấu / bảo lưu" },
+  { id: "customer" as ContractTab, label: "Khách hàng (Bên B)" },
+  { id: "payment" as ContractTab, label: "Chi phí" },
+  { id: "battery" as ContractTab, label: "Pin / sạc" },
+  { id: "signing" as ContractTab, label: "Ký kết & ghi chú" },
+  { id: "changes" as ContractTab, label: "Lịch sử chỉnh sửa" },
+  { id: "cashflow" as ContractTab, label: "Lịch sử thu chi" },
   { id: "photos" as ContractTab, label: "Ảnh thuê / trả xe" },
-  { id: "actions" as ContractTab, label: "Nghiệp vụ quầy" },
+  { id: "telegram" as ContractTab, label: "Telegram" },
 ] as const;
+
+const CHANGE_LABELS: Record<string, string> = {
+  created: "Tạo mới",
+  renew: "Gia hạn",
+  payment: "Thu / chi",
+  swap: "Đổi xe",
+  return: "Trả xe",
+  edit: "Chỉnh sửa",
+  status: "Trạng thái",
+};
+
+const CHANGE_TONES: Record<string, string> = {
+  created: "active",
+  renew: "completed",
+  payment: "income",
+  swap: "pending",
+  return: "completed",
+  edit: "warning",
+  status: "overdue",
+};
+
+const TELEGRAM_STATUS_LABELS: Record<string, string> = {
+  sent: "Đã gửi",
+  pending: "Đang chờ gửi",
+  sending: "Đang gửi",
+  failed: "Gửi lỗi",
+  retracting: "Đang thu hồi",
+  retracted: "Đã thu hồi",
+  unknown: "Cần đối chiếu",
+};
+
+function InlineChangesTab({ id }: { id: string }) {
+  const theme = useTheme();
+  const { api, session } = useSession();
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const query = useQuery({
+    queryKey: ["contract-history-inline", api?.origin, session?.user.id, id, "changes"],
+    queryFn: ({ signal }) => api!.contractHistory(id, new URLSearchParams({ tab: "changes", page: "1" }), signal),
+    enabled: Boolean(api && typeof api.contractHistory === "function"),
+    staleTime: 15_000,
+    retry: false,
+  });
+  const changes = Array.isArray(query.data?.changes) ? query.data!.changes : [];
+  return (
+    <View style={{ gap: 12 }}>
+      <Card style={{ gap: 10 }}>
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+          <Text style={[styles.cardTitle, { color: theme.text, flex: 1 }]}>Danh sách chỉnh sửa hợp đồng</Text>
+          <Button size="sm" secondary label="Làm mới" loading={query.isFetching} onPress={() => void query.refetch()} />
+        </View>
+        <Text style={{ color: theme.muted, fontSize: 13, lineHeight: 19 }}>
+          Ghi nhận tạo hợp đồng, gia hạn, thu thêm, đổi xe và trả xe.
+        </Text>
+        {query.isError && <InlineError message={(query.error as Error).message} />}
+        {query.isPending && !changes.length && <Text style={{ color: theme.muted, fontSize: 13.5 }}>Đang tải lịch sử…</Text>}
+        {!query.isPending && !query.isError && !changes.length && (
+          <Text style={{ color: theme.muted, fontSize: 13.5 }}>Chưa có lần chỉnh sửa nào.</Text>
+        )}
+        {changes.map((change) => (
+          <View
+            key={change.id}
+            style={{
+              borderTopWidth: 1,
+              borderTopColor: theme.border,
+              paddingTop: 10,
+              gap: 6,
+            }}
+          >
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+              <StatusBadge status={CHANGE_TONES[change.kind] || "active"} label={CHANGE_LABELS[change.kind] || change.kind} />
+              <Text style={{ color: theme.muted, fontSize: 12 }}>{dateTime(change.at)} · {change.actor}</Text>
+            </View>
+            <Text style={{ color: theme.text, fontSize: 14.5, fontWeight: "700" }}>
+              {change.title}
+              {change.amount ? ` · ${change.amount < 0 ? "−" : ""}${money(Math.abs(change.amount))}` : ""}
+            </Text>
+            {!!change.detail && <Text style={{ color: theme.muted, fontSize: 13, lineHeight: 19 }}>{change.detail}</Text>}
+            {(change.version || ["created", "swap"].includes(change.kind)) && (
+              <View style={{ flexDirection: "row", gap: 8, paddingTop: 2 }}>
+                {change.kind !== "swap" && change.version && (
+                  <Button
+                    size="sm"
+                    equalWidth
+                    secondary
+                    label={expanded === change.id ? "Ẩn" : "Xem"}
+                    onPress={() => setExpanded((cur) => (cur === change.id ? null : change.id))}
+                  />
+                )}
+                <Button
+                  size="sm"
+                  equalWidth
+                  secondary
+                  label="In"
+                  icon={<Printer size={14} color={theme.text} />}
+                  onPress={() => router.push({ pathname: "/print/[kind]/[id]", params: { kind: "contracts", id, version: change.id } })}
+                />
+              </View>
+            )}
+            {expanded === change.id && change.version && (
+              <View style={{ gap: 2, padding: 10, borderRadius: 9, backgroundColor: theme.background, borderWidth: 1, borderColor: theme.border }}>
+                <Text style={{ color: theme.text, fontSize: 13.5, fontWeight: "700", marginBottom: 2 }}>{change.version.label}</Text>
+                <KeyValueRow label="Hẹn trả" value={dateTime(change.version.return_at || "")} />
+                <KeyValueRow label="Tiền thuê" value={money(change.version.total)} />
+                <KeyValueRow label="Đã thu" value={money(change.version.paid)} emphasize />
+              </View>
+            )}
+          </View>
+        ))}
+        <Button
+          size="sm"
+          secondary
+          label="Tìm kiếm & xem đầy đủ lịch sử chỉnh sửa"
+          onPress={() => router.push({ pathname: "/contract-history/[id]", params: { id, tab: "changes" } })}
+        />
+      </Card>
+    </View>
+  );
+}
+
+function InlineCashflowTab({
+  id,
+  status,
+  canPay,
+  remaining,
+  depositHeld,
+}: {
+  id: string;
+  status: string;
+  canPay: boolean;
+  remaining: number | null;
+  depositHeld: number | null;
+}) {
+  const theme = useTheme();
+  const { api, session } = useSession();
+  const query = useQuery({
+    queryKey: ["contract-history-inline", api?.origin, session?.user.id, id, "cashflow"],
+    queryFn: ({ signal }) => api!.contractHistory(id, new URLSearchParams({ tab: "cashflow", page: "1" }), signal),
+    enabled: Boolean(api && typeof api.contractHistory === "function"),
+    staleTime: 15_000,
+    retry: false,
+  });
+  const rows = Array.isArray(query.data?.cashflow) ? query.data!.cashflow : [];
+  const receipts = query.data?.receipts;
+
+  return (
+    <View style={{ gap: 12 }}>
+      <Card style={{ gap: 10 }}>
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+          <Text style={[styles.cardTitle, { color: theme.text, flex: 1 }]}>Lịch sử thu chi</Text>
+          <Button size="sm" secondary label="Làm mới" loading={query.isFetching} onPress={() => void query.refetch()} />
+        </View>
+        <Text style={{ color: theme.muted, fontSize: 13, lineHeight: 19 }}>
+          Tất cả phiếu thu / chi gắn với hợp đồng trong Sổ quỹ / Sổ két.
+        </Text>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+          {canPay && (
+            <Button
+              size="sm"
+              equalWidth
+              label="Điền phiếu thu"
+              icon={<Wallet size={14} color={theme.primaryText} />}
+              onPress={() => router.push({ pathname: "/payment/[id]", params: { id } })}
+            />
+          )}
+          {status !== "cancelled" && (
+            <Button
+              size="sm"
+              equalWidth
+              secondary
+              label="Nhập phiếu chi"
+              icon={<QrCode size={14} color={theme.text} />}
+              onPress={() => router.push({ pathname: "/contract-qr/[id]", params: { id } })}
+            />
+          )}
+        </View>
+        {canPay && (
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+            <Button
+              size="sm"
+              equalWidth
+              secondary
+              label={`Thu công nợ${remaining && remaining > 0 ? ` (${money(remaining)})` : ""}`}
+              disabled={remaining === 0}
+              onPress={() => router.push({ pathname: "/payment/[id]", params: { id } })}
+            />
+            <Button
+              size="sm"
+              equalWidth
+              secondary
+              label={`Trả cọc${depositHeld != null && depositHeld > 0 ? ` (${money(depositHeld)})` : ""}`}
+              disabled={depositHeld == null || depositHeld <= 0}
+              onPress={() => router.push({ pathname: "/payment/[id]", params: { id } })}
+            />
+          </View>
+        )}
+        {receipts && (
+          <View style={{ gap: 2, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 8 }}>
+            <KeyValueRow label="Tổng thu (đã duyệt)" valueColor={theme.success} emphasize value={money(receipts.received)} />
+            <KeyValueRow label="Tổng chi (đã duyệt)" valueColor={theme.danger} emphasize value={money(receipts.spent)} />
+            <KeyValueRow label="Chênh lệch" emphasize value={money(receipts.net)} />
+          </View>
+        )}
+        {query.isError && <InlineError message={(query.error as Error).message} />}
+        {query.isPending && !rows.length && <Text style={{ color: theme.muted, fontSize: 13.5 }}>Đang tải lịch sử thu chi…</Text>}
+        {!query.isPending && !query.isError && !rows.length && (
+          <Text style={{ color: theme.muted, fontSize: 13.5 }}>Chưa có phiếu thu / chi nào cho hợp đồng này.</Text>
+        )}
+        {rows.map((item) => (
+          <View
+            key={item.id}
+            style={{
+              borderTopWidth: 1,
+              borderTopColor: theme.border,
+              paddingTop: 10,
+              gap: 4,
+            }}
+          >
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+              <Text style={{ color: theme.text, fontSize: 14.5, fontWeight: "700", flex: 1 }}>
+                Phiếu #{item.id} · {item.type === "income" ? "Thu" : "Chi"} {money(item.amount)}
+              </Text>
+              <StatusBadge status={item.status_code} label={item.status} />
+            </View>
+            <KeyValueRow label="Lý do" value={item.reason} />
+            <KeyValueRow label="Thời điểm & người tạo" value={`${dateTime(item.at)} · ${item.actor}`} />
+            <KeyValueRow label="Hình thức & tài khoản" value={`${item.method} · ${item.account}`} />
+            {!!item.note && <KeyValueRow label="Ghi chú" value={item.note} />}
+          </View>
+        ))}
+        <Button
+          size="sm"
+          secondary
+          label="Tìm kiếm & xem đầy đủ lịch sử thu chi"
+          onPress={() => router.push({ pathname: "/contract-history/[id]", params: { id, tab: "cashflow" } })}
+        />
+      </Card>
+    </View>
+  );
+}
+
+function InlineTelegramTab({ id, status }: { id: string; status: string }) {
+  const theme = useTheme();
+  const { api, session } = useSession();
+  const isDraft = status === "draft";
+  const query = useQuery({
+    queryKey: ["telegram-inline", api?.origin, session?.user.id, id],
+    queryFn: ({ signal }) => api!.contractTelegram(id, signal),
+    enabled: !isDraft && Boolean(api && typeof api.contractTelegram === "function"),
+    staleTime: 15_000,
+    retry: false,
+  });
+  const events = Array.isArray(query.data?.events) ? query.data!.events : [];
+
+  if (isDraft) {
+    return (
+      <Card style={{ gap: 10 }}>
+        <Text style={[styles.cardTitle, { color: theme.text }]}>Gửi thông tin và ảnh vào nhóm Telegram</Text>
+        <Text style={{ color: theme.muted, fontSize: 13.5, lineHeight: 20 }}>
+          Hợp đồng đang lưu nháp. Bấm Tiếp tục hoàn tất hợp đồng, kiểm tra thanh toán rồi Xác nhận lưu chính thức. Sau khi phát hành mới gửi được thông tin và ảnh lên Telegram.
+        </Text>
+      </Card>
+    );
+  }
+
+  return (
+    <Card style={{ gap: 10 }}>
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+        <Text style={[styles.cardTitle, { color: theme.text, flex: 1 }]}>Gửi thông tin và ảnh vào nhóm Telegram</Text>
+        <Button size="sm" secondary label="Làm mới" loading={query.isFetching} onPress={() => void query.refetch()} />
+      </View>
+      {status === "cancelled" && (
+        <Text style={{ color: theme.muted, fontSize: 13.5, lineHeight: 20 }}>
+          Hợp đồng đã hủy. Có thể xem lịch sử và thu hồi tin đã gửi.
+        </Text>
+      )}
+      {query.isError && <InlineError message={(query.error as Error).message} />}
+      {query.isPending && !events.length && <Text style={{ color: theme.muted, fontSize: 13.5 }}>Đang tải trạng thái Telegram…</Text>}
+      {events.map((ev) => (
+        <View key={ev.key} style={{ borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 8, gap: 4 }}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+            <Text style={{ color: theme.text, fontSize: 14, fontWeight: "700", flex: 1 }}>{ev.label}</Text>
+            <StatusBadge
+              status={ev.status === "sent" ? "completed" : ev.status === "failed" ? "overdue" : "pending"}
+              label={ev.status ? TELEGRAM_STATUS_LABELS[ev.status] || ev.status : "Chưa gửi"}
+            />
+          </View>
+          <KeyValueRow label="Tệp đính kèm" value={`${ev.photo_count} ảnh · ${ev.video_count || 0} video`} />
+          {!!ev.sent_at && <KeyValueRow label="Thời điểm gửi" value={dateTime(ev.sent_at)} />}
+        </View>
+      ))}
+      <Button
+        size="sm"
+        label={status === "cancelled" ? "Lịch sử Telegram / Thu hồi tin" : "Gửi Telegram"}
+        icon={<MessageCircle size={15} color={theme.primaryText} />}
+        onPress={() =>
+          router.push({
+            pathname: "/contract-telegram/[id]",
+            params: {
+              id,
+              ...(status === "completed" || status === "wait_payment"
+                ? { eventKind: "return" }
+                : status === "deposit_contract"
+                  ? { eventKind: "reservation" }
+                  : {}),
+            },
+          })
+        }
+      />
+    </Card>
+  );
+}
 
 export function ContractDetailView({
   record,
@@ -62,7 +390,8 @@ export function ContractDetailView({
   const theme = useTheme();
   const { api, session } = useSession();
   const cache = useQueryClient();
-  const [activeTab, setActiveTab] = useState<ContractTab>("overview");
+  // First useState MUST remain activeTab so regression tests targeting 'customer' stay compatible.
+  const [activeTab, setActiveTab] = useState<ContractTab>("vehicle");
   const [callError, setCallError] = useState("");
   const [hideConfirm, setHideConfirm] = useState(false);
   const [hideBusy, setHideBusy] = useState(false);
@@ -116,6 +445,35 @@ export function ContractDetailView({
   const canRecoverVehicle = (isBadDebt || Boolean(detail?.badDebtClosedAt)) && permissions.includes("contracts.return");
   const isOwnership = ["ownership", "ownership_cd"].includes(detail?.rentalType || record.monitoring?.rentalType || "");
   const canEdit = session?.user.role === "admin" || permissions.includes("contracts.draft");
+  const canPay = status !== "draft" && status !== "cancelled" && permissions.some((p) => p === "finance.read" || p === "finance.write");
+  const canEditRentalTerms = status !== "draft" && !isOwnership && !isInstallment && canEdit;
+  const totalAmount = detail?.totalAmount ?? record.totalAmount;
+  const paidAmount = detail?.paidAmount ?? record.paidAmount;
+  const remaining = totalAmount != null && paidAmount != null ? Math.max(totalAmount - paidAmount, 0) : null;
+  const depositHeld = detail?.depositHeld ?? null;
+
+  const vehicles = detail?.vehicles.length
+    ? detail.vehicles
+    : [
+        {
+          id: "",
+          name: record.vehicleName || "",
+          license: record.license || "",
+          stockStoreName: record.storeName || "",
+          color: "",
+          typeText: "",
+          brand: "",
+          year: "",
+          driverName: "",
+          driverLicenseNumber: "",
+          driverLicenseIssuedOn: "",
+          borrowHats: "",
+          borrowRaincoats: "",
+          rentAt: record.startsAt,
+          returnAt: record.endsAt,
+          completedAt: "",
+        },
+      ];
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.background }}>
@@ -126,7 +484,7 @@ export function ContractDetailView({
             <Text style={{ color: theme.primary, fontSize: 12, fontWeight: "800", letterSpacing: 0.5 }}>
               HỢP ĐỒNG THUÊ XE{detail?.contractTypeName ? ` · ${detail.contractTypeName.toUpperCase()}` : ""}
             </Text>
-            <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 22, fontWeight: "800" }}>
+            <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 21, fontWeight: "800" }}>
               {detail?.code || record.code}
             </Text>
           </View>
@@ -147,7 +505,7 @@ export function ContractDetailView({
         </View>
       </View>
 
-      {/* Tabs */}
+      {/* 11 Web-Matched Numbered Section Tabs (01 → 11) */}
       <View style={styles.tabContainer}>
         <SectionTabs
           sections={CONTRACT_TABS}
@@ -196,12 +554,12 @@ export function ContractDetailView({
           />
         )}
 
-        {/* Quick Priority Action Bar for Active & Bad-Debt Contracts */}
+        {/* Quick Priority Action Bar matching Web ContractDetail footer button labels */}
         {(isRenting || isBadDebt) && (
           <Card style={[styles.priorityCard, { borderColor: theme.primary, backgroundColor: theme.surface }]}>
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-              <Text style={{ color: theme.text, fontSize: 15.5, fontWeight: "800" }}>
-                Thao tác chính tại quầy
+              <Text style={{ color: theme.text, fontSize: 15, fontWeight: "800" }}>
+                Thao tác tại quầy
               </Text>
               <StatusBadge
                 status={status}
@@ -247,25 +605,41 @@ export function ContractDetailView({
                   size="sm"
                   equalWidth
                   secondary
-                  label="Thu / Chi"
+                  label="Điền sổ quỹ"
                   icon={<Wallet size={15} color={theme.text} />}
                   onPress={() => router.push({ pathname: "/finance/[id]", params: { id } })}
                 />
               )}
             </View>
 
-            <Button
-              size="sm"
-              secondary
-              label="Gửi Telegram"
-              icon={<MessageCircle size={15} color={theme.text} />}
-              onPress={() =>
-                router.push({
-                  pathname: "/contract-telegram/[id]",
-                  params: { id, ...(status === "wait_payment" ? { eventKind: "return" } : {}) },
-                })
-              }
-            />
+            <View style={styles.priorityBtnRow}>
+              <Button
+                size="sm"
+                equalWidth
+                secondary
+                label="Gửi Telegram"
+                icon={<MessageCircle size={15} color={theme.text} />}
+                onPress={() => setActiveTab("telegram")}
+              />
+              <Button
+                size="sm"
+                equalWidth
+                secondary
+                label="In hợp đồng"
+                icon={<Printer size={15} color={theme.text} />}
+                onPress={() => router.push({ pathname: "/print/[kind]/[id]", params: { kind: "contracts", id } })}
+              />
+            </View>
+
+            {record.reminderEligible && permissions.some((p) => p === "contracts.draft" || p === "finance.write") && (
+              <Button
+                size="sm"
+                secondary
+                label="Nhắc nợ"
+                icon={<MessageCircle size={15} color={theme.text} />}
+                onPress={() => router.push({ pathname: "/reminder-editor/[id]", params: { id } })}
+              />
+            )}
 
             {isBadDebt && permissions.includes("contracts.settle") && (
               <Button
@@ -278,25 +652,25 @@ export function ContractDetailView({
           </Card>
         )}
 
-        {/* Draft / Deposit Quick Action */}
+        {/* Draft / Deposit Quick Action matching Web ContractDetail footer */}
         {isDraft && (
           <Card style={[styles.priorityCard, { borderColor: theme.primary }]}>
-            <Text style={{ color: theme.text, fontSize: 15.5, fontWeight: "800" }}>
-              Xử lý Hợp đồng nháp / Giữ chỗ
+            <Text style={{ color: theme.text, fontSize: 15, fontWeight: "800" }}>
+              {status === "draft" ? "Xử lý Hợp đồng nháp" : "Xử lý Hợp đồng đặt cọc"}
             </Text>
-            {permissions.includes("contracts.finalize") && (
-              <Button
-                size="sm"
-                label={status === "draft" ? "Rà soát & Phát hành hợp đồng" : "Xác nhận giao xe giữ chỗ"}
-                onPress={() => router.push({ pathname: "/contract/[id]", params: { id } })}
-              />
-            )}
             {status === "draft" && permissions.includes("contracts.draft") && (
               <Button
                 size="sm"
-                secondary
-                label="Tiếp tục soạn hợp đồng"
+                label="Tiếp tục hoàn tất hợp đồng"
                 onPress={() => router.push({ pathname: "/draft/[id]", params: { id } })}
+              />
+            )}
+            {permissions.includes("contracts.finalize") && (
+              <Button
+                size="sm"
+                secondary={status === "draft"}
+                label={status === "draft" ? "Rà soát & Phát hành hợp đồng" : "Giao xe đã đặt cọc"}
+                onPress={() => router.push({ pathname: "/contract/[id]", params: { id } })}
               />
             )}
             {status === "deposit_contract" && canEdit && (
@@ -319,7 +693,7 @@ export function ContractDetailView({
               <Button
                 size="sm"
                 secondary
-                label="Gửi Telegram hợp đồng cọc"
+                label="Gửi Telegram"
                 icon={<MessageCircle size={15} color={theme.text} />}
                 onPress={() => router.push({ pathname: "/contract-telegram/[id]", params: { id, eventKind: "reservation" } })}
               />
@@ -332,10 +706,19 @@ export function ContractDetailView({
                 onPress={() => router.push({ pathname: "/contract-operation/[action]/[id]", params: { id, action: "delete_reservation" } })}
               />
             )}
+            {status === "draft" && permissions.includes("contracts.draft") && (
+              <Button
+                size="sm"
+                danger
+                label="Xóa hẳn bản nháp"
+                icon={<Trash2 size={15} color={theme.danger} />}
+                onPress={() => router.push({ pathname: "/draft-delete/[id]", params: { id } })}
+              />
+            )}
           </Card>
         )}
 
-        {/* Bad debt recovery (active bad_debt OR closed bad_debt_closed_at) */}
+        {/* Bad debt recovery shortcut */}
         {canRecoverVehicle && (
           <Button
             size="sm"
@@ -346,106 +729,193 @@ export function ContractDetailView({
           />
         )}
 
-        {/* TAB 1: OVERVIEW & VEHICLES */}
-        {activeTab === "overview" && (
+        {/* TAB 01: THÔNG TIN PHƯƠNG TIỆN */}
+        {activeTab === "vehicle" && (
           <View style={{ gap: 12 }}>
-            {(detail?.vehicles.length ? detail.vehicles : [{
-              id: "",
-              name: record.vehicleName || "",
-              license: record.license || "",
-              stockStoreName: record.storeName || "",
-              color: "",
-              typeText: "",
-              brand: "",
-              year: "",
-              driverName: "",
-              driverLicenseNumber: "",
-              driverLicenseIssuedOn: "",
-              borrowHats: "",
-              borrowRaincoats: "",
-              rentAt: record.startsAt,
-              returnAt: record.endsAt,
-              completedAt: "",
-            }]).map((vehicle, index) => (
+            <Card style={{ gap: 4 }}>
+              <Text style={[styles.cardTitle, { color: theme.text, marginBottom: 4 }]}>Thời gian thuê</Text>
+              <KeyValueRow label="Thuê lúc" value={dateTime(detail?.startDate || record.startsAt)} />
+              <KeyValueRow label="Hẹn trả" strong value={dateTime(detail?.endDate || record.endsAt)} />
+            </Card>
+            {vehicles.map((vehicle, index) => (
               <Card key={`${vehicle.id}:${index}`} style={{ gap: 4 }}>
                 <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
                   <Text style={[styles.cardTitle, { color: theme.text }]}>
-                    Phương tiện #{index + 1} · {vehicle.license || vehicle.name || "Chưa chọn"}
+                    Thông tin xe thuê số {index + 1}
                   </Text>
-                  {vehicle.completedAt ? (
-                    <StatusBadge status="completed" label="Đã trả" />
-                  ) : null}
+                  {vehicle.completedAt ? <StatusBadge status="completed" label="Đã trả" /> : null}
                 </View>
                 <KeyValueRow label="Tên xe" strong value={vehicle.name} />
                 <KeyValueRow label="Biển số" strong valueColor={theme.primary} selectable value={vehicle.license} />
-                <KeyValueRow label="Kho xe lúc lập HĐ" value={vehicle.stockStoreName} />
-                {!!(vehicle.brand || vehicle.color || vehicle.year) && (
-                  <KeyValueRow label="Hãng / Màu / Đời" value={[vehicle.brand, vehicle.color, vehicle.year].filter(Boolean).join(" · ")} />
-                )}
+                <KeyValueRow label="Cơ sở quản lý xe lúc lập hợp đồng" value={vehicle.stockStoreName} />
+                {!!vehicle.color && <KeyValueRow label="Màu xe" value={vehicle.color} />}
                 {!!vehicle.typeText && <KeyValueRow label="Loại xe" value={vehicle.typeText} />}
-                {!!vehicle.driverName && <KeyValueRow label="Người lái" value={vehicle.driverName} />}
-                {!!vehicle.driverLicenseNumber && (
-                  <KeyValueRow label="GPLX người lái" value={`${vehicle.driverLicenseNumber}${vehicle.driverLicenseIssuedOn ? ` (${vehicle.driverLicenseIssuedOn})` : ""}`} />
-                )}
-                {!!(vehicle.borrowHats || vehicle.borrowRaincoats) && (
-                  <KeyValueRow label="Phụ kiện mượn" value={`${vehicle.borrowHats || "0"} mũ · ${vehicle.borrowRaincoats || "0"} áo mưa`} />
-                )}
-                <KeyValueRow label="Nhận xe" value={vehicle.rentAt ? dateTime(vehicle.rentAt) : "—"} />
-                <KeyValueRow label={vehicle.completedAt ? "Đã trả thực tế" : "Hẹn trả"} strong value={vehicle.completedAt ? dateTime(vehicle.completedAt) : vehicle.returnAt ? dateTime(vehicle.returnAt) : "—"} />
+                {!!vehicle.brand && <KeyValueRow label="Hãng xe" value={vehicle.brand} />}
+                {!!vehicle.year && <KeyValueRow label="Đời xe" value={vehicle.year} />}
+                {!!vehicle.driverName && <KeyValueRow label="Tên người lái" value={vehicle.driverName} />}
+                {!!vehicle.driverLicenseNumber && <KeyValueRow label="Số GP lái xe" value={vehicle.driverLicenseNumber} />}
+                {!!vehicle.driverLicenseIssuedOn && <KeyValueRow label="Ngày cấp GPLX" value={vehicle.driverLicenseIssuedOn} />}
+                {!!vehicle.borrowHats && <KeyValueRow label="Số mũ mượn" value={vehicle.borrowHats} />}
+                {!!vehicle.borrowRaincoats && <KeyValueRow label="Số áo mưa" value={vehicle.borrowRaincoats} />}
+                <KeyValueRow label="Thuê lúc" value={vehicle.rentAt ? dateTime(vehicle.rentAt) : "—"} />
+                <KeyValueRow label={vehicle.completedAt ? "Đã trả" : "Hẹn trả"} strong value={vehicle.completedAt ? dateTime(vehicle.completedAt) : vehicle.returnAt ? dateTime(vehicle.returnAt) : "—"} />
                 {!!vehicle.rentAt && !!(vehicle.completedAt || vehicle.returnAt) && (
                   <KeyValueRow label="Số ngày thuê" value={`${rentalDayCount(vehicle.rentAt.slice(0, 16), (vehicle.completedAt || vehicle.returnAt).slice(0, 16)) || "—"} ngày`} />
                 )}
               </Card>
             ))}
+            <Button
+              size="sm"
+              secondary
+              label="Ảnh biển số xe"
+              icon={<FileText size={14} color={theme.text} />}
+              onPress={() => router.push({ pathname: "/record-media/[entity]/[id]", params: { entity: "contracts", id } })}
+            />
+          </View>
+        )}
 
+        {/* TAB 02: HỢP ĐỒNG */}
+        {activeTab === "contract" && (
+          <View style={{ gap: 12 }}>
             <Card style={{ gap: 4 }}>
               <Text style={[styles.cardTitle, { color: theme.text, marginBottom: 4 }]}>Thông tin hợp đồng & Pháp lý</Text>
-              <KeyValueRow label="Mã / Số HĐ" strong selectable value={detail?.code || record.code} />
-              <KeyValueRow label="Hình thức / Loại HĐ" value={detail?.contractTypeName || record.monitoring?.contractTypeName || "Thuê ngày / tháng"} />
+              <KeyValueRow label="Mã hợp đồng / Số HĐ giấy" strong selectable value={detail?.code || record.code} />
+              <KeyValueRow label="Trạng thái hợp đồng" value={contextualStatusLabel("contracts", status)} />
+              <KeyValueRow label="Loại hợp đồng" value={detail?.contractTypeName || record.monitoring?.contractTypeName || "Thuê ngày / tháng"} />
               {isOwnership && !!detail?.ownershipTermMonths && (
                 <KeyValueRow label="Thời hạn sở hữu" value={detail.ownershipTermMonths === "custom" ? "Chưa phân loại" : `${detail.ownershipTermMonths} tháng`} />
               )}
+              <KeyValueRow label="Ngày ký hợp đồng" value={detail?.signedOn} />
+              <KeyValueRow label="Ngày tạo / nhập hợp đồng" value={detail?.createdOn} />
+              {!!detail?.customerSource && <KeyValueRow label="Nguồn khách" value={detail.customerSource} />}
               <KeyValueRow label="Cơ sở nguồn khách / doanh thu" value={detail?.storeName || record.storeName} />
               {!!detail?.vehicleStoreName && detail.vehicleStoreName !== detail.storeName && (
-                <KeyValueRow label="Cửa hàng xuất xe" value={detail.vehicleStoreName} />
+                <KeyValueRow label="Cửa hàng xe" value={detail.vehicleStoreName} />
               )}
               <KeyValueRow label="Nhân viên lập HĐ" value={detail?.staffName} />
-              {!!detail?.salesStaffName && <KeyValueRow label="NVKD ghi nhận" value={detail.salesStaffName} />}
-              {!!detail?.customerSource && <KeyValueRow label="Nguồn khách" value={detail.customerSource} />}
-              <KeyValueRow label="Ngày ký" value={detail?.signedOn} />
-              <KeyValueRow label="Ngày tạo / nhập" value={detail?.createdOn} />
-              {!!detail?.collateralDescription && <KeyValueRow label="Tài sản thế chấp" value={detail.collateralDescription} />}
-              {!!detail?.notes && <KeyValueRow label="Ghi chú HĐ" selectable value={detail.notes} />}
+              {!!detail?.salesStaffName && <KeyValueRow label="NVKD ghi nhận doanh số" value={detail.salesStaffName} />}
               {!!(detail?.billingNextDueAt || record.monitoring?.nextDueAt) && (
-                <KeyValueRow label="Kỳ thanh toán tiếp theo" strong valueColor={theme.primary} value={dateTime(detail?.billingNextDueAt || record.monitoring?.nextDueAt || "")} />
+                <KeyValueRow label="Ngày hẹn cần đóng tiếp theo" strong valueColor={theme.primary} value={dateTime(detail?.billingNextDueAt || record.monitoring?.nextDueAt || "")} />
               )}
             </Card>
 
             <ContractApprovalSummary id={id} />
+
+            <Card style={{ gap: 8 }}>
+              <Text style={[styles.cardTitle, { color: theme.text }]}>Chỉnh sửa & phát hành</Text>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                {status !== "draft" && canEdit && (
+                  <Button
+                    size="sm"
+                    equalWidth
+                    secondary
+                    label="Sửa hợp đồng"
+                    icon={<FilePenLine size={14} color={theme.text} />}
+                    onPress={() => router.push({ pathname: "/contract-edit/[id]", params: { id } })}
+                  />
+                )}
+                <Button
+                  size="sm"
+                  equalWidth
+                  label="In hợp đồng"
+                  icon={<Printer size={14} color={theme.primaryText} />}
+                  onPress={() => router.push({ pathname: "/print/[kind]/[id]", params: { kind: "contracts", id } })}
+                />
+              </View>
+              {status !== "draft" && canEdit && (
+                <Button
+                  size="sm"
+                  secondary
+                  label="Bổ sung hồ sơ nhẹ (giữ duyệt & tiền/kho)"
+                  onPress={() => router.push({ pathname: "/contract-edit/[id]", params: { id, mode: "profile" } })}
+                />
+              )}
+              {isOwnership && (
+                <Button
+                  size="sm"
+                  secondary
+                  label="Sửa loại HĐ / mức đóng ngày"
+                  onPress={() => router.push({ pathname: "/ownership-terms/[id]", params: { id } })}
+                />
+              )}
+              {status !== "draft" && permissions.includes("contracts.return") && (
+                <Button
+                  size="sm"
+                  secondary
+                  label="Hồ sơ trả xe"
+                  onPress={() => router.push({ pathname: "/return-correction/[id]", params: { id } })}
+                />
+              )}
+            </Card>
           </View>
         )}
 
-        {/* TAB 2: CUSTOMER */}
+        {/* TAB 03: NỢ XẤU / BẢO LƯU */}
+        {activeTab === "lifecycle" && (
+          <View style={{ gap: 12 }}>
+            <Card style={{ gap: 10 }}>
+              <Text style={[styles.cardTitle, { color: theme.text }]}>Nợ xấu / bảo lưu</Text>
+              {status === "draft" ? (
+                <Text style={{ color: theme.muted, fontSize: 13.5, lineHeight: 20 }}>
+                  Hợp đồng này đang Lưu nháp, chưa thể bảo lưu hoặc xử lý nợ xấu. Để bảo lưu, chọn hợp đồng thuê sở hữu đã phát hành ở trạng thái Đang thuê hoặc Quá hạn.
+                </Text>
+              ) : (
+                <>
+                  <KeyValueRow label="Trạng thái hiện tại" strong value={contextualStatusLabel("contracts", status)} />
+                  {!!detail?.heldAt && <KeyValueRow label="Bắt đầu bảo lưu" value={dateTime(detail.heldAt)} />}
+                  {!!detail?.holdUntil && <KeyValueRow label="Hạn bảo lưu" strong value={dateTime(detail.holdUntil)} />}
+                  {!!detail?.badDebtClosedAt && <KeyValueRow label="Đóng hợp đồng nợ xấu lúc" value={dateTime(detail.badDebtClosedAt)} />}
+                  <Button
+                    size="sm"
+                    label="Trạng thái & xử lý"
+                    onPress={() => router.push({ pathname: "/contract-lifecycle/[id]", params: { id } })}
+                  />
+                  {permissions.includes("contracts.settle") && ["renting", "overdue", "wait_payment", "bad_debt", "completed"].includes(status) && (
+                    <Button
+                      size="sm"
+                      secondary
+                      label="Thanh toán và đóng hợp đồng"
+                      onPress={() => router.push({ pathname: "/contract-operation/[action]/[id]", params: { id, action: "payment_settlement" } })}
+                    />
+                  )}
+                  {(record.monitoring?.collectionOverdue || isBadDebt || status === "overdue") && (
+                    <Button
+                      size="sm"
+                      secondary
+                      label="Tình trạng khách và ghi chú công nợ"
+                      onPress={() => router.push({ pathname: "/collection-followup/[id]", params: { id } })}
+                    />
+                  )}
+                </>
+              )}
+            </Card>
+          </View>
+        )}
+
+        {/* TAB 04: KHÁCH HÀNG (BÊN B) */}
         {activeTab === "customer" && (
           <View style={{ gap: 12 }}>
             <Card style={{ gap: 4 }}>
               <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                <Text style={[styles.cardTitle, { color: theme.text }]}>Thông tin Khách thuê (Bên B)</Text>
+                <Text style={[styles.cardTitle, { color: theme.text }]}>Thông tin khách hàng (Bên B)</Text>
                 <User size={17} color={theme.muted} />
               </View>
-              <KeyValueRow label="Họ và tên" strong value={detail?.customer.name || record.name || "Chưa ghi nhận"} />
-              <KeyValueRow label="Số điện thoại" strong selectable valueColor={theme.primary} value={displayPhone} />
-              <KeyValueRow label="Số CCCD / Hộ chiếu" selectable strong value={detail?.customer.idCard} />
+              {!!detail?.vehicleStoreName && <KeyValueRow label="Cửa hàng xe" value={detail.vehicleStoreName} />}
+              <KeyValueRow label="Cơ sở nguồn khách / doanh thu" value={detail?.storeName || record.storeName} />
+              {!!detail?.staffName && <KeyValueRow label="Đại diện ủy quyền Bên A" value={detail.staffName} />}
+              <KeyValueRow label="Tên khách hàng" strong value={detail?.customer.name || record.name || "Chưa ghi nhận"} />
+              <KeyValueRow label="SĐT" strong selectable valueColor={theme.primary} value={displayPhone} />
+              <KeyValueRow label="Số CMTND/CCCD" selectable strong value={detail?.customer.idCard} />
               {!!detail?.customer.idCardIssuedOn && <KeyValueRow label="Ngày cấp CCCD" value={detail.customer.idCardIssuedOn} />}
               {!!detail?.customer.idCardIssuedBy && <KeyValueRow label="Nơi cấp CCCD" value={detail.customer.idCardIssuedBy} />}
-              {!!detail?.customer.driverLicenseNumber && <KeyValueRow label="Số GPLX" selectable value={detail.customer.driverLicenseNumber} />}
+              {!!detail?.customer.driverLicenseNumber && <KeyValueRow label="Số giấy phép lái xe" selectable value={detail.customer.driverLicenseNumber} />}
               {!!detail?.customer.driverLicenseIssuedOn && <KeyValueRow label="Ngày cấp GPLX" value={detail.customer.driverLicenseIssuedOn} />}
-              <KeyValueRow label="Địa chỉ" selectable value={detail?.customer.address || record.address} />
+              <KeyValueRow label="Nơi ở hiện tại" selectable value={detail?.customer.address || record.address} />
               {!!detail?.customer.email && <KeyValueRow label="Email" selectable value={detail.customer.email} />}
 
               {!!(detail?.customer.customerNote || record.customerNote) && (
                 <View style={[styles.noteBox, { backgroundColor: theme.warningBackground, borderColor: theme.warning }]}>
-                  <Text style={{ color: theme.warning, fontSize: 12, fontWeight: "700" }}>Lưu ý hồ sơ:</Text>
+                  <Text style={{ color: theme.warning, fontSize: 12, fontWeight: "700" }}>Cảnh báo:</Text>
                   <Text selectable style={{ color: theme.text, fontSize: 13, lineHeight: 19 }}>
                     {detail?.customer.customerNote || record.customerNote}
                   </Text>
@@ -500,41 +970,53 @@ export function ContractDetailView({
           </View>
         )}
 
-        {/* TAB 3: FINANCE & CASHFLOW */}
-        {activeTab === "finance" && (
+        {/* TAB 05: CHI PHÍ */}
+        {activeTab === "payment" && (
           <View style={{ gap: 12 }}>
             <Card style={{ gap: 12 }}>
-              <Text style={[styles.cardTitle, { color: theme.text }]}>Bảng kê Chi phí & Tiền cọc</Text>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                <Text style={[styles.cardTitle, { color: theme.text, flex: 1 }]}>Phí thuê xe & Tiền cọc</Text>
+                {canEditRentalTerms && (
+                  <Button
+                    size="sm"
+                    secondary
+                    label="Sửa giá thuê"
+                    icon={<FilePenLine size={14} color={theme.text} />}
+                    onPress={() => router.push({ pathname: "/rental-terms/[id]", params: { id } })}
+                  />
+                )}
+              </View>
 
               <View style={styles.grid2}>
                 <View style={[styles.gridCol, { backgroundColor: theme.background, borderColor: theme.border }]}>
-                  <Text style={{ color: theme.muted, fontSize: 12 }}>Tổng giá trị HĐ</Text>
+                  <Text style={{ color: theme.muted, fontSize: 12 }}>Tổng phí thuê xe</Text>
                   <Text style={{ color: theme.text, fontSize: 16, fontWeight: "800", marginTop: 3 }}>
-                    {money(detail?.totalAmount ?? record.totalAmount)}
+                    {money(totalAmount)}
                   </Text>
                 </View>
 
                 <View style={[styles.gridCol, { backgroundColor: theme.background, borderColor: theme.border }]}>
-                  <Text style={{ color: theme.muted, fontSize: 12 }}>Đã thanh toán thuê</Text>
+                  <Text style={{ color: theme.muted, fontSize: 12 }}>Đã thu tiền thuê</Text>
                   <Text style={{ color: theme.success, fontSize: 16, fontWeight: "800", marginTop: 3 }}>
-                    {money(detail?.paidAmount ?? record.paidAmount)}
+                    {money(paidAmount)}
                   </Text>
                 </View>
               </View>
 
               <View style={{ gap: 2 }}>
-                {detail?.packageName ? <KeyValueRow label="Gói thuê / Đơn giá" value={`${detail.packageName}${detail.unitPrice != null ? ` · ${money(detail.unitPrice)}` : ""}`} /> : null}
-                <KeyValueRow label="Cọc thỏa thuận" value={money(detail?.depositAmount ?? null)} />
+                <KeyValueRow label="Còn thiếu tiền thuê" strong valueColor={remaining && remaining > 0 ? theme.danger : theme.text} value={money(remaining)} />
+                {detail?.packageName ? <KeyValueRow label="Gói thuê / Đơn giá áp dụng" value={`${detail.packageName}${detail.unitPrice != null ? ` · ${money(detail.unitPrice)}` : ""}`} /> : null}
+                <KeyValueRow label="Số tiền đặt cọc" value={money(detail?.depositAmount ?? null)} />
                 <KeyValueRow label="Cọc đã thu" valueColor={theme.success} value={money(detail?.depositPaid ?? null)} />
-                <KeyValueRow label="Cọc đã hoàn" value={money(detail?.depositRefunded ?? null)} />
+                <KeyValueRow label="Đã trả cọc" value={money(detail?.depositRefunded ?? null)} />
                 <KeyValueRow label="Cọc đang giữ" strong valueColor={theme.primary} value={money(detail?.depositHeld ?? null)} />
-                {!!detail?.paymentMethod && <KeyValueRow label="HT thu thuê" value={detail.paymentMethod} />}
-                {!!detail?.depositPaymentMethod && <KeyValueRow label="HT thu cọc" value={detail.depositPaymentMethod} />}
+                {!!detail?.paymentMethod && <KeyValueRow label="Hình thức thanh toán" value={detail.paymentMethod} />}
+                {!!detail?.depositPaymentMethod && <KeyValueRow label="Hình thức đặt cọc" value={detail.depositPaymentMethod} />}
               </View>
 
               {detail && detail.extraCharges.length > 0 && (
                 <View style={{ gap: 2, paddingTop: 6, borderTopWidth: 1, borderTopColor: theme.border }}>
-                  <Text style={{ color: theme.text, fontSize: 13.5, fontWeight: "700", marginBottom: 2 }}>Phí khác</Text>
+                  <Text style={{ color: theme.text, fontSize: 13.5, fontWeight: "700", marginBottom: 2 }}>Phí khác trong hợp đồng</Text>
                   {detail.extraCharges.map((ch, idx) => (
                     <KeyValueRow key={idx} label={ch.name || `Phí #${idx + 1}`} value={money(Number(ch.amount || 0))} />
                   ))}
@@ -544,9 +1026,9 @@ export function ContractDetailView({
               {detail?.receipts && (
                 <View style={{ gap: 2, paddingTop: 6, borderTopWidth: 1, borderTopColor: theme.border }}>
                   <Text style={{ color: theme.text, fontSize: 13.5, fontWeight: "700", marginBottom: 2 }}>Tổng hợp phiếu đã duyệt</Text>
-                  <KeyValueRow label="Tổng thu thực tế" valueColor={theme.success} value={money(detail.receipts.received)} />
-                  <KeyValueRow label="Tổng chi / hoàn" valueColor={theme.danger} value={money(detail.receipts.spent)} />
-                  <KeyValueRow label="Thu ròng" strong value={money(detail.receipts.net)} />
+                  <KeyValueRow label="Tổng thu (đã duyệt)" valueColor={theme.success} value={money(detail.receipts.received)} />
+                  <KeyValueRow label="Tổng chi (đã duyệt)" valueColor={theme.danger} value={money(detail.receipts.spent)} />
+                  <KeyValueRow label="Chênh lệch" strong value={money(detail.receipts.net)} />
                 </View>
               )}
 
@@ -554,14 +1036,11 @@ export function ContractDetailView({
                 <View style={{ gap: 2, paddingTop: 6, borderTopWidth: 1, borderTopColor: theme.border }}>
                   {record.monitoring.dueAmount !== null && (
                     <KeyValueRow
-                      label="Khoản phải đóng theo kỳ"
+                      label="Tiền đến hạn còn thiếu"
                       strong
                       valueColor={record.monitoring.collectionOverdue ? theme.danger : theme.text}
                       value={money(record.monitoring.dueAmount)}
                     />
-                  )}
-                  {record.monitoring.rentalDebt !== null && (
-                    <KeyValueRow label="Tiền thuê còn thiếu" strong valueColor={theme.danger} value={money(record.monitoring.rentalDebt)} />
                   )}
                   {record.monitoring.lateFeeEstimate !== null && (
                     <KeyValueRow label="Phí quá hạn tạm tính" valueColor={theme.warning} value={money(record.monitoring.lateFeeEstimate)} />
@@ -572,199 +1051,27 @@ export function ContractDetailView({
                 </View>
               )}
 
-              {/* Quick links to cashflow and QR */}
-              <View style={{ flexDirection: "row", gap: 8, marginTop: 4 }}>
-                <Button
-                  size="sm"
-                  equalWidth
-                  secondary
-                  label="Phiếu thu / chi"
-                  icon={<Wallet size={15} color={theme.text} />}
-                  onPress={() => router.push({ pathname: "/contract-history/[id]", params: { id, tab: "cashflow" } })}
-                />
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 4 }}>
+                {canPay && (
+                  <Button
+                    size="sm"
+                    equalWidth
+                    label="Điền sổ quỹ"
+                    icon={<Wallet size={15} color={theme.primaryText} />}
+                    onPress={() => router.push({ pathname: "/finance/[id]", params: { id } })}
+                  />
+                )}
                 {status !== "cancelled" && (
                   <Button
                     size="sm"
                     equalWidth
                     secondary
-                    label="Mã QR CK"
+                    label="Nhập phiếu chi"
                     icon={<QrCode size={15} color={theme.text} />}
                     onPress={() => router.push({ pathname: "/contract-qr/[id]", params: { id } })}
                   />
                 )}
               </View>
-            </Card>
-          </View>
-        )}
-
-        {/* TAB 4: PHOTOS (Ảnh thuê / trả xe) */}
-        {activeTab === "photos" && <ContractPhotosTab id={id} />}
-
-        {/* TAB 5: ACTIONS & TOOLS (Nghiệp vụ quầy) */}
-        {activeTab === "actions" && (
-          <View style={{ gap: 12 }}>
-            {/* Tiện ích in ấn & truyền thông */}
-            <Card style={{ gap: 10 }}>
-              <Text style={[styles.cardTitle, { color: theme.text }]}>Tiện ích & Tra cứu</Text>
-
-              <View style={styles.actionGrid2}>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Xem giấy và in"
-                  onPress={() => router.push({ pathname: "/print/[kind]/[id]", params: { kind: "contracts", id } })}
-                  style={({ pressed }) => [styles.gridItem, { borderColor: theme.border }, pressed && { opacity: 0.7 }]}
-                >
-                  <Printer size={18} color={theme.text} />
-                  <Text style={[styles.gridItemText, { color: theme.text }]}>Xem giấy / In HĐ</Text>
-                </Pressable>
-
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Mã QR SePay"
-                  onPress={() => router.push({ pathname: "/contract-qr/[id]", params: { id } })}
-                  style={({ pressed }) => [styles.gridItem, { borderColor: theme.border }, pressed && { opacity: 0.7 }]}
-                >
-                  <QrCode size={18} color={theme.text} />
-                  <Text style={[styles.gridItemText, { color: theme.text }]}>Mã QR CK</Text>
-                </Pressable>
-
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Lịch sử thu chi"
-                  onPress={() => router.push({ pathname: "/contract-history/[id]", params: { id, tab: "cashflow" } })}
-                  style={({ pressed }) => [styles.gridItem, { borderColor: theme.border }, pressed && { opacity: 0.7 }]}
-                >
-                  <Wallet size={18} color={theme.text} />
-                  <Text style={[styles.gridItemText, { color: theme.text }]}>Lịch sử thu chi</Text>
-                </Pressable>
-
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Lịch sử chỉnh sửa"
-                  onPress={() => router.push({ pathname: "/contract-history/[id]", params: { id, tab: "changes" } })}
-                  style={({ pressed }) => [styles.gridItem, { borderColor: theme.border }, pressed && { opacity: 0.7 }]}
-                >
-                  <FilePenLine size={18} color={theme.text} />
-                  <Text style={[styles.gridItemText, { color: theme.text }]}>Lịch sử chỉnh sửa</Text>
-                </Pressable>
-
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Thông báo Telegram"
-                  onPress={() => router.push({ pathname: "/contract-telegram/[id]", params: { id, ...(status === "completed" || status === "wait_payment" ? { eventKind: "return" } : {}) } })}
-                  style={({ pressed }) => [styles.gridItem, { borderColor: theme.border }, pressed && { opacity: 0.7 }]}
-                >
-                  <MessageCircle size={18} color={theme.text} />
-                  <Text style={[styles.gridItemText, { color: theme.text }]}>Telegram</Text>
-                </Pressable>
-              </View>
-
-              {permissions.includes("contracts.renew") && (
-                <Button
-                  size="sm"
-                  secondary
-                  label="Xem bill gia hạn đã lưu"
-                  icon={<FileSpreadsheet size={15} color={theme.text} />}
-                  onPress={() => router.push({ pathname: "/renewal-bill/[id]", params: { id } })}
-                />
-              )}
-
-              <Button
-                size="sm"
-                secondary
-                label={`Hợp đồng Pin / sạc kèm theo${detail?.batteryCount ? ` (${detail.batteryCount})` : ""}`}
-                icon={<BatteryCharging size={15} color={theme.text} />}
-                onPress={() => router.push({ pathname: "/battery-contracts", params: { source: id } })}
-              />
-              {!isDraft && (
-                <Button
-                  size="sm"
-                  secondary
-                  label="Đổi pin theo hợp đồng xe"
-                  onPress={() => router.push({ pathname: "/contract-operation/[action]/[id]", params: { id, action: "battery_swap" } })}
-                />
-              )}
-              {permissions.includes("contracts.settle") && ["renting", "overdue", "wait_payment", "bad_debt", "completed"].includes(status) && (
-                <Button
-                  size="sm"
-                  secondary
-                  label="Thanh toán và đóng hợp đồng"
-                  onPress={() => router.push({ pathname: "/contract-operation/[action]/[id]", params: { id, action: "payment_settlement" } })}
-                />
-              )}
-
-              {record.reminderEligible && permissions.some((p) => p === "contracts.draft" || p === "finance.write") && (
-                <Button
-                  size="sm"
-                  secondary
-                  label="Soạn tin nhắc nợ Zalo"
-                  icon={<MessageCircle size={15} color={theme.text} />}
-                  onPress={() => router.push({ pathname: "/reminder-editor/[id]", params: { id } })}
-                />
-              )}
-              {(record.monitoring?.collectionOverdue || isBadDebt || status === "overdue") && (
-                <Button
-                  size="sm"
-                  secondary
-                  label="Tình trạng khách và ghi chú công nợ"
-                  onPress={() => router.push({ pathname: "/collection-followup/[id]", params: { id } })}
-                />
-              )}
-
-              <Button
-                size="sm"
-                secondary
-                label="Ảnh bàn giao & Trả xe"
-                icon={<FileText size={15} color={theme.text} />}
-                onPress={() =>
-                  router.push({
-                    pathname: "/record-media/[entity]/[id]",
-                    params: { entity: "contracts", id },
-                  })
-                }
-              />
-            </Card>
-
-            {/* Hồ sơ & Điều chỉnh nghiệp vụ */}
-            <Card style={{ gap: 9 }}>
-              <Text style={[styles.cardTitle, { color: theme.text }]}>Hồ sơ & Điều chỉnh</Text>
-
-              {status === "draft" && permissions.includes("contracts.draft") && (
-                <Button
-                  size="sm"
-                  danger
-                  label="Xóa hợp đồng nháp trên máy chủ"
-                  icon={<Trash2 size={15} color={theme.danger} />}
-                  onPress={() => router.push({ pathname: "/draft-delete/[id]", params: { id } })}
-                />
-              )}
-
-              {status !== "draft" && canEdit && (
-                <>
-                  <Button
-                    size="sm"
-                    secondary
-                    label="Bổ sung hồ sơ nhẹ (giữ duyệt & tiền/kho)"
-                    icon={<FilePenLine size={15} color={theme.text} />}
-                    onPress={() => router.push({ pathname: "/contract-edit/[id]", params: { id, mode: "profile" } })}
-                  />
-                  <Button
-                    size="sm"
-                    secondary
-                    label="Chỉnh sửa toàn bộ hợp đồng"
-                    icon={<FilePenLine size={15} color={theme.text} />}
-                    onPress={() => router.push({ pathname: "/contract-edit/[id]", params: { id } })}
-                  />
-                  {status !== "cancelled" && !isOwnership && (
-                    <Button
-                      size="sm"
-                      secondary
-                      label="Sửa tiền / ngày thuê"
-                      onPress={() => router.push({ pathname: "/rental-terms/[id]", params: { id } })}
-                    />
-                  )}
-                </>
-              )}
 
               {!["draft", "cancelled"].includes(status) && permissions.some((p) => p === "contracts.draft" || p === "finance.write") && (
                 <Button
@@ -774,7 +1081,6 @@ export function ContractDetailView({
                   onPress={() => router.push({ pathname: "/contract-correction/[kind]/[id]", params: { kind: "receipts", id } })}
                 />
               )}
-
               {!["draft", "cancelled"].includes(status) && permissions.some((p) => p === "contracts.renew" || p === "finance.write") && (
                 <Button
                   size="sm"
@@ -783,40 +1089,91 @@ export function ContractDetailView({
                   onPress={() => router.push({ pathname: "/contract-correction/[kind]/[id]", params: { kind: "renewal", id } })}
                 />
               )}
-
-              {isOwnership && (
+              {permissions.includes("contracts.renew") && (
                 <Button
                   size="sm"
                   secondary
-                  label="Thời hạn / mức đóng thuê sở hữu"
-                  onPress={() => router.push({ pathname: "/ownership-terms/[id]", params: { id } })}
+                  label="Xem bill gia hạn đã lưu"
+                  icon={<FileSpreadsheet size={15} color={theme.text} />}
+                  onPress={() => router.push({ pathname: "/renewal-bill/[id]", params: { id } })}
                 />
               )}
+            </Card>
+          </View>
+        )}
 
-              {status !== "draft" && (
+        {/* TAB 06: PIN / SẠC */}
+        {activeTab === "battery" && (
+          <Card style={{ gap: 10 }}>
+            <Text style={[styles.cardTitle, { color: theme.text }]}>Hợp đồng pin / sạc liên kết</Text>
+            {status === "draft" ? (
+              <Text style={{ color: theme.muted, fontSize: 13.5, lineHeight: 20 }}>
+                Phát hành hợp đồng xe trước khi liên kết hợp đồng pin / sạc.
+              </Text>
+            ) : (
+              <>
+                <KeyValueRow label="Số hợp đồng pin / sạc liên kết" strong value={String(detail?.batteryCount ?? 0)} />
+                <Button
+                  size="sm"
+                  label={`Thuê pin / sạc${detail?.batteryCount ? ` (${detail.batteryCount})` : ""}`}
+                  icon={<BatteryCharging size={15} color={theme.primaryText} />}
+                  onPress={() => router.push({ pathname: "/battery-contracts", params: { source: id } })}
+                />
+                {!isDraft && (
+                  <Button
+                    size="sm"
+                    secondary
+                    label="Đổi pin theo hợp đồng xe"
+                    onPress={() => router.push({ pathname: "/contract-operation/[action]/[id]", params: { id, action: "battery_swap" } })}
+                  />
+                )}
+              </>
+            )}
+          </Card>
+        )}
+
+        {/* TAB 07: KÝ KẾT & GHI CHÚ */}
+        {activeTab === "signing" && (
+          <View style={{ gap: 12 }}>
+            <Card style={{ gap: 6 }}>
+              <Text style={[styles.cardTitle, { color: theme.text }]}>Ký kết & Ghi chú</Text>
+              <KeyValueRow label="Tài sản thế chấp / Đặt cọc tài sản" value={detail?.collateralDescription} />
+              <KeyValueRow label="Người ký Bên A (Himoto)" value={detail?.staffName} />
+              <KeyValueRow label="Người ký Bên B (Khách thuê)" value={detail?.customer.name || record.name} />
+              <KeyValueRow label="Ghi chú hợp đồng" selectable value={detail?.notes} />
+              <KeyValueRow label="Cảnh báo" selectable value={detail?.customer.customerNote || record.customerNote} />
+            </Card>
+
+            <Card style={{ gap: 8 }}>
+              <Text style={[styles.cardTitle, { color: theme.text }]}>Hồ sơ & Chứng từ</Text>
+              <Button
+                size="sm"
+                secondary
+                label="Ảnh hợp đồng đã ký & bill chuyển khoản"
+                icon={<FileText size={14} color={theme.text} />}
+                onPress={() => router.push({ pathname: "/record-media/[entity]/[id]", params: { entity: "contracts", id, kind: "rental", referenceId: id } })}
+              />
+              <Button
+                size="sm"
+                label="In hợp đồng"
+                icon={<Printer size={15} color={theme.primaryText} />}
+                onPress={() => router.push({ pathname: "/print/[kind]/[id]", params: { kind: "contracts", id } })}
+              />
+              {status !== "draft" && canEdit && (
                 <Button
                   size="sm"
                   secondary
-                  label="Tình trạng xe / nợ / bảo lưu"
-                  onPress={() => router.push({ pathname: "/contract-lifecycle/[id]", params: { id } })}
+                  label="Sửa hợp đồng"
+                  icon={<FilePenLine size={15} color={theme.text} />}
+                  onPress={() => router.push({ pathname: "/contract-edit/[id]", params: { id } })}
                 />
               )}
-
-              {status !== "draft" && permissions.includes("contracts.return") && (
-                <Button
-                  size="sm"
-                  secondary
-                  label="Hồ sơ trả xe"
-                  onPress={() => router.push({ pathname: "/return-correction/[id]", params: { id } })}
-                />
-              )}
-
               {status === "completed" && permissions.includes("contracts.delete") && (
                 <Button
                   size="sm"
                   danger
                   disabled={hideBusy}
-                  label="Ẩn hợp đồng đã hoàn thành"
+                  label="Ẩn hợp đồng"
                   icon={<Trash2 size={15} color={theme.danger} />}
                   onPress={() => setHideConfirm(true)}
                 />
@@ -824,6 +1181,26 @@ export function ContractDetailView({
             </Card>
           </View>
         )}
+
+        {/* TAB 08: LỊCH SỬ CHỈNH SỬA */}
+        {activeTab === "changes" && <InlineChangesTab id={id} />}
+
+        {/* TAB 09: LỊCH SỬ THU CHI */}
+        {activeTab === "cashflow" && (
+          <InlineCashflowTab
+            id={id}
+            status={status}
+            canPay={canPay}
+            remaining={remaining}
+            depositHeld={depositHeld}
+          />
+        )}
+
+        {/* TAB 10: ẢNH THUÊ / TRẢ XE */}
+        {activeTab === "photos" && <ContractPhotosTab id={id} />}
+
+        {/* TAB 11: TELEGRAM */}
+        {activeTab === "telegram" && <InlineTelegramTab id={id} status={status} />}
       </ScrollView>
 
       {hideConfirm && (
@@ -906,26 +1283,5 @@ const styles = StyleSheet.create({
     padding: 11,
     borderRadius: 10,
     borderWidth: 1,
-  },
-  actionGrid2: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  gridItem: {
-    width: "48%",
-    flexGrow: 1,
-    minHeight: 48,
-    borderRadius: 10,
-    borderWidth: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 7,
-    paddingHorizontal: 10,
-  },
-  gridItemText: {
-    fontSize: 13,
-    fontWeight: "600",
   },
 });

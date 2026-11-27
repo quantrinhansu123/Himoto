@@ -10,6 +10,7 @@ export interface MobileUser {
   storeId: number | null;
   allStores: boolean;
   allStoresRead?: boolean;
+  allContractsRead?: boolean;
   has_hr_position?: boolean;
 }
 export interface MobileSession {

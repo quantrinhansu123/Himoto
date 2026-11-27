@@ -108,6 +108,7 @@ function Navigator() {
           <Stack.Screen name="fleet-inventory" options={{title:'Kho xe toàn hệ thống'}}/>
           <Stack.Screen name="import-contracts" options={{title:'Nhập nháp hợp đồng từ Excel'}} />
           <Stack.Screen name="contract-telegram/[id]" options={{title:'Telegram hợp đồng'}} />
+          <Stack.Screen name="contract-anomalies" options={{title:'Bất thường HĐ'}} />
           <Stack.Screen name="contract-operation/[action]/[id]" options={{title:'Thao tác hợp đồng'}} />
           <Stack.Screen name="transfer-telegram/[id]/[eventId]" options={{title:'Telegram điều chuyển'}} />
           <Stack.Screen name="telegram-result/[key]" options={{title:'Xác nhận yêu cầu Telegram'}} />

@@ -66,6 +66,7 @@ export function mobileUser(user: SessionUser): MobileUser {
     storeId: user.store_id ?? null,
     allStores: user.scope_all === true,
     ...(user.scope_all_read === true ? { allStoresRead: true } : {}),
+    ...(user.scope_all_contracts_read === true ? { allContractsRead: true } : {}),
     ...(user.has_hr_position === true ? { has_hr_position: true } : {}),
   };
 }

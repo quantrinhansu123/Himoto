@@ -20,6 +20,7 @@ import { isMobileContractQr, type MobileContractQr } from '../../../shared/mobil
 import { isMobilePrintDocument, type MobilePrintDocument, type MobilePrintKind } from '../../../shared/mobile-print';
 import { isMobileRentalTerms, isMobileRentalTermsResult, type MobileRentalTerms, type MobileRentalTermsInput, type MobileRentalTermsResult } from '../../../shared/mobile-rental-terms';
 import { isMobileContractHistory, type MobileContractHistory } from '../../../shared/mobile-contract-history';
+import { isMobileContractAnomaliesPage, type MobileContractAnomaliesPage } from '../../../shared/mobile-contract-anomalies';
 import { isMobileOwnershipTerms, isMobileOwnershipTermsResult, type MobileOwnershipTerms, type MobileOwnershipTermsInput, type MobileOwnershipTermsResult } from '../../../shared/mobile-ownership-terms';
 import { isMobileDraftDeleteReview, isMobileDraftDeleteResult, type MobileDraftDeleteReview, type MobileDraftDeleteInput, type MobileDraftDeleteResult } from '../../../shared/mobile-draft-delete';
 import { isMobileReturnCorrectionOptions, isMobileReturnCorrectionProfile, isMobileReturnCorrectionResult, type MobileReturnCorrectionOptions, type MobileReturnCorrectionProfile, type MobileReturnCorrectionInput, type MobileReturnCorrectionResult } from '../../../shared/mobile-return-corrections';
@@ -943,6 +944,12 @@ export function createApi(
         { method: "POST", body: JSON.stringify(input), signal },
       ),
     operationContracts: (query:string,signal?:AbortSignal)=>request<MobilePage>(`/operations/contracts?${query}`,isPage,{signal}),
+    contractAnomalies: (query: URLSearchParams, signal?: AbortSignal) =>
+      request<MobileContractAnomaliesPage>(
+        `/contracts/anomalies?${query.toString()}`,
+        isMobileContractAnomaliesPage,
+        { signal },
+      ),
     catalogue: (kind: CatalogueKind, query: string, signal?: AbortSignal) =>
       request<MobilePage>(`/catalogue/${kind}?${query}`, isPage, { signal }),
     record: (kind: CatalogueKind, id: string, signal?: AbortSignal) =>

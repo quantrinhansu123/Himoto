@@ -1,13 +1,68 @@
 import type {MobileReturnPreparation,MobileReturnPreview,MobileReturnPreviewInput} from '../../../shared/mobile-returns';
 import type {MobileReturnMoney,MobileReturnRefund,MobileReturnSettlementInput} from '../../../shared/mobile-return-settlement';
 
+export const DEFAULT_LATE_HOURLY_RATE=20_000;
 export type ReturnVehicle=MobileReturnPreparation['items']['rows'][number];
-export interface ReturnLineDraft {vehicle:ReturnVehicle;returnedAt:string;hourlyRate:string;lateOverride:string;repairFee:string;repairNote:string;earlyDiscount:string}
+export interface ReturnLineDraft {vehicle:ReturnVehicle;returnedAt:string;hourlyRate:string;lateOverride:string;repairFee:string;repairNote:string;earlyDiscount:string;earlyTouched?:boolean}
 export interface ReturnMoneyDraft {amount:string;method:MobileReturnMoney['method'];account:string;paidAt:string;bank:string;recipientAccount:string;recipientName:string}
 export interface ReturnReceiptDraft extends ReturnMoneyDraft {kind:'late_fee'|'repair_fee'|'rental_debt'}
+export interface ReturnLineEstimate {late:boolean;early:boolean;minutes:number;hours:number;lateDays:number;unusedDays:number;suggested:number;missingDayPrice:boolean}
+
+/** Exact Web formula from src/lib/management/return-fees.ts: each 24h = 1 day, remainder > 8h = +1 day. */
+export function lateReturnFee(minutes:number,hourlyRate:number,dailyPrice:number|null) {
+  const wholeDays=Math.floor(Math.max(minutes,0)/1440),remainder=Math.max(minutes,0)%1440;
+  const days=wholeDays+(remainder>480?1:0),hours=remainder>480?0:Math.ceil(remainder/60);
+  const hasDayPrice=dailyPrice!==null&&Number.isSafeInteger(dailyPrice)&&dailyPrice>0;
+  return {days,hours,amount:days&&!hasDayPrice?null:days*(dailyPrice||0)+hours*hourlyRate};
+}
+
+/** Exact Web estimateFor() logic from ContractRowReturnDialog.tsx for instant live early/late fee suggestions. */
+export function estimateReturnLine(vehicle:ReturnVehicle,returnedAt:string,hourlyRate:string):ReturnLineEstimate {
+  const scheduled=vehicle.returnAt?Date.parse(vehicle.returnAt):NaN;
+  const returned=/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(returnedAt)?Date.parse(returnedAt+':00+07:00'):NaN;
+  if(!Number.isFinite(scheduled)||!Number.isFinite(returned)) {
+    return {late:false,early:false,minutes:0,hours:0,lateDays:0,unusedDays:0,suggested:0,missingDayPrice:false};
+  }
+  if(returned>scheduled) {
+    const minutes=Math.ceil((returned-scheduled)/60_000);
+    const rate=/^\d{1,7}$/.test(hourlyRate.trim())?Number(hourlyRate.trim()):DEFAULT_LATE_HOURLY_RATE;
+    const fee=lateReturnFee(minutes,rate,vehicle.dailyPrice);
+    return {late:true,early:false,minutes,hours:fee.hours,lateDays:fee.days,unusedDays:0,suggested:fee.amount??0,missingDayPrice:fee.amount===null};
+  }
+  const unusedDays=Math.floor((scheduled-returned)/86_400_000);
+  const early=returned<scheduled;
+  return {late:false,early,minutes:0,hours:0,lateDays:0,unusedDays,suggested:early?unusedDays*(vehicle.dailyPrice||0):0,missingDayPrice:false};
+}
+
+export function lateEstimateText(estimate:ReturnLineEstimate) {
+  const d=Math.floor(estimate.minutes/1440),h=Math.floor((estimate.minutes%1440)/60),m=estimate.minutes%60;
+  const billable=`${estimate.lateDays?`${estimate.lateDays} ngày${estimate.hours?' + ':''}`:''}${estimate.hours?`${estimate.hours} giờ`:''}`;
+  return `Quá hạn ${d} ngày ${h} giờ ${m} phút${billable?` · tính phí ${billable}`:''}`;
+}
+
+export function earlyEstimateText(estimate:ReturnLineEstimate,dailyPrice:number|null) {
+  return `Trả sớm${estimate.unusedDays?` ${estimate.unusedDays} ngày`:' (dưới 1 ngày)'}${dailyPrice?` · ${dailyPrice.toLocaleString('vi-VN')} đ/ngày`:''}`;
+}
+
 export const returnLocalTime=(now=Date.now())=>new Date(now+7*3600000).toISOString().slice(0,16);
 export const emptyReturnMoney=(now=Date.now()):ReturnMoneyDraft=>({amount:'',method:'cash',account:'',paidAt:returnLocalTime(now),bank:'',recipientAccount:'',recipientName:''});
-export const newReturnLine=(vehicle:ReturnVehicle,now=Date.now()):ReturnLineDraft=>({vehicle,returnedAt:returnLocalTime(now),hourlyRate:'20000',lateOverride:'',repairFee:'',repairNote:'',earlyDiscount:''});
+export const newReturnLine=(vehicle:ReturnVehicle,now=Date.now()):ReturnLineDraft=>({vehicle,returnedAt:returnLocalTime(now),hourlyRate:String(DEFAULT_LATE_HOURLY_RATE),lateOverride:'',repairFee:'',repairNote:'',earlyDiscount:''});
+
+export function syncReturnLineTiming(row:ReturnLineDraft,nextReturnedAt:string,ownership:boolean):ReturnLineDraft {
+  const before=estimateReturnLine(row.vehicle,row.returnedAt,row.hourlyRate);
+  const after=estimateReturnLine(row.vehicle,nextReturnedAt,row.hourlyRate);
+  const next:ReturnLineDraft={...row,returnedAt:nextReturnedAt};
+  if(!after.late) next.lateOverride='';
+  if(ownership||!after.early) {
+    next.earlyDiscount='';
+    next.earlyTouched=false;
+  } else if(!row.earlyTouched||before.late||!before.early) {
+    next.earlyDiscount=after.suggested>0?String(after.suggested):'';
+    next.earlyTouched=false;
+  }
+  return next;
+}
+
 const amount=(raw:string,label:string,positive=false)=>{
   if(!/^\d{1,13}$/.test(raw)||!Number.isSafeInteger(Number(raw))||Number(raw)>9999999999999||positive&&Number(raw)===0)
     throw Error(label+' phải là số nguyên VND '+(positive?'lớn hơn 0.':'không âm.'));
@@ -29,10 +84,10 @@ export function returnFeeInput(preparation:MobileReturnPreparation,lines:ReturnL
     if(vehicle.startsAt&&actual<Date.parse(vehicle.startsAt))throw Error(label+': giờ trả không được trước giờ nhận xe.');
     const rate=amount(row.hourlyRate,label+' · đơn giá trễ');
     if(Number(rate)>5000000)throw Error(label+': đơn giá trễ tối đa 5.000.000 VND/giờ.');
-    const override=row.lateOverride.trim()?amount(row.lateOverride,label+' · phí trễ đã đối chiếu'):undefined;
-    const discount=amount(row.earlyDiscount.trim()||'0',label+' · giảm trả sớm');
+    const override=row.lateOverride.trim()?amount(row.lateOverride,label+' · phí quá hạn'):undefined;
+    const discount=amount(row.earlyDiscount.trim()||'0',label+' · giảm tiền thuê do trả sớm');
     const repair=amount(row.repairFee.trim()||'0',label+' · phí sửa chữa');
-    if(override!==undefined&&actual<=scheduled)throw Error(label+': chỉ điều chỉnh phí trễ khi xe trả trễ.');
+    if(override!==undefined&&actual<=scheduled)throw Error(label+': chỉ điều chỉnh phí quá hạn khi xe trả trễ.');
     if(Number(discount)>0&&(actual>=scheduled||preparation.ownership))throw Error(label+': chỉ giảm trả sớm cho thuê thường trước hạn trả.');
     if(row.repairNote.trim().length>1000)throw Error(label+': ghi chú sửa chữa tối đa 1.000 ký tự.');
     return{item_id:vehicle.id,item_revision:vehicle.revision,returned_at:row.returnedAt,hourly_rate:rate,

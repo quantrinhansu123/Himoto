@@ -6,6 +6,7 @@ import type { MobileSalesReport, ReportAction, ReportFormat, ReportRow, ReportSe
 import { useSession } from "@/providers/session";
 import { money, useTheme } from "@/theme";
 import { Button, Card, KeyValueRow } from "./ui";
+import { ChoiceField } from "./form-fields";
 import { FileExportButton } from "./file-export-button";
 
 export function reportValue(value: ReportValue, format: ReportFormat) {
@@ -165,41 +166,61 @@ function SectionCharts({ section }: { section: ReportSection }) {
 }
 
 function Section({ section, onPage, showSectionExport, loadSectionRows }: { section: ReportSection; onPage: ReportPageChange; showSectionExport?: boolean; loadSectionRows?: (section: ReportSection, signal: AbortSignal) => Promise<ReportValue[][]> }) {
-  const theme = useTheme(), { api } = useSession(), [localPage, setLocalPage] = useState(1), size = section.paging?.size || 20, total = section.paging?.total ?? section.rows.length;
-  const pages = Math.max(1, Math.ceil(total / size)), page = section.paging?.page || Math.min(localPage, pages);
-  const rows = section.paging ? section.rows : section.rows.slice((page - 1) * size, page * size);
-  const choose = (value: number) => { if (section.paging) onPage(value, size, section.key); else setLocalPage(value); };
+  const theme = useTheme(), { api } = useSession(), [localPage, setLocalPage] = useState(1), [selectedStaff, setSelectedStaff] = useState("");
+  const isStaffRevenue = section.key === "staff" && !section.paging;
+  const filteredSection = isStaffRevenue && selectedStaff
+    ? { ...section, rows: section.rows.filter(r => r.key === selectedStaff) }
+    : section;
+  const size = filteredSection.paging?.size || 20, total = filteredSection.paging?.total ?? filteredSection.rows.length;
+  const pages = Math.max(1, Math.ceil(total / size)), page = filteredSection.paging?.page || Math.min(localPage, pages);
+  const rows = filteredSection.paging ? filteredSection.rows : filteredSection.rows.slice((page - 1) * size, page * size);
+  const choose = (value: number) => { if (filteredSection.paging) onPage(value, size, filteredSection.key); else setLocalPage(value); };
   return <View style={{ gap: 14 }}>
-    <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 21, fontWeight: "800" }}>{section.title}</Text>
-    <SectionCharts section={section} />
-    {showSectionExport && !!api && section.rows.length > 0 && (
+    <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 20, fontWeight: "800" }}>{filteredSection.title}</Text>
+    {isStaffRevenue && section.rows.length > 0 && (
+      <ChoiceField
+        label="Lọc theo nhân viên"
+        value={selectedStaff}
+        searchable
+        choices={[
+          { value: "", label: "Tất cả nhân viên" },
+          ...section.rows.map(r => ({
+            value: r.key,
+            label: `${String(r.values[0] || "")}${/^\d+$/.test(r.key) ? ` (#${r.key})` : ""}`,
+          })),
+        ]}
+        onChange={value => { setSelectedStaff(value); setLocalPage(1); }}
+      />
+    )}
+    <SectionCharts section={filteredSection} />
+    {(showSectionExport || isStaffRevenue) && !!api && filteredSection.rows.length > 0 && (
       <FileExportButton
-        label={`Tải Excel · ${section.title}`}
+        label={isStaffRevenue ? "Xuất Excel doanh thu" : `Tải Excel · ${filteredSection.title}`}
         load={async (signal) =>
           api.exportWorkbook(
             {
-              filename: `himoto-bao-cao-${section.key}`,
-              headers: section.columns.map((c) => c.label),
-              rows: loadSectionRows ? await loadSectionRows(section, signal) : section.rows.map((r) => r.values),
+              filename: isStaffRevenue ? `doanh-thu-nhan-vien${selectedStaff ? `-${selectedStaff}` : ""}` : `himoto-bao-cao-${filteredSection.key}`,
+              headers: filteredSection.columns.map((c) => c.label),
+              rows: loadSectionRows && !isStaffRevenue ? await loadSectionRows(filteredSection, signal) : filteredSection.rows.map((r) => r.values),
             },
             signal,
           )
         }
       />
     )}
-    {rows.map(row => <RowCard key={row.key} row={row} section={section} />)}
+    {rows.map(row => <RowCard key={row.key} row={row} section={filteredSection} />)}
     {!rows.length && <Text style={{ color: theme.muted, lineHeight: 23 }}>Không có dữ liệu phù hợp trong kỳ.</Text>}
-    {section.total && <Card style={{ gap: 6, padding: 14 }}><Text style={{ color: theme.text, fontSize: 16, fontWeight: "800" }}>Tổng toàn bộ kết quả</Text>{section.columns.slice(1).map((col, index) => <KeyValueRow key={col.key} label={col.label} value={reportValue(section.total![index + 1], col.format)} emphasize />)}</Card>}
+    {filteredSection.total && <Card style={{ gap: 6, padding: 14 }}><Text style={{ color: theme.text, fontSize: 16, fontWeight: "800" }}>Tổng toàn bộ kết quả</Text>{filteredSection.columns.slice(1).map((col, index) => <KeyValueRow key={col.key} label={col.label} value={reportValue(filteredSection.total![index + 1], col.format)} emphasize />)}</Card>}
     {total > 0 && (
       <View style={{ gap: 8 }}>
         <Text style={{ color: theme.muted, fontSize: 13 }}>{total} dòng · Trang {page}/{pages}</Text>
         <View style={{ flexDirection: "row", gap: 8 }}>
-          <Button size="sm" equalWidth secondary label={`Đầu · ${section.title}`} disabled={page <= 1} onPress={() => choose(1)} />
-          <Button size="sm" equalWidth secondary label={`Trước · ${section.title}`} disabled={page <= 1} onPress={() => choose(page - 1)} />
+          <Button size="sm" equalWidth secondary label={`Đầu · ${filteredSection.title}`} disabled={page <= 1} onPress={() => choose(1)} />
+          <Button size="sm" equalWidth secondary label={`Trước · ${filteredSection.title}`} disabled={page <= 1} onPress={() => choose(page - 1)} />
         </View>
         <View style={{ flexDirection: "row", gap: 8 }}>
-          <Button size="sm" equalWidth secondary label={`Sau · ${section.title}`} disabled={page >= pages} onPress={() => choose(page + 1)} />
-          <Button size="sm" equalWidth secondary label={`Cuối · ${section.title}`} disabled={page >= pages} onPress={() => choose(pages)} />
+          <Button size="sm" equalWidth secondary label={`Sau · ${filteredSection.title}`} disabled={page >= pages} onPress={() => choose(page + 1)} />
+          <Button size="sm" equalWidth secondary label={`Cuối · ${filteredSection.title}`} disabled={page >= pages} onPress={() => choose(pages)} />
         </View>
       </View>
     )}

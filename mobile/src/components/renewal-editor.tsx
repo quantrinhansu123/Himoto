@@ -159,8 +159,8 @@ function RenewalForm({ id,backfill }: { id: string;backfill:boolean }) {
           <Text style={{color:theme.muted,lineHeight:24}}>Nếu đã nhận tiền, phiếu thu ghi nhận cùng ngày giờ bắt đầu gia hạn. Hẹn trả mới tính từ hẹn trả hiện tại của xe.</Text>
           <ChoiceField label="Gia hạn theo" value={unit} choices={[{value:"day",label:"Ngày"},{value:"hour",label:"Giờ"}]} disabled={locked||!item} onChange={value=>{setUnit(value as "day"|"hour");setCount("1");setReturnAt(null);setRate(null);setAmount(null);}} />
           <FormField label={unit==="day"?"Số ngày gia hạn":"Số giờ gia hạn"} value={countValue} editable={!locked&&!!item} keyboardType="number-pad" maxLength={3} onChangeText={value=>{setCount(value);setReturnAt(null);}} hint={`Từ 1 đến ${maxCount} ${unit==="day"?"ngày":"giờ"}.`} />
-          <FormField label={unit==="day"?"Đơn giá gia hạn mỗi ngày (VND)":"Đơn giá gia hạn mỗi giờ (VND)"} value={rate} onChangeText={setRate} keyboardType="number-pad" maxLength={9} editable={!locked&&!!item} />
-          <RentalDateTime label="hẹn trả mới" value={returnAt} onChange={setReturnAt} disabled={locked || !item} />
+          <FormField label={unit==="day"?"Đơn giá / ngày (VNĐ)":"Đơn giá / giờ (VNĐ)"} value={rate} onChangeText={setRate} keyboardType="number-pad" maxLength={9} editable={!locked&&!!item} />
+          <RentalDateTime label="ngày trả mới (24h)" value={returnAt} onChange={setReturnAt} disabled={locked || !item} />
           {!!returnAt && Number.isFinite(Date.parse(`${returnAt}:00+07:00`)) && Date.parse(`${returnAt}:00+07:00`) < Date.parse(`${initialPaidAt}:00+07:00`) && (
             <View style={{ padding: 10, borderRadius: 8, backgroundColor: theme.warningBackground, borderWidth: 1, borderColor: theme.warning }}>
               <Text style={{ color: theme.warning, fontSize: 13.5, fontWeight: "700", lineHeight: 20 }}>
@@ -168,7 +168,7 @@ function RenewalForm({ id,backfill }: { id: string;backfill:boolean }) {
               </Text>
             </View>
           )}
-          <FormField label="Phí gia hạn thỏa thuận (VND)" value={amount} onChangeText={setAmount} editable={!locked && !!item} keyboardType="number-pad" maxLength={20}
+          <FormField label="Chi phí gia hạn (VNĐ)" value={amount} onChangeText={setAmount} editable={!locked && !!item} keyboardType="number-pad" maxLength={20}
             hint={suggested === null ? "Chưa đủ dữ liệu để gợi ý; nhập đúng thỏa thuận với khách." : `Gợi ý theo ${unit==='day'?'ngày':'giờ'}: ${money(suggested)}. Phí được cộng vào tiền hợp đồng.`} />
           {data.totalAmount !== null && (
             <Text style={{ color: theme.text, fontSize: 14, fontWeight: "700" }}>
@@ -176,17 +176,17 @@ function RenewalForm({ id,backfill }: { id: string;backfill:boolean }) {
             </Text>
           )}
           {suggested !== null && /^(0|[1-9]\d{0,12})$/.test(amount) && Number(amount) !== suggested && <Text style={{ color: theme.warning, fontSize: 15, lineHeight: 24 }}>Phí đang nhập khác gợi ý {money(suggested)}. Rà soát thời hạn và thỏa thuận trước khi lưu.</Text>}
-          <FormField label="Phí khác cộng vào tiền thuê (VND)" value={extraAmount} onChangeText={setExtraAmount} editable={!locked} keyboardType="number-pad" maxLength={13} hint="Tùy chọn, ví dụ phí VAT. Khoản này cộng vào tổng hợp đồng." />
-          {!!extraAmount&&extraAmount!=="0"&&<FormField label="Tên khoản phí khác" value={extraName} onChangeText={setExtraName} editable={!locked} maxLength={100} />}
-          <FormField label="Phí thu ngoài (VND)" value={outsideAmount} onChangeText={setOutsideAmount} editable={!locked} keyboardType="number-pad" maxLength={20} hint="Tùy chọn. Không cộng vào tiền thuê hoặc tổng hợp đồng." />
-          {!!outsideAmount && outsideAmount !== "0" && <FormField label="Tên phí thu ngoài" value={outsideName} onChangeText={setOutsideName} editable={!locked} maxLength={100} />}
+          <FormField label="Số tiền phí khác (VNĐ)" value={extraAmount} onChangeText={setExtraAmount} editable={!locked} keyboardType="number-pad" maxLength={13} hint="Tùy chọn, ví dụ phí VAT. Khoản này cộng vào tổng hợp đồng." />
+          {!!extraAmount&&extraAmount!=="0"&&<FormField label="Tên khoản phí" value={extraName} onChangeText={setExtraName} editable={!locked} maxLength={100} />}
+          <FormField label="Số tiền thu ngoài (VNĐ)" value={outsideAmount} onChangeText={setOutsideAmount} editable={!locked} keyboardType="number-pad" maxLength={20} hint="Tùy chọn. Không cộng vào tiền thuê hoặc tổng hợp đồng." />
+          {!!outsideAmount && outsideAmount !== "0" && <FormField label="Tên khoản thu ngoài" value={outsideName} onChangeText={setOutsideName} editable={!locked} maxLength={100} />}
           
-          <FormField label={backfill?"Lý do nhập bổ sung gia hạn":"Ghi chú gia hạn"} value={note} onChangeText={setNote} editable={!locked} multiline maxLength={2000} />
+          <FormField label={backfill?"Lý do nhập bổ sung":"Ghi chú"} value={note} onChangeText={setNote} editable={!locked} multiline maxLength={2000} />
         </Card>
         <Card style={{ gap: 16 }}>
           <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 19, fontWeight: "700" }}>2. Kiểm tra khoản thu</Text>
           <ChoiceField label="Trạng thái thu tiền gia hạn" value={!collectionChosen?"":collected ? "paid" : "unpaid"} disabled={locked}
-            choices={[{ value: "unpaid", label: "Chưa thu tiền" }, { value: "paid", label: "Đã thực nhận đủ phí ở trên" }]} onChange={value => { setCollected(value === "paid");setCollectionChosen(true); setReviewedBill(""); }} />
+            choices={[{ value: "unpaid", label: "Chưa nhận tiền — ghi công nợ gia hạn" }, { value: "paid", label: "Đã thực nhận tiền gia hạn — ghi phiếu thu cùng lúc lưu" }]} onChange={value => { setCollected(value === "paid");setCollectionChosen(true); setReviewedBill(""); }} />
           {collected ? <>
             <Text style={{ color: theme.muted, fontSize: 15, lineHeight: 24 }}>Chỉ xác nhận khoản đã thực nhận. Thu một phần sau gia hạn được thực hiện bằng phiếu liên kết phiên bản.</Text>
             <ChoiceField label="Hình thức thu gia hạn" value={method} choices={methods} disabled={locked} onChange={value => { setMethod(value as MobileCollectionMethod); setAccount(""); }} />
@@ -208,7 +208,7 @@ function RenewalForm({ id,backfill }: { id: string;backfill:boolean }) {
       <View style={{ padding: 16, borderTopWidth: 1, borderColor: theme.border, backgroundColor: theme.surface }}>
         <View style={{ maxWidth: 724, width: "100%", alignSelf: "center" }}>
           {action.key ? <Button label={action.busy ? "Đang lưu gia hạn" : "Đối chiếu yêu cầu gia hạn"} loading={action.busy || action.checking} onPress={() => setResolving(true)} /> :
-            <Button label="Rà soát gia hạn" disabled={locked || query.isError || query.isFetching || !data.available} onPress={review} />}
+            <Button label={collected ? "Lưu gia hạn và thu tiền" : "Lưu gia hạn"} disabled={locked || query.isError || query.isFetching || !data.available} onPress={review} />}
         </View>
       </View>
     </KeyboardAvoidingView>

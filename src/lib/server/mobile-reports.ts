@@ -103,6 +103,17 @@ export async function readMobileSalesReport(user: SessionUser, rawKind: string, 
         ...metrics("Doanh thu thực thu", { ...received.total, company_fees: received.company_fees }, [["revenue", "Doanh thu"], ["rental", "Phí thuê đã thu"], ["renewal", "Gia hạn đã thu"], ["late", "Trả muộn đã thu"], ["early", "Đã hoàn do trả sớm"], ["company_fees", "Phí khác · Công ty"]]),
         ...metrics("Công nợ", summary.kpis, [["debt", "Tiền thuê còn thiếu"], ["debtContracts", "Hợp đồng còn thiếu tiền", "count"], ["overdueDebt", "Nợ quá hạn chưa thu đủ"], ["overdueContracts", "Hợp đồng quá hạn chưa thu đủ", "count"], ["badDebt", "Nợ xấu riêng"]])];
       if (received.unclassified_count) doc.notes.push(`Có ${received.unclassified_count} phiếu chưa phân loại (${received.unclassified_amount.toLocaleString("vi-VN")} đồng), chưa cộng doanh thu; cần đối chiếu Sổ quỹ trước chốt KPI.`);
+      const staffRows = received.staff.filter(row => row.key !== "company" && row.key !== "unassigned");
+      const staffFields: Fields = [["name", "Nhân viên", "text"], ["staffId", "ID nhân viên", "text"], ["rental", "Tiền thuê đã thu"], ["early", "Tiền thuê đã hoàn"], ["revenue", "Doanh thu thực thu"]];
+      doc.sections.push(section(
+        "staff",
+        "Doanh thu thực thu theo nhân viên",
+        staffFields,
+        staffRows.map(row => ({
+          key: row.key,
+          values: values({ ...row, staffId: /^\d+$/.test(row.key) ? row.key : "" }, staffFields),
+        })),
+      ));
     } else if (kind === "ledger") {
       const report = await revenueLedger(client, query,true); checked(validRevenueLedger(report));
       const other = {...report,rows:[],total:report.oppositeTotals!.count,page:1,pages:Math.max(1,Math.ceil(report.oppositeTotals!.count/report.page_size)),totals:report.oppositeTotals!}; checked(validRevenueLedgerTotals(other));

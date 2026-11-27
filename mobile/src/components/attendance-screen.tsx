@@ -8,7 +8,7 @@ import { CalendarDays, Camera, Clock3, History, MapPin, SlidersHorizontal } from
 import { useSession } from '@/providers/session';
 import { useWorkspace } from '@/hooks/use-workspace';
 import { Button, Card, Chip, InfoBanner, InlineError, KeyValueRow, PaginationBar, SkeletonList, StateView, StatusBadge } from '@/components/ui';
-import { ChoiceField } from '@/components/form-fields';
+import { ChoiceField, FormField } from '@/components/form-fields';
 import { DateField } from '@/components/date-field';
 import { EditorSheet } from '@/components/editor-sheet';
 import { ApiError } from '@/lib/api';
@@ -27,7 +27,7 @@ export function AttendanceScreen({ historyOnly = false }: { historyOnly?: boolea
   const { api, session } = useSession(), workspace = useWorkspace(), theme = useTheme();
   const actor = session!.user.id, origin = api!.origin;
   const today = dutyToday(), [from, setFrom] = useState(today.slice(0, 7) + '-01'), [to, setTo] = useState(today), [store, setStore] = useState('all'), [page, setPage] = useState(1);
-  const [action, setAction] = useState<'in' | 'out' | null>(null), [photo, setPhoto] = useState<RecordMediaPhoto | null>(null), [location, setLocation] = useState<AttendanceLocation | null>(null), [locating, setLocating] = useState(false);
+  const [action, setAction] = useState<'in' | 'out' | null>(null), [photo, setPhoto] = useState<RecordMediaPhoto | null>(null), [location, setLocation] = useState<AttendanceLocation | null>(null), [locating, setLocating] = useState(false), [punchNote, setPunchNote] = useState('');
   const [pending, setPending] = useState<AttendancePending | null>(null), [restoring, setRestoring] = useState(true), [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState(''), [evidence, setEvidence] = useState<string | null>(null);
   const lock = useRef(false), alive = useRef(true), camera = useRef<AbortController | null>(null), currentPhoto = useRef(photo);
   const clockSessionRef = useRef(0), initialLocationRef = useRef<Promise<AttendanceLocation | Error> | null>(null);
@@ -35,6 +35,7 @@ export function AttendanceScreen({ historyOnly = false }: { historyOnly?: boolea
     const token = ++clockSessionRef.current;
     setAction(nextAction);
     setLocation(null);
+    setPunchNote('');
     setError('');
     setNotice('');
     setLocating(true);
@@ -70,7 +71,7 @@ export function AttendanceScreen({ historyOnly = false }: { historyOnly?: boolea
   }, [historyOnly, serverNow, dataUpdatedAt, refetch]);
   useEffect(() => { alive.current = true; void loadAttendancePending(actor, origin).then(value => { if (alive.current) setPending(value); }).catch(failure => { if (alive.current) setError(failure.message); }).finally(() => { if (alive.current) setRestoring(false); }); return () => { alive.current = false; camera.current?.abort(); currentPhoto.current?.dispose(); }; }, [actor, origin]);
   async function run(job: () => Promise<void>) { if (lock.current) return; lock.current = true; setBusy(true); setError(''); try { await job(); } catch (failure) { if (alive.current) setError((failure as Error).message); } finally { lock.current = false; if (alive.current) setBusy(false); } }
-  async function acknowledge(id: string) { await clearAttendancePending(session!.user.id, id); setPending(null); setAction(null); setLocation(null); photo?.dispose(); setPhoto(null); setNotice('Máy chủ đã xác nhận chấm công.'); await query.refetch(); }
+  async function acknowledge(id: string) { await clearAttendancePending(session!.user.id, id); setPending(null); setAction(null); setLocation(null); setPunchNote(''); photo?.dispose(); setPhoto(null); setNotice('Máy chủ đã xác nhận chấm công.'); await query.refetch(); }
   async function resolve() { if (!pending) return; const result = await api!.resolveAttendance(pending.id); if (result.result) await acknowledge(pending.id); else setNotice('Máy chủ chưa ghi nhận mã này. Thử lại cùng lần chấm; không tạo mã mới.'); }
   async function restartFromPending() {
     if (!pending) return;
@@ -115,7 +116,8 @@ export function AttendanceScreen({ historyOnly = false }: { historyOnly?: boolea
     }
   }
   async function submitClockAttempt(attempt: AttendancePending) {
-    const buildBody = () => supportFormData({ action: attempt.action, request_id: attempt.id, location: JSON.stringify(attempt.location) }, attempt.photo);
+    const trimmedNote = attempt.note?.trim() || '';
+    const buildBody = () => supportFormData({ action: attempt.action, request_id: attempt.id, location: JSON.stringify(attempt.location), ...(trimmedNote ? { note: trimmedNote } : {}) }, attempt.photo);
     try {
       await api!.clockAttendance(await buildBody());
       return;
@@ -145,7 +147,8 @@ export function AttendanceScreen({ historyOnly = false }: { historyOnly?: boolea
     if (!attempt) {
       if (!action || !photo) throw Error('Chụp ảnh hiện tại trước khi xác nhận chấm công.');
       const gps = await resolveClockLocation();
-      attempt = await storeAttendancePending(session!.user.id, api!.origin, { id: uuid.v4().toLowerCase(), action, photo, location: gps }); setPending(attempt);
+      const trimmedNote = punchNote.trim();
+      attempt = await storeAttendancePending(session!.user.id, api!.origin, { id: uuid.v4().toLowerCase(), action, photo, location: gps, ...(trimmedNote ? { note: trimmedNote } : {}) }); setPending(attempt);
     } else {
       const result = await api!.resolveAttendance(attempt.id);
       if (result.result) { await acknowledge(attempt.id); return; }
@@ -250,7 +253,9 @@ export function AttendanceScreen({ historyOnly = false }: { historyOnly?: boolea
         </View>
         <View style={{ gap: 2 }}>
           <KeyValueRow label="Vào ca" value={dateTime(row.clock_in_at)} />
+          {!!row.in_location?.note && <KeyValueRow label="Ghi chú vào ca" value={row.in_location.note} />}
           <KeyValueRow label="Ra ca" value={row.clock_out_at ? dateTime(row.clock_out_at) : 'Chưa chấm ra'} />
+          {!!row.out_location?.note && <KeyValueRow label="Ghi chú ra ca" value={row.out_location.note} />}
           <KeyValueRow label="Ca đăng ký" value={`${row.shift_name === 'O' ? 'Nghỉ' : row.shift_name || 'Chưa đăng ký'}${row.scheduled_in && row.scheduled_out ? ` (${dateTime(row.scheduled_in)} → ${dateTime(row.scheduled_out)})` : ''}`} />
           {row.late_minutes !== null && <KeyValueRow label="Trễ / sớm" valueColor={row.late_minutes ? theme.warning : theme.success} value={`${row.late_minutes ? `Muộn ${row.late_minutes}p` : 'Đúng giờ'}${row.early_leave_minutes ? ` · Sớm ${row.early_leave_minutes}p` : ''}`} />}
           <KeyValueRow label="Công thực tế" strong value={`${row.earned_credit != null ? row.earned_credit.toLocaleString('vi-VN', { maximumFractionDigits: 4 }) : row.credit_on_other_row ? 'Gộp cùng ca' : row.standard_credit == null ? 'Chưa đăng ký ca' : 'Chưa chốt'}${typeof row.standard_credit === 'number' ? ` / ${row.standard_credit.toLocaleString('vi-VN')}` : ''}`} />
@@ -269,7 +274,7 @@ export function AttendanceScreen({ historyOnly = false }: { historyOnly?: boolea
           )}
           {row.clock_out_at && row.has_out_photo === false && copy('Không có ảnh ra ca.')}
         </View>}
-        {evidence === String(row.id) && (['in', 'out'] as const).map(side => { const hasSide = side === 'in' || Boolean(row.clock_out_at); if (!hasSide) return null; const loc = side === 'in' ? row.in_location : row.out_location; const hasPhoto = side === 'in' || row.has_out_photo !== false; const photoSource = hasPhoto ? api!.supportPhoto('attendance', String(row.id), side) : null; return <View key={side} style={{ gap: 8 }}><Text style={{ color: theme.text, fontWeight: '700', fontSize: 14 }}>{side === 'in' ? 'Ảnh vào ca' : 'Ảnh ra ca'}</Text>{photoSource ? <Image cachePolicy="memory" source={{ ...photoSource, cacheKey: JSON.stringify([session!.user.id, session!.user.storeId, session!.user.allStores, session!.sessionId || session!.expiresAt, photoSource.uri]) }} style={{ width: '100%', aspectRatio: 4 / 3, borderRadius: 10 }} contentFit="contain" accessibilityLabel={`Ảnh ${side === 'in' ? 'vào' : 'ra'} ca #${row.id}`} /> : copy('Chưa có ảnh chấm công.')}{loc ? <>{copy(`GPS ${loc.latitude.toFixed(6)}, ${loc.longitude.toFixed(6)} · sai số ${Math.round(loc.accuracy)} m`)}<Button size="sm" secondary label="Mở vị trí trên Google Maps" onPress={() => void Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${loc.latitude},${loc.longitude}`)}`)} /></> : copy('Chưa ghi nhận GPS')}</View>; })}
+        {evidence === String(row.id) && (['in', 'out'] as const).map(side => { const hasSide = side === 'in' || Boolean(row.clock_out_at); if (!hasSide) return null; const loc = side === 'in' ? row.in_location : row.out_location; const nearest = side === 'in' ? row.in_nearest_store : row.out_nearest_store; const hasPhoto = side === 'in' || row.has_out_photo !== false; const photoSource = hasPhoto ? api!.supportPhoto('attendance', String(row.id), side) : null; return <View key={side} style={{ gap: 8 }}><Text style={{ color: theme.text, fontWeight: '700', fontSize: 14 }}>{side === 'in' ? 'Ảnh vào ca' : 'Ảnh ra ca'}</Text>{photoSource ? <Image cachePolicy="memory" source={{ ...photoSource, cacheKey: JSON.stringify([session!.user.id, session!.user.storeId, session!.user.allStores, session!.sessionId || session!.expiresAt, photoSource.uri]) }} style={{ width: '100%', aspectRatio: 4 / 3, borderRadius: 10 }} contentFit="contain" accessibilityLabel={`Ảnh ${side === 'in' ? 'vào' : 'ra'} ca #${row.id}`} /> : copy('Chưa có ảnh chấm công.')}{loc ? <>{nearest ? <Text style={{ color: theme.text, fontSize: 13.5, fontWeight: '700' }}>Cơ sở gần nhất: {nearest.store_name} · {Math.round(nearest.distance_m).toLocaleString('vi-VN')} m</Text> : nearest === null ? copy('Chưa có cơ sở được cấu hình tọa độ để đối chiếu.') : null}{!!loc.note && copy(`Ghi chú: ${loc.note}`)}{copy(`GPS ${loc.latitude.toFixed(6)}, ${loc.longitude.toFixed(6)} · sai số ${Math.round(loc.accuracy)} m`)}<Button size="sm" secondary label="Mở vị trí trên Google Maps" onPress={() => void Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${loc.latitude},${loc.longitude}`)}`)} /></> : copy('Chưa ghi nhận GPS')}</View>; })}
       </Card>}
       ListEmptyComponent={historyOnly && !query.isPending && !query.isError ? <StateView title="Chưa có chấm công" message="Không có lượt chấm công trong khoảng ngày đã chọn." /> : undefined}
       ListFooterComponent={historyOnly && query.data && query.data.total > 50 ? <PaginationBar page={query.data.page} pages={Math.max(1, Math.ceil(query.data.total / 50))} total={query.data.total} unit="lượt" disabled={query.isFetching} onChange={setPage} /> : undefined} />
@@ -278,7 +283,8 @@ export function AttendanceScreen({ historyOnly = false }: { historyOnly?: boolea
       <ScrollView contentContainerStyle={{ padding: 20, gap: 16 }}>
         {copy(locating ? 'Đang tự động lấy vị trí GPS… Nếu thiết bị hỏi quyền vị trí, hãy chọn Cho phép. Bạn có thể chụp ảnh ngay trong lúc chờ.' : 'Chụp ảnh hiện tại để xác nhận chấm công. Vị trí gần nhất (trong 60 giây) sẽ được dùng ngay khi xác nhận.')}
         {(pending?.photo || photo) && <Image cachePolicy="none" source={{ uri: (pending?.photo || photo)!.uri }} style={{ width: '100%', aspectRatio: 4 / 3, borderRadius: 12 }} contentFit="contain" accessibilityLabel="Ảnh chấm công vừa chụp" />}
-        <Button secondary label={photo ? 'Chụp lại ảnh hiện tại' : 'Chụp ảnh hiện tại'} disabled={busy || !!pending} onPress={() => { void run(async () => { const controller = new AbortController(); camera.current = controller; const next = await captureAttendancePhoto(controller.signal); if (next) { if (!alive.current) { next.dispose(); return; } photo?.dispose(); setPhoto(next); } }); }} />
+        <Button secondary label={photo ? 'Chụp lại ảnh' : 'Chụp ảnh'} disabled={busy || !!pending} onPress={() => { void run(async () => { const controller = new AbortController(); camera.current = controller; const next = await captureAttendancePhoto(controller.signal); if (next) { if (!alive.current) { next.dispose(); return; } photo?.dispose(); setPhoto(next); } }); }} />
+        <FormField label="Ghi chú (không bắt buộc)" value={pending?.note ?? punchNote} onChangeText={setPunchNote} editable={!busy && !pending} multiline maxLength={500} />
         <Button secondary label={locating ? 'Đang lấy vị trí GPS…' : location ? 'Lấy lại GPS' : 'Lấy vị trí GPS'} disabled={busy || locating || !!pending} loading={locating && !busy} onPress={() => { void run(async () => { setLocating(true); try { const next = await locateAttendance(); if (alive.current) setLocation(next); } finally { if (alive.current) setLocating(false); } }); }} />
         {(pending?.location || location) && <View style={{ gap: 6 }}>
           {copy(`Đã lấy GPS · sai số khoảng ${Math.round((pending?.location || location)!.accuracy)} m`)}
