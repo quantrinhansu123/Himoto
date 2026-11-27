@@ -59,9 +59,13 @@ function allowedAccount(account: Account) {
 }
 function safeUser(account: Account): SessionUser {
   const admin=isAdminAccount(account);
+  const id = Number(account.id);
+  // Allow the designated administrators to review HR records without requiring an employee profile.
+  const hasHrAccess = (admin && (id === 160 || id === 202)) ||
+    account.staff_positions?.some(position => staffRoles(position).includes('HCNS'));
   const ownershipManager=account.access_role==='ownership_manager'||account.access_role==='branch_manager'&&account.store_kind==='lease_to_own';
   const ownershipStore=Number(account.ownership_store_id??account.access_store_id);
-  return { id: Number(account.id), name: account.name, email: account.email, role: String(account.role || ''), role_slug: String(account.role_slug || ''),
+  return { id, name: account.name, email: account.email, role: String(account.role || ''), role_slug: String(account.role_slug || ''),
     access_role:ownershipManager?'ownership_manager':account.access_role||(admin?'admin':'accounting'),
     permissions:ownershipManager?[...ACCESS_PERMISSIONS]:admin?[...ADMIN_PERMISSIONS,...(canSettleContract(account)?['contracts.settle']:[])]:(account.permissions||['contracts.read','finance.read','finance.write']).filter(permission=>permission!=='accounts.manage'&&permission!=='contracts.settle'),
     store_id:ownershipManager?ownershipStore:['headquarters_sales','headquarters_debt'].includes(account.access_role||'')||account.access_store_id==null?null:Number(account.access_store_id),
@@ -69,7 +73,7 @@ function safeUser(account: Account): SessionUser {
     scope_all:ownershipManager?false:admin||(!account.access_role)||['headquarters_sales','headquarters_debt'].includes(account.access_role)||account.scope_all===true,
     ...(account.staff_positions?.some(hasLeaderPosition)?{scope_all_contracts_read:true}:{}),
     ...(account.scope_all_read===true?{scope_all_read:true}:{}),
-    ...(account.staff_positions?.some(position=>staffRoles(position).includes('HCNS'))?{has_hr_position:true}:{}),
+    ...(hasHrAccess ? { has_hr_position: true } : {}),
     ...(account.scope_all_operations===true?{scope_all_operations:true}:{}),
     ...(account.management_password_version?{password_version:Number(account.management_password_version)}:{}) };
 }
