@@ -3,6 +3,8 @@ import { router } from 'expo-router';
 import { FlatList, Linking, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { uuid } from 'expo';
+import { fetch as expoFetch } from 'expo/fetch';
+import { File as ExpoFile } from 'expo-file-system';
 import { Image } from 'expo-image';
 import { CalendarDays, Camera, Clock3, History, MapPin, SlidersHorizontal } from 'lucide-react-native';
 import { useSession } from '@/providers/session';
@@ -18,7 +20,7 @@ import type { RecordMediaPhoto } from '@/lib/record-media-photo';
 import { supportFormData } from '@/lib/support-form-data';
 import { dutyToday } from '../../../shared/mobile-duty-roster';
 import { canReviewAttendance } from '../../../shared/access-permissions';
-import type { AttendanceLocation, AttendanceEntry } from '../../../shared/mobile-support';
+import { isAttendanceReceipt, type AttendanceLocation, type AttendanceEntry } from '../../../shared/mobile-support';
 import { AttendanceEdit } from './attendance-edit';
 import { FilteredListExport } from './filtered-list-export';
 import { dateTime, useTheme } from '@/theme';
@@ -134,6 +136,48 @@ export function AttendanceScreen({ historyOnly = false }: { historyOnly?: boolea
       if (alive.current) setLocating(false);
     }
   }
+  async function submitClockWithExpoFetch(attempt: AttendancePending) {
+    const trimmedNote = attempt.note?.trim() || '';
+    const form = new FormData();
+    form.append('action', attempt.action);
+    form.append('request_id', attempt.id);
+    form.append('location', JSON.stringify(attempt.location));
+    if (trimmedNote) form.append('note', trimmedNote);
+    const file = new ExpoFile(attempt.photo.uri);
+    if (!file.exists || file.size <= 0) {
+      throw Error('Ảnh chấm công chờ không còn trên máy. Bấm "Chụp lại ảnh" để tạo lần chấm mới.');
+    }
+    form.append('photo', file, 'attendance.jpg');
+    const authHeaders = api!.supportPhoto('attendance', '1').headers || {};
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 45_000);
+    try {
+      const response = await expoFetch(`${api!.origin}/api/mobile/v1/attendance`, {
+        method: 'POST',
+        body: form,
+        headers: { Accept: 'application/json', ...authHeaders },
+        credentials: 'omit',
+        redirect: 'error',
+        signal: controller.signal,
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new ApiError(
+          typeof data?.message === 'string' ? data.message : 'Không ghi nhận được chấm công. Vui lòng thử lại.',
+          response.status,
+          typeof data?.code === 'string' ? data.code : 'REQUEST_FAILED',
+        );
+      }
+      if (!isAttendanceReceipt(data)) {
+        throw new ApiError('Dữ liệu phản hồi chấm công không hợp lệ.', 502, 'INVALID_RESPONSE');
+      }
+    } catch (cause) {
+      if (cause instanceof ApiError) throw cause;
+      throw new ApiError('Không kết nối được máy chủ chấm công.', 0, 'NETWORK');
+    } finally {
+      clearTimeout(timer);
+    }
+  }
   async function submitClockAttempt(attempt: AttendancePending) {
     const trimmedNote = attempt.note?.trim() || '';
     const buildBody = () => supportFormData({ action: attempt.action, request_id: attempt.id, location: JSON.stringify(attempt.location), ...(trimmedNote ? { note: trimmedNote } : {}) }, attempt.photo);
@@ -142,20 +186,25 @@ export function AttendanceScreen({ historyOnly = false }: { historyOnly?: boolea
       return;
     } catch (cause) {
       if (!(cause instanceof ApiError) || cause.status !== 0 || cause.code !== 'NETWORK') throw cause;
-      // After returning from the system Camera app, Android (Xiaomi/Oppo/Vivo/Samsung) can drop idle sockets.
-      // Pause briefly, check if the server already recorded this idempotent request_id, then retry once with a fresh FormData.
+      // After returning from the system Camera app, Android (Xiaomi/Oppo/Vivo/Samsung) can drop idle OkHttp sockets.
+      // Check if server already recorded this idempotent request_id, then retry using expo/fetch + native ExpoFile.
       await new Promise<void>(resolve => setTimeout(resolve, 900));
       try {
         const resolved = await api!.resolveAttendance(attempt.id);
         if (resolved.result) return;
       } catch {
-        // Proceed to fresh single retry below.
+        // Proceed to fresh native retry below.
       }
       try {
-        await api!.clockAttendance(await buildBody());
+        await submitClockWithExpoFetch(attempt);
+        return;
       } catch (retryCause) {
         if (retryCause instanceof ApiError && retryCause.status === 0 && retryCause.code === 'NETWORK') {
-          throw Error('Không kết nối được máy chủ chấm công. Ảnh và mã chấm công đã được giữ trên máy — hãy kiểm tra Wi-Fi/4G rồi bấm "Thử lại lần này" hoặc "Đối chiếu lần chấm đang chờ".');
+          try {
+            const resolvedAfter = await api!.resolveAttendance(attempt.id);
+            if (resolvedAfter.result) return;
+          } catch {}
+          throw Error('Mạng đang chập chờn nên chưa gửi được ảnh chấm công. Ảnh và mã chấm công đã được giữ trên máy — kiểm tra Wi-Fi/4G rồi bấm nút "Thử lại gửi chấm công" bên dưới.');
         }
         throw retryCause;
       }
@@ -325,8 +374,9 @@ export function AttendanceScreen({ historyOnly = false }: { historyOnly?: boolea
             <Button size="sm" secondary label="Mở cài đặt quyền vị trí" onPress={() => { void Linking.openSettings().catch(() => {}); }} />
           )}
         </View>}
-        {pending && copy('Ảnh và mã gốc được giữ trên máy. Thử lại sẽ đối chiếu kết quả trước khi gửi.')}
-        <Button label={locating && busy ? 'Đang lấy vị trí GPS…' : busy ? 'Đang gửi chấm công…' : action === 'in' ? 'Xác nhận vào ca' : 'Xác nhận ra ca'} disabled={!pending && !photo} loading={busy} onPress={() => { void run(save); }} />
+        {pending && copy('Ảnh và mã chấm công đã được giữ trên máy. Bấm thử lại sẽ tự đối chiếu với máy chủ trước khi gửi.')}
+        <Button label={locating && busy ? 'Đang lấy vị trí GPS…' : busy ? 'Đang gửi chấm công…' : pending ? 'Thử lại gửi chấm công' : action === 'in' ? 'Xác nhận vào ca' : 'Xác nhận ra ca'} disabled={!pending && !photo} loading={busy} onPress={() => { void run(save); }} />
+        {pending && <Button secondary label="Đối chiếu lần chấm đang chờ" disabled={busy} onPress={() => { void run(resolve); }} />}
         {!pending && !photo && copy('Chụp ảnh hiện tại để bật nút xác nhận chấm công.')}
       </ScrollView>
     </EditorSheet>}

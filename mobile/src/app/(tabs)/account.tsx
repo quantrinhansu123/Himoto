@@ -1,5 +1,5 @@
 import { router } from "expo-router";
-import { useState } from "react";
+import { type ComponentRef, useEffect, useRef, useState } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
@@ -38,6 +38,17 @@ export default function Account() {
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [updateMessage, setUpdateMessage] = useState("");
   const updateState = Updates.useUpdates();
+  const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
+  useEffect(() => {
+    const host = globalThis as { __himotoTabPressListeners?: Map<string, Set<() => void>> };
+    if (!host.__himotoTabPressListeners) host.__himotoTabPressListeners = new Map();
+    const map = host.__himotoTabPressListeners;
+    let set = map.get("account");
+    if (!set) { set = new Set(); map.set("account", set); }
+    const listener = () => { scrollRef.current?.scrollTo({ y: 0, animated: true }); };
+    set.add(listener);
+    return () => { set?.delete(listener); };
+  }, []);
 
   async function handleCheckUpdate() {
     if (__DEV__ || !Updates.isEnabled) {
@@ -102,6 +113,7 @@ export default function Account() {
       style={{ flex: 1, backgroundColor: theme.background }}
     >
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={{
           padding: 16,
           paddingBottom: 36,

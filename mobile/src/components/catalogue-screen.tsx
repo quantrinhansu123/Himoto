@@ -428,8 +428,56 @@ export function CatalogueScreen({
   }>({});
   const list = useRef<FlatList<MobileRecord>>(null);
   const nextPageGesture = useRef(true);
+  const [blacklistTarget, setBlacklistTarget] = useState<MobileRecord | null>(null);
+  const [blacklistBusy, setBlacklistBusy] = useState(false);
+  const [blacklistError, setBlacklistError] = useState("");
+  const [blacklistNotice, setBlacklistNotice] = useState("");
   const settings = { ...catalogueConfig[kind], ...(kind === "contracts" && scope ? { title: contractWorkspace(scope)!.title } : {}) };
   const allowed = session?.user.permissions.includes(`${kind}.read`);
+  useEffect(() => {
+    if (!showManagementMenu) return;
+    const host = globalThis as { __himotoTabPressListeners?: Map<string, Set<() => void>> };
+    if (!host.__himotoTabPressListeners) host.__himotoTabPressListeners = new Map();
+    const map = host.__himotoTabPressListeners;
+    let set = map.get(kind);
+    if (!set) { set = new Set(); map.set(kind, set); }
+    const listener = () => {
+      list.current?.scrollToOffset({ offset: 0, animated: true });
+    };
+    set.add(listener);
+    return () => { set?.delete(listener); };
+  }, [kind, showManagementMenu]);
+  async function submitBlacklistToggle() {
+    if (!api || !blacklistTarget || blacklistBusy) return;
+    const target = blacklistTarget;
+    const nextBlacklisted = target.status !== "blacklist";
+    setBlacklistBusy(true);
+    setBlacklistError("");
+    setBlacklistNotice("");
+    try {
+      const detail = await api.customerDetail(String(target.id));
+      await api.toggleCustomerBlacklist(String(target.id), {
+        blacklisted: nextBlacklisted,
+        revision: detail.revision,
+      });
+      setBlacklistTarget(null);
+      setBlacklistNotice(
+        nextBlacklisted
+          ? `Đã đưa ${target.name} vào Blacklist.`
+          : `Đã bỏ Blacklist cho ${target.name}.`,
+      );
+      await Promise.all([
+        cache.invalidateQueries({ queryKey: ["catalogue"] }),
+        cache.invalidateQueries({ queryKey: ["customer-detail", session?.user.id, String(target.id)] }),
+        cache.invalidateQueries({ queryKey: ["record", session?.user.id, "customers", String(target.id)] }),
+      ]);
+    } catch (cause) {
+      setBlacklistError((cause as Error).message || "Chưa đổi được trạng thái Blacklist.");
+      setBlacklistTarget(null);
+    } finally {
+      setBlacklistBusy(false);
+    }
+  }
   useEffect(() => {
     const timer = setTimeout(() => setSearch(input.trim()), 300);
     return () => clearTimeout(timer);
@@ -584,7 +632,7 @@ export function CatalogueScreen({
         { paddingTop: compact ? 8 : 14, paddingBottom: compact ? 8 : 12 },
       ]}
     >
-      {/* Top Header with Hamburger Menu and Fast Store Selector */}
+      {/* Top Header with Hamburger Menu and Full Title (never truncated) */}
       {!compact && (
         <View style={styles.topHeader}>
           {showManagementMenu && <Pressable
@@ -606,11 +654,23 @@ export function CatalogueScreen({
           <Text
             accessibilityRole="header"
             numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.82}
             style={[styles.headerTitle, { color: theme.text }]}
           >
             {settings.title}
           </Text>
+        </View>
+      )}
 
+      {!compact && (
+        <View style={styles.row}>
+          <Text style={{ color: theme.muted, fontSize: 12.5, flex: 1 }}>
+            {query.data
+              ? `${query.data.pages[0].total.toLocaleString("vi-VN")} ${settings.noun}`
+              : "Đang tải…"}
+            {kind === "vehicles" ? " · Chưa gồm xe đã bán" : ""}
+          </Text>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Chọn cơ sở"
@@ -625,22 +685,17 @@ export function CatalogueScreen({
             ]}
           >
             <MapPin size={13} color={theme.primary} />
-            <Text numberOfLines={1} style={{ color: theme.text, fontSize: 12, fontWeight: "600", maxWidth: 105 }}>
+            <Text numberOfLines={1} style={{ color: theme.text, fontSize: 12, fontWeight: "600", maxWidth: 145 }}>
               {storeName}
             </Text>
             <ChevronDown size={13} color={theme.muted} />
           </Pressable>
         </View>
       )}
-
-      {!compact && (
-        <View style={styles.row}>
-          <Text style={{ color: theme.muted, fontSize: 12.5, flex: 1 }}>
-            {query.data
-              ? `${query.data.pages[0].total.toLocaleString("vi-VN")} ${settings.noun}`
-              : "Đang tải…"}
-            {kind === "vehicles" ? " · Chưa gồm xe đã bán" : ""}
-          </Text>
+      {kind === "customers" && !!blacklistError && <InlineError message={blacklistError} />}
+      {kind === "customers" && !!blacklistNotice && (
+        <View style={{ padding: 10, borderRadius: 10, borderWidth: 1, borderColor: theme.success, backgroundColor: theme.successBackground }}>
+          <Text style={{ color: theme.success, fontSize: 13, fontWeight: "600" }}>{blacklistNotice}</Text>
         </View>
       )}
       {/* Compact Primary CTA Row */}
@@ -1224,7 +1279,64 @@ export function CatalogueScreen({
         kind={kind}
         record={actionRecord}
         permissions={session?.user.permissions || []}
+        onToggleBlacklist={
+          kind === "customers"
+            ? (target) => {
+                setBlacklistError("");
+                setBlacklistNotice("");
+                setBlacklistTarget(target);
+              }
+            : undefined
+        }
       />
+
+      {/* Quick Customer Blacklist Confirm Modal */}
+      <Modal
+        visible={!!blacklistTarget}
+        transparent
+        animationType="fade"
+        onRequestClose={() => { if (!blacklistBusy) setBlacklistTarget(null); }}
+      >
+        <View style={styles.modalBackdrop}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => { if (!blacklistBusy) setBlacklistTarget(null); }}
+          />
+          <View
+            style={[
+              styles.modalSheet,
+              { backgroundColor: theme.surface, borderColor: theme.border, gap: 14 },
+            ]}
+          >
+            <Text style={{ color: theme.text, fontSize: 18, fontWeight: "800" }}>
+              {blacklistTarget?.status === "blacklist"
+                ? `Bỏ Blacklist cho ${blacklistTarget?.name || ""}?`
+                : `Đưa ${blacklistTarget?.name || ""} vào Blacklist?`}
+            </Text>
+            <Text style={{ color: theme.muted, fontSize: 14, lineHeight: 21 }}>
+              {blacklistTarget?.status === "blacklist"
+                ? "Khách hàng sẽ được khôi phục về trạng thái bình thường và có thể lập hợp đồng thuê xe."
+                : "Khách hàng sẽ bị gắn trạng thái Blacklist (khách nợ xấu) để cảnh báo trên toàn hệ thống."}
+            </Text>
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <Button
+                equalWidth
+                secondary
+                label="Hủy"
+                disabled={blacklistBusy}
+                onPress={() => setBlacklistTarget(null)}
+              />
+              <Button
+                equalWidth
+                danger={blacklistTarget?.status !== "blacklist"}
+                label={blacklistTarget?.status === "blacklist" ? "Xác nhận bỏ Blacklist" : "Đưa vào Blacklist"}
+                loading={blacklistBusy}
+                onPress={() => { void submitBlacklistToggle(); }}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Quick Store Picker Modal */}
       <Modal

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { type ComponentRef, useEffect, useMemo, useRef, useState } from "react";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
 import {
@@ -131,6 +131,7 @@ export default function Overview() {
     gcTime: 300_000,
   });
 
+  const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
   const refresh = () => {
     void restore(true);
     void workspace.refetch();
@@ -140,6 +141,21 @@ export default function Overview() {
       void query.refetch();
     });
   };
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
+  useEffect(() => {
+    const host = globalThis as { __himotoTabPressListeners?: Map<string, Set<() => void>> };
+    if (!host.__himotoTabPressListeners) host.__himotoTabPressListeners = new Map();
+    const map = host.__himotoTabPressListeners;
+    let set = map.get("index");
+    if (!set) { set = new Set(); map.set("index", set); }
+    const listener = () => {
+      scrollRef.current?.scrollTo({ y: 0, animated: true });
+      refreshRef.current();
+    };
+    set.add(listener);
+    return () => { set?.delete(listener); };
+  }, []);
 
   const currentStoreLabel = useMemo(() => {
     if (selectedStore === "all") return "Toàn bộ cơ sở";
@@ -169,6 +185,7 @@ export default function Overview() {
       style={{ flex: 1, backgroundColor: theme.background }}
     >
       <ScrollView
+        ref={scrollRef}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.container}
         refreshControl={

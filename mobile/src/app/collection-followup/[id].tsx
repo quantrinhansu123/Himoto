@@ -35,6 +35,7 @@ function Followup({ data, reload }: { data: CollectionFollowupView; reload: () =
       setBaseline(JSON.stringify(updated));
       setNotice('Đã lưu tình trạng khách và lịch sử xử lý.');
       void cache.invalidateQueries({ queryKey: ['collection-report'] });
+      void cache.invalidateQueries({ queryKey: ['collection-followup-inline'] });
     } catch (cause) {
       const current = await api!.collectionFollowup(String(data.id)).catch(() => null);
       const saved = current?.followup;
@@ -44,6 +45,7 @@ function Followup({ data, reload }: { data: CollectionFollowupView; reload: () =
         setBaseline(JSON.stringify(saved));
         setNotice('Đã đối chiếu. Ghi chú đã được lưu.');
         void cache.invalidateQueries({ queryKey: ['collection-report'] });
+        void cache.invalidateQueries({ queryKey: ['collection-followup-inline'] });
       } else setError((cause as Error).message);
     } finally { setBusy(false); }
   }

@@ -31,6 +31,19 @@ export function refreshActiveLookups(client: QueryClient) {
 }
 /** A tab tap refreshes its reads in the background, including fresh cache.
  * Inactive destinations are marked stale and load on mount. Never touch writes. */
+type TabPressListener = () => void;
+function tabListenerMap(): Map<string, Set<TabPressListener>> {
+  const host = globalThis as { __himotoTabPressListeners?: Map<string, Set<TabPressListener>> };
+  if (!host.__himotoTabPressListeners) host.__himotoTabPressListeners = new Map();
+  return host.__himotoTabPressListeners;
+}
+export function notifyTabPress(tab: string) {
+  const listeners = tabListenerMap().get(tab);
+  if (!listeners) return;
+  for (const fn of listeners) {
+    try { fn(); } catch {}
+  }
+}
 export function refreshTabLookups(client: QueryClient, tab: string) {
   const families: Record<string, readonly string[]> = {
     index: ['overview', 'workspace', 'operations', 'operations-overview'],

@@ -1,6 +1,6 @@
 import { Tabs } from "expo-router";
 import { useQueryClient } from '@tanstack/react-query';
-import { refreshTabLookups } from '@/lib/query-persistence';
+import { notifyTabPress, refreshTabLookups } from '@/lib/query-persistence';
 import {
   CarFront,
   Files,
@@ -21,7 +21,17 @@ export default function TabLayout() {
   const permissions = session?.user.permissions || [];
   return (
     <Tabs
-      screenListeners={({ route }) => ({ tabPress: () => { requestAnimationFrame(() => { setTimeout(() => { void refreshTabLookups(cache, route.name); }, 0); }); } })}
+      screenListeners={({ route }) => ({
+        tabPress: () => {
+          notifyTabPress(route.name);
+          requestAnimationFrame(() => {
+            setTimeout(() => {
+              notifyTabPress(route.name);
+              void refreshTabLookups(cache, route.name);
+            }, 0);
+          });
+        },
+      })}
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: theme.primary,
@@ -34,7 +44,16 @@ export default function TabLayout() {
           paddingBottom: Math.max(insets.bottom, 8),
         },
         tabBarLabelStyle: { fontSize: 11.5, lineHeight: 15, fontWeight: "600" },
-        tabBarLabel: ({ color, children }) => <Text numberOfLines={2} style={{ color, fontSize: 11.5, lineHeight: 15, fontWeight: '600', textAlign: 'center', maxWidth: '100%' }}>{children}</Text>,
+        tabBarLabel: ({ color, children }) => (
+          <Text
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.78}
+            style={{ color, fontSize: 11.5, lineHeight: 15, fontWeight: '600', textAlign: 'center', maxWidth: '100%' }}
+          >
+            {children}
+          </Text>
+        ),
         tabBarHideOnKeyboard: true,
         sceneStyle: { backgroundColor: theme.background },
       }}

@@ -6,7 +6,7 @@ import { router,useLocalSearchParams } from 'expo-router';
 import { useSession } from '@/providers/session';
 import { pendingWrites } from '@/lib/pending-writes';
 import { useTheme } from '@/theme';
-import { Button,Card,InfoBanner,InlineError,KeyValueRow,StateView,StatusBadge } from '@/components/ui';
+import { Button,Card,InfoBanner,InlineError,StateView,StatusBadge } from '@/components/ui';
 import { ManagedAccountSummary } from '@/components/managed-account-summary';
 function Result({requestKey}:{requestKey:string}){const{api,session}=useSession(),cache=useQueryClient(),theme=useTheme(),[busy,setBusy]=useState(false),[error,setError]=useState(''),alive=useRef(true);useEffect(()=>{alive.current=true;return()=>{alive.current=false;};},[]);const query=useQuery({queryKey:['managed-account-result',session!.user.id,requestKey],queryFn:({signal})=>api!.managedAccountResult(requestKey,signal),retry:false});if(query.isPending)return <StateView title="Đang đối chiếu tài khoản" loading />;if(query.isError)return <StateView title="Chưa đọc được xác nhận tài khoản" message={query.error.message} retry={()=>{void query.refetch();}} />;const r=query.data;
   async function acknowledge(){if(!api||!session||busy)return;setBusy(true);setError('');try{const scope={origin:api.origin,userId:session.user.id,storeId:session.user.allStores?null:session.user.storeId,allStores:session.user.allStores},original=await pendingWrites.entryScope(scope,r.operation,requestKey);if(original)await pendingWrites.complete(original,r.operation,requestKey);for(const key of [['managed-accounts'],['managed-account'],['managed-account-options'],['directory','staff']])void cache.invalidateQueries({queryKey:key});if(!alive.current)return;if(r.ownPasswordChange)router.replace('/(tabs)/account');else if(r.deleted)router.replace('/managed-accounts');else router.replace({pathname:'/managed-account/[id]',params:{id:String(r.receipt.id)}});}catch(cause){if(alive.current)setError((cause as Error).message);}finally{if(alive.current)setBusy(false);}}
@@ -14,17 +14,14 @@ function Result({requestKey}:{requestKey:string}){const{api,session}=useSession(
     <ScrollView contentContainerStyle={{padding:16,paddingBottom:36,gap:12,maxWidth:760,width:'100%',alignSelf:'center'}}>
       <Card style={{gap:10}}>
         <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8,flexWrap:'wrap'}}>
-          <Text accessibilityRole="header" style={{color:theme.success,fontSize:20,fontWeight:'800',flexShrink:1}}>Đã ghi nhận thao tác tài khoản</Text>
-          <StatusBadge label={r.ownPasswordChange?'Đổi mật khẩu':r.deleted?'Đã xóa':'Đã cập nhật'} tone={r.deleted?'warning':'success'} />
+          <Text accessibilityRole="header" style={{color:theme.success,fontSize:20,fontWeight:'800',flexShrink:1}}>Đã cập nhật tài khoản</Text>
+          <StatusBadge label={r.ownPasswordChange?'Đổi mật khẩu':r.deleted?'Đã xóa':'Hoàn tất'} tone={r.deleted?'warning':'success'} />
         </View>
-        <KeyValueRow label="Tài khoản" value={`#${r.receipt.id}`} />
-        <KeyValueRow label="Phiên bản lúc ghi" value={String(r.receipt.revision)} />
-        <Text selectable style={{color:theme.muted,fontSize:12}}>Mã gốc: {requestKey}</Text>
-        <InfoBanner tone={r.deleted?'warning':'info'} message={r.ownPasswordChange?'Đã ghi nhận đổi mật khẩu của tài khoản này. Mật khẩu không nằm trong xác nhận.':r.deleted?'Quyền đăng nhập đã được xóa; lịch sử nghiệp vụ được giữ.':'Bên dưới là thông tin hiện tại, có thể đã thay đổi sau lần ghi gốc. Xác nhận không chứa mật khẩu.'} />
+        <InfoBanner tone={r.deleted?'warning':'success'} message={r.ownPasswordChange?'Mật khẩu tài khoản đã được cập nhật.':r.deleted?'Quyền đăng nhập đã được xóa; lịch sử nghiệp vụ được giữ nguyên.':'Thông tin và phân quyền tài khoản đã được lưu trên hệ thống.'} />
       </Card>
       {r.current&&<ManagedAccountSummary account={r.current} />}
       {!!error&&<InlineError message={error} />}
-      <Button label="Đã kiểm tra xác nhận tài khoản" loading={busy} onPress={()=>{void acknowledge();}} />
+      <Button label="Quay lại tài khoản" loading={busy} onPress={()=>{void acknowledge();}} />
     </ScrollView>
   </SafeAreaView>;
 }

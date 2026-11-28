@@ -97,6 +97,64 @@ const TELEGRAM_STATUS_LABELS: Record<string, string> = {
   unknown: "Cần đối chiếu",
 };
 
+const FOLLOWUP_CONTACT_LABELS: Record<string, string> = {
+  uncontacted: "Chưa liên hệ",
+  contacted: "Đã liên hệ",
+  unreachable: "Không liên lạc được",
+  promised: "Khách hẹn đóng",
+};
+
+const FOLLOWUP_HANDLING_LABELS: Record<string, string> = {
+  branch: "PGD theo dõi",
+  escalated: "Báo quản lý / thu hồi",
+  recovering: "Đang thu hồi xe",
+  closed: "Đã xử lý xong",
+};
+
+function InlineFollowupCard({ id, status }: { id: string; status: string }) {
+  const theme = useTheme();
+  const { api, session } = useSession();
+  const enabled = status !== "draft" && Boolean(api && typeof api.collectionFollowup === "function");
+  const query = useQuery({
+    queryKey: ["collection-followup-inline", api?.origin, session?.user.id, id],
+    queryFn: ({ signal }) => api!.collectionFollowup(id, signal),
+    enabled,
+    staleTime: 15_000,
+    retry: false,
+  });
+  if (status === "draft") return null;
+  const f = query.data?.followup;
+  const hasContent = Boolean(
+    f && (f.customer_condition || f.notes || f.contact_status !== "uncontacted" || f.handling_status !== "branch"),
+  );
+  return (
+    <Card style={{ gap: 8 }}>
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+        <Text style={[styles.cardTitle, { color: theme.text, flex: 1 }]}>Ghi chú tình trạng khách</Text>
+        <Button size="sm" secondary label="Làm mới" loading={query.isFetching} onPress={() => void query.refetch()} />
+      </View>
+      {query.isError && <InlineError message={(query.error as Error).message} />}
+      {query.isPending && !f && <Text style={{ color: theme.muted, fontSize: 13 }}>Đang tải ghi chú tình trạng khách…</Text>}
+      {f && (
+        <View style={{ gap: 2 }}>
+          <KeyValueRow label="Liên hệ" value={FOLLOWUP_CONTACT_LABELS[f.contact_status] || f.contact_status} />
+          <KeyValueRow label="Xử lý" value={FOLLOWUP_HANDLING_LABELS[f.handling_status] || f.handling_status} />
+          <KeyValueRow label="Tình trạng khách" selectable value={f.customer_condition || "Chưa ghi nhận"} />
+          <KeyValueRow label="Ghi chú liên hệ" selectable value={f.notes || "Chưa có ghi chú"} />
+          {!!f.updated_at && <KeyValueRow label="Cập nhật gần nhất" value={dateTime(f.updated_at)} />}
+        </View>
+      )}
+      <Button
+        size="sm"
+        secondary={!hasContent}
+        label={query.data?.can_write === false ? "Xem ghi chú tình trạng khách" : hasContent ? "Cập nhật ghi chú tình trạng khách" : "Thêm ghi chú tình trạng khách"}
+        icon={<FilePenLine size={14} color={!hasContent ? theme.text : theme.primaryText} />}
+        onPress={() => router.push({ pathname: "/collection-followup/[id]", params: { id } })}
+      />
+    </Card>
+  );
+}
+
 function InlineChangesTab({ id }: { id: string }) {
   const theme = useTheme();
   const { api, session } = useSession();
@@ -989,14 +1047,12 @@ export function ContractDetailView({
                       onPress={() => router.push({ pathname: "/contract-operation/[action]/[id]", params: { id, action: "payment_settlement" } })}
                     />
                   )}
-                  {(record.monitoring?.collectionOverdue || isBadDebt || status === "overdue") && (
-                    <Button
-                      size="sm"
-                      secondary
-                      label="Tình trạng khách và ghi chú công nợ"
-                      onPress={() => router.push({ pathname: "/collection-followup/[id]", params: { id } })}
-                    />
-                  )}
+                  <Button
+                    size="sm"
+                    secondary
+                    label="Ghi chú tình trạng khách"
+                    onPress={() => router.push({ pathname: "/collection-followup/[id]", params: { id } })}
+                  />
                 </>
               )}
             </Card>
@@ -1064,6 +1120,8 @@ export function ContractDetailView({
                 />
               </View>
             </Card>
+
+            <InlineFollowupCard id={id} status={status} />
 
             {detail && detail.customer.relatives.length > 0 && (
               <Card style={{ gap: 6 }}>
@@ -1254,6 +1312,8 @@ export function ContractDetailView({
               <KeyValueRow label="Ghi chú hợp đồng" selectable value={detail?.notes} />
               <KeyValueRow label="Cảnh báo" selectable value={detail?.customer.customerNote || record.customerNote} />
             </Card>
+
+            <InlineFollowupCard id={id} status={status} />
 
             <Card style={{ gap: 8 }}>
               <Text style={[styles.cardTitle, { color: theme.text }]}>Hồ sơ & Chứng từ</Text>

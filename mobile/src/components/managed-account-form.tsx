@@ -2,6 +2,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useEffect, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { router, usePreventRemove } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { uuid } from 'expo';
 import { Check, Square } from 'lucide-react-native';
 import { useSession } from '@/providers/session';
@@ -39,6 +40,7 @@ export function ManagedAccountForm({
   storeId: number | null;
 }) {
   const { api, session } = useSession();
+  const cache = useQueryClient();
   const theme = useTheme();
   const scoped = isOwnershipManager(session?.user);
   const isAdminActor = session?.user.role === 'admin';
@@ -54,7 +56,7 @@ export function ManagedAccountForm({
   const [exit, setExit] = useState<(() => void) | null>(null);
   const [leaving, setLeaving] = useState(false);
   const [issued, setIssued] = useState<MobileStaffCredentials | null>(null);
-  const [receiptKey, setReceiptKey] = useState('');
+  const [savedAccountId, setSavedAccountId] = useState<number | null>(null);
   const alive = useRef(true);
   const running = useRef(false);
 
@@ -126,11 +128,15 @@ export function ManagedAccountForm({
     }
   }
 
-  function openResult(key: string) {
+  function finishToAccount(accountId: number) {
     setIssued(null);
     setLeaving(true);
     prevent();
-    router.replace({ pathname: '/managed-account-result/[key]', params: { key } });
+    if (accountId > 0) {
+      router.replace({ pathname: '/managed-account/[id]', params: { id: String(accountId), saved: '1' } });
+    } else {
+      router.replace('/managed-accounts');
+    }
   }
 
   async function save() {
@@ -162,12 +168,24 @@ export function ManagedAccountForm({
         { ...form, ...(record ? { revision: record.revision } : {}) },
         intent.key,
       );
+      await pendingWrites.complete(scope, operation, intent.key).catch(() => {});
+      for (const key of [['managed-accounts'], ['managed-account'], ['managed-account-options'], ['directory', 'staff']]) {
+        void cache.invalidateQueries({ queryKey: key });
+      }
       if (!alive.current) return;
+      setPending(false);
       setForm((previous) => ({ ...previous, password: '' }));
+      const nextId = result.id || record?.id || 0;
       if (result.credentials) {
-        setReceiptKey(intent.key);
+        setSavedAccountId(nextId);
         setIssued(result.credentials);
-      } else openResult(intent.key);
+      } else if (nextId > 0) {
+        finishToAccount(nextId);
+      } else {
+        setLeaving(true);
+        prevent();
+        router.replace('/managed-accounts');
+      }
     } catch (cause) {
       if (alive.current) setError((cause as Error).message);
     } finally {
@@ -358,7 +376,7 @@ export function ManagedAccountForm({
               }}
             />
           )}
-          {issued && <AccountIssuedCredentials value={issued} onClose={() => openResult(receiptKey)} />}
+          {issued && <AccountIssuedCredentials value={issued} onClose={() => finishToAccount(savedAccountId || 0)} />}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

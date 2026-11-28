@@ -22,6 +22,7 @@ import {
   Printer,
   QrCode,
   RotateCcw,
+  ShieldBan,
   ShieldCheck,
   Wallet,
   X,
@@ -47,12 +48,14 @@ export function RecordActionsModal({
   kind,
   record,
   permissions,
+  onToggleBlacklist,
 }: {
   visible: boolean;
   onClose: () => void;
   kind: CatalogueKind;
   record: MobileRecord | null;
   permissions: readonly string[];
+  onToggleBlacklist?: (record: MobileRecord) => void;
 }) {
   const theme = useTheme();
 
@@ -159,6 +162,22 @@ export function RecordActionsModal({
         onPress: () =>
           router.push({
             pathname: "/reminder-editor/[id]",
+            params: { id },
+          }),
+      });
+    }
+
+    // 5b. Ghi chú tình trạng khách (khớp Web ContractCollectionNote)
+    if (status !== "draft" && (has("contracts.draft") || has("finance.write"))) {
+      actions.push({
+        id: "customer_followup",
+        label: "Ghi chú tình trạng khách",
+        description: "Xem và cập nhật tình trạng liên hệ, ghi chú khách",
+        icon: FilePenLine,
+        color: "#0284C7",
+        onPress: () =>
+          router.push({
+            pathname: "/collection-followup/[id]",
             params: { id },
           }),
       });
@@ -583,6 +602,19 @@ export function RecordActionsModal({
             params: { entity: "customers", id, kind: "customer", referenceId: id },
           }),
       });
+      if (onToggleBlacklist) {
+        const isBlacklisted = status === "blacklist";
+        actions.push({
+          id: "blacklist",
+          label: isBlacklisted ? "Bỏ Blacklist" : "Đưa vào Blacklist",
+          description: isBlacklisted
+            ? "Khôi phục trạng thái bình thường cho khách"
+            : "Đánh dấu khách nợ xấu / hạn chế cho thuê",
+          icon: isBlacklisted ? ShieldCheck : ShieldBan,
+          color: isBlacklisted ? "#059669" : "#DC2626",
+          onPress: () => onToggleBlacklist(record),
+        });
+      }
     }
 
     if (has("contracts.read")) actions.push({
