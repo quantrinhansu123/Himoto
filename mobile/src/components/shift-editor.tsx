@@ -16,7 +16,7 @@ import { SHIFT_REPORT_TABS } from "../../../shared/shift-report-workflow";
 import { KeyboardFormScrollView } from "./keyboard-form-scroll-view";
 import { ConfirmEdit } from "./editor-sheet";
 import { ApiError } from '@/lib/api';
-import { compareShiftStock, isShiftStockDay } from '../../../shared/shift-stock-check';
+import { compareShiftStock, unexplainedShiftStock, isShiftStockDay } from '../../../shared/shift-stock-check';
 import { blankEndShiftFields, restoreShiftDraft, serializeShiftDraft, shiftFormIssues, type ShiftFormIssue } from '../../../shared/shift-report-fields';
 
 const tabs = SHIFT_REPORT_TABS.map(([value, label]) => ({ value, label }));
@@ -221,9 +221,11 @@ export function ShiftEditor({ record, options, initialStore, initialReportType =
       if (record && status === 'submitted') await requireShiftPhotosSaved(scope, record.id, 'pgd');
       if (record && status === 'submitted' && stockPhotosRequired) {
         const stock = await api.shiftStock(record.id);
-        const { missing, unexpected } = compareShiftStock(stock.expected, stock.captures);
+        const comparison = compareShiftStock(stock.expected, stock.captures);
+        const missing = unexplainedShiftStock(comparison.missing, input.external_vehicles);
+        const { unexpected } = comparison;
         if (missing.length || unexpected.length) {
-          setStockIssue(`Còn ${missing.length} xe thiếu ảnh và ${unexpected.length} xe lệch kho. Mở hồ sơ báo cáo để hoàn tất kiểm kê.`);
+          setStockIssue(`Còn ${missing.length} xe thiếu ảnh chưa giải trình và ${unexpected.length} xe lệch kho. Ghi biển số và lý do ở mục xe giữ bên ngoài hoặc bổ sung ảnh.`);
           return;
         }
         setStockIssue("");

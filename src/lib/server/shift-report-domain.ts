@@ -8,7 +8,7 @@ import { readShiftSnapshot } from './shift-audits';
 import { readOwnershipReport } from './ownership-report';
 import { ownershipReportText,validateOwnershipSubmission } from '@/lib/management/ownership-report';
 import { queueReportTelegram,shiftTelegramAttachments } from './report-telegram';
-import { compareShiftStock,isShiftStockDay,SHIFT_STOCK_CATEGORY,type ShiftStockCapture,type ShiftStockVehicle } from '../../../shared/shift-stock-check';
+import { compareShiftStock,unexplainedShiftStock,isShiftStockDay,SHIFT_STOCK_CATEGORY,type ShiftStockCapture,type ShiftStockVehicle } from '../../../shared/shift-stock-check';
 import { expectedShiftStock,storedShiftStock } from './shift-stock-photos';
 import { lockShiftClose } from './shift-close-lock';
 import {
@@ -117,10 +117,11 @@ export async function saveShiftReport(client:Database,actor:Omit<DataAccess,'ope
     if (verifyStock) {
       const expected = await expectedShiftStock(client, input.store_id, savedPayload);
       const {missing,unexpected} = compareShiftStock(expected, stockCaptures);
-      if (missing.length || unexpected.length) {
-        throw new ShiftRequestError(`Còn ${missing.length} xe thiếu ảnh, ${unexpected.length} xe đã chụp lệch kho. Mở Kiểm kê xe bằng ảnh để xử lý.`, 422, 'SHIFT_STOCK_INCOMPLETE');
+      const unexplained = unexplainedShiftStock(missing, input.external_vehicles);
+      if (unexplained.length || unexpected.length) {
+        throw new ShiftRequestError(`Còn ${unexplained.length} xe thiếu ảnh và chưa có giải trình, ${unexpected.length} xe đã chụp lệch kho. Ghi biển số và lý do ở mục xe giữ bên ngoài hoặc bổ sung ảnh.`, 422, 'SHIFT_STOCK_INCOMPLETE');
       }
-      input.vehicles = expected.length;
+      input.vehicles = expected.length - missing.length;
       expectedForAudit = expected;
     }
     if(raw.status==='submitted'&&input.ownership_report){

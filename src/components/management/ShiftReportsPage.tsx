@@ -19,7 +19,7 @@ import {OwnershipReportFields} from './OwnershipReportFields';
 import {ShiftTelegramStatus} from './ShiftTelegramStatus';
 import {ShiftInventoryCheck} from './ShiftInventoryCheck';
 import { SHIFT_REPORT_TABS, SHIFT_REPORT_PROGRESS, SHIFT_REPORT_DESCRIPTION, matchesShiftReportProgress } from '../../../shared/shift-report-workflow';
-import {compareShiftStock,isShiftStockCheck,isShiftStockDay,type ShiftStockCapture,type ShiftStockCheck} from '../../../shared/shift-stock-check';
+import {compareShiftStock,unexplainedShiftStock,isShiftStockCheck,isShiftStockDay,type ShiftStockCapture,type ShiftStockCheck} from '../../../shared/shift-stock-check';
 import {ShiftStockPanel, ShiftStockProofs} from './ShiftStockPanel';
 import {ShiftReopenPanel} from './ShiftReopenPanel';
 import {ShiftGpsAlerts} from './ShiftGpsAlerts';
@@ -301,10 +301,11 @@ export function ShiftReportsPage({ reportType = 'end_shift' }: { reportType?: Sh
             const check=await api<ShiftStockCheck>(`/api/auth/shift-reports/${record.id}/stock-photos`);
             if(!isShiftStockCheck(check)||check.revision!==record.revision)throw Error('Kiểm kê đã thay đổi. Mở lại báo cáo để đối chiếu.');
             const result=compareShiftStock(check.expected,check.captures);
+            result.missing=unexplainedShiftStock(result.missing,input.external_vehicles);
             if(result.missing.length||result.unexpected.length){
               const plates=result.missing.map(vehicle=>vehicle.license||vehicle.name||`#${vehicle.id}`);
               missing.push(message([
-                result.missing.length?`Thiếu ảnh ${result.missing.length} xe (${plates.slice(0,6).join(', ')}${plates.length>6?', …':''}).`:'',
+                result.missing.length?`Thiếu ảnh ${result.missing.length} xe (${plates.slice(0,6).join(', ')}${plates.length>6?', …':''}). Bổ sung ảnh hoặc ghi biển số và lý do ở mục xe giữ bên ngoài.`:'',
                 result.unexpected.length?`Có ${result.unexpected.length} ảnh lệch kho cần đối chiếu.`:'',
               ].filter(Boolean).join(' ')));
             }
@@ -396,7 +397,7 @@ export function ShiftReportsPage({ reportType = 'end_shift' }: { reportType?: Sh
     </div>
     {editing&&!showList&&auditTarget&&<div className="shift-workflow" role="group" aria-label="Bước báo cáo"><button type="button" className="mg-button" aria-pressed={workflow==='pgd'} onClick={()=>setWorkflow('pgd')}>1. PGD kiểm kê</button><button type="button" className="mg-button" aria-pressed={workflow==='audit'} onClick={()=>{setAuditOpened(true);setWorkflow('audit');}}>2. KTNB đối soát</button></div>}
     {editing && <form hidden={showList||workflow!=='pgd'} className="mg-data-panel shift-form" noValidate onSubmit={e => { e.preventDefault(); void save(false); }}>
-      <div className="shift-form-title"><ClipboardList size={22}/><div><h2>BÁO CÁO KIỂM KÊ PGD{input.date ? ' - NGÀY '+input.date.split('-').reverse().join('/') : ''}</h2><p>{record?.status === 'submitted' ? 'Đã chốt · Chỉ xem' : stockPhotosRequired ? 'Bản nháp · Cần ảnh cận biển số từng xe Lưu kho để chốt' : 'Bản nháp · Ảnh đính kèm không bắt buộc'}</p></div></div>
+      <div className="shift-form-title"><ClipboardList size={22}/><div><h2>BÁO CÁO KIỂM KÊ PGD{input.date ? ' - NGÀY '+input.date.split('-').reverse().join('/') : ''}</h2><p>{record?.status === 'submitted' ? 'Đã chốt · Chỉ xem' : stockPhotosRequired ? 'Bản nháp · Xe thiếu ảnh cần ghi biển số và lý do ở mục xe giữ bên ngoài' : 'Bản nháp · Ảnh đính kèm không bắt buộc'}</p></div></div>
       <ShiftGpsAlerts alerts={record?.gps_alerts} />
       {!!issues.length&&<div ref={issueList} tabIndex={-1} className="mg-billing-reminder shift-missing-fields" role="alert">
         <strong>Mục cần bổ sung trước khi chốt</strong>

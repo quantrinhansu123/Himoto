@@ -93,6 +93,11 @@ export function compareShiftStock(expected: ShiftStockVehicle[], captures: Shift
   };
 }
 
+export function unexplainedShiftStock(missing: ShiftStockVehicle[], external: {plate: string; reason: string}[] = []) {
+  const explained = new Set(external.filter(row => row.reason.trim()).map(row => plateKey(row.plate)).filter(Boolean));
+  return missing.filter(vehicle => !plateKey(vehicle.license) || !explained.has(plateKey(vehicle.license)));
+}
+
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 const positiveId = (value: unknown) => Number.isSafeInteger(value) && Number(value) > 0;
 const photoId = (value: unknown) => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value);
