@@ -12,7 +12,7 @@ import { useWorkspace } from '@/hooks/use-workspace';
 import { Button, Card, Chip, InfoBanner, InlineError, KeyValueRow, PaginationBar, SkeletonList, StateView, StatusBadge } from '@/components/ui';
 import { ChoiceField, FormField } from '@/components/form-fields';
 import { DateField } from '@/components/date-field';
-import { EditorSheet } from '@/components/editor-sheet';
+import { ConfirmEdit, EditorSheet } from '@/components/editor-sheet';
 import { ApiError } from '@/lib/api';
 import { captureAttendancePhoto, locateAttendance } from '@/lib/attendance-capture';
 import { loadAttendancePending, storeAttendancePending, clearAttendancePending, discardAttendancePending, refreshAttendancePendingLocation, type AttendancePending } from '@/lib/attendance-pending';
@@ -55,6 +55,8 @@ export function AttendanceScreen({ historyOnly = false }: { historyOnly?: boolea
   const canReviewOther = canReviewAttendance(session!.user);
   const historyStore = canReviewOther ? store : 'all';
   const [editing, setEditing] = useState<AttendanceEntry | null>(null);
+  const [deleting, setDeleting] = useState<AttendanceEntry | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const query = useQuery({ queryKey: ['attendance', session!.user.id, session!.user.storeId, session!.user.permissions.join(','), canReviewOther, historyOnly, from, to, historyStore, page], queryFn: async ({ signal }) => historyOnly ? api!.attendance(new URLSearchParams({ from, to, store: historyStore, page: String(page) }).toString(), signal) : { ...await api!.attendanceOverview(signal), rows: [] as AttendanceEntry[], total: 0, page: 1 }, enabled: !!api && (!historyOnly || from <= to) });
   const { server_now: serverNow } = query.data ?? {};
@@ -230,6 +232,31 @@ export function AttendanceScreen({ historyOnly = false }: { historyOnly?: boolea
     await submitClockAttempt(attempt);
     await acknowledge(attempt.id);
   }
+  async function confirmDelete() {
+    if (!deleting || !api || deleteBusy) return;
+    const target = deleting;
+    setDeleteBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      await api.manageAttendance('DELETE', {
+        id: target.id,
+        original_in: target.clock_in_at,
+        original_out: target.clock_out_at,
+      });
+      if (!alive.current) return;
+      setDeleting(null);
+      setNotice(`Đã xóa lượt chấm công của ${target.staff_name}.`);
+      await query.refetch();
+    } catch (cause) {
+      if (alive.current) {
+        setDeleting(null);
+        setError((cause as Error).message || 'Chưa xóa được lượt chấm công.');
+      }
+    } finally {
+      if (alive.current) setDeleteBusy(false);
+    }
+  }
   const copy = (text: string) => <Text style={{ color: theme.muted, fontSize: 13.5, lineHeight: 20 }}>{text}</Text>;
   const shiftSummaryLabel = query.data
     ? query.data.shift_code === 'G1+G3' && !query.data.latest
@@ -311,6 +338,8 @@ export function AttendanceScreen({ historyOnly = false }: { historyOnly?: boolea
             {canReviewOther && <ChoiceField label="Cơ sở xem lịch sử" value={store} searchable choices={[{ value: 'all', label: 'Tất cả cơ sở được phép' }, ...(workspace.data?.stores || []).map(item => ({ value: String(item.id), label: item.name }))]} onChange={value => { setStore(value); setPage(1); }} />}
             {from > to && <InlineError message="Ngày kết thúc phải bằng hoặc sau ngày bắt đầu." />}
           </Card>}
+          {!!notice && <InfoBanner tone="success" message={notice} />}
+          {!!error && !action && <InlineError message={error} />}
         </>}
         {query.isError && <StateView title="Chưa tải được chấm công" message={query.error.message} retry={() => { void query.refetch(); }} />}
         {historyOnly && query.isPending && from <= to && <SkeletonList count={4} lines={3} />}
@@ -335,10 +364,17 @@ export function AttendanceScreen({ historyOnly = false }: { historyOnly?: boolea
           {row.late_minutes !== null && <KeyValueRow label="Trễ / sớm" valueColor={row.late_minutes ? theme.warning : theme.success} value={`${row.late_minutes ? `Muộn ${row.late_minutes}p` : 'Đúng giờ'}${row.early_leave_minutes ? ` · Sớm ${row.early_leave_minutes}p` : ''}`} />}
           <KeyValueRow label="Công thực tế" strong value={`${row.earned_credit != null ? row.earned_credit.toLocaleString('vi-VN', { maximumFractionDigits: 4 }) : row.credit_on_other_row ? 'Gộp cùng ca' : row.standard_credit == null ? 'Chưa đăng ký ca' : 'Chưa chốt'}${typeof row.standard_credit === 'number' ? ` / ${row.standard_credit.toLocaleString('vi-VN')}` : ''}`} />
         </View>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingTop: 2 }}>
-          <Button size="sm" equalWidth secondary label={`${evidence === String(row.id) ? 'Ẩn' : 'Xem'} ảnh & GPS`} onPress={() => setEvidence(current => current === String(row.id) ? null : String(row.id))} />
-          {row.can_manage && <Button size="sm" equalWidth secondary label="Sửa giờ" onPress={() => setEditing(row)} />}
-          {canReview && <Button size="sm" equalWidth secondary label="Đăng ký ca" onPress={() => router.push({ pathname: '/shift-registrations', params: { date: dutyToday(new Date(row.clock_in_at)), staff: row.staff_name } })} />}
+        <View style={{ gap: 8, paddingTop: 2 }}>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <Button size="sm" equalWidth secondary label={`${evidence === String(row.id) ? 'Ẩn' : 'Xem'} ảnh & GPS`} onPress={() => setEvidence(current => current === String(row.id) ? null : String(row.id))} />
+            {canReview && <Button size="sm" equalWidth secondary label="Đăng ký ca" onPress={() => router.push({ pathname: '/shift-registrations', params: { date: dutyToday(new Date(row.clock_in_at)), staff: row.staff_name } })} />}
+          </View>
+          {row.can_manage && (
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <Button size="sm" equalWidth secondary label="Sửa giờ" disabled={deleteBusy} onPress={() => setEditing(row)} />
+              <Button size="sm" equalWidth secondary danger label="Xóa" disabled={deleteBusy} onPress={() => setDeleting(row)} />
+            </View>
+          )}
         </View>
         {evidence === String(row.id) && <View style={{ gap: 6, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 8 }}>
           {row.can_manage && (
@@ -354,6 +390,16 @@ export function AttendanceScreen({ historyOnly = false }: { historyOnly?: boolea
       ListEmptyComponent={historyOnly && !query.isPending && !query.isError ? <StateView title="Chưa có chấm công" message="Không có lượt chấm công trong khoảng ngày đã chọn." /> : undefined}
       ListFooterComponent={historyOnly && query.data && query.data.total > 50 ? <PaginationBar page={query.data.page} pages={Math.max(1, Math.ceil(query.data.total / 50))} total={query.data.total} unit="lượt" disabled={query.isFetching} onChange={setPage} /> : undefined} />
     {editing && <AttendanceEdit row={editing} onClose={() => setEditing(null)} onReload={() => { setEditing(null); void query.refetch(); }} />}
+    {deleting && (
+      <ConfirmEdit
+        title="Xóa lượt chấm công?"
+        message={`${deleting.staff_name} · Vào: ${dateTime(deleting.clock_in_at)} · Ra: ${deleting.clock_out_at ? dateTime(deleting.clock_out_at) : 'Chưa chấm ra'}\nXóa lượt chấm công này cùng ảnh và vị trí GPS đã ghi nhận?`}
+        confirmLabel="Xóa lượt chấm công"
+        busy={deleteBusy}
+        onCancel={() => { if (!deleteBusy) setDeleting(null); }}
+        onConfirm={() => { void confirmDelete(); }}
+      />
+    )}
     {action && <EditorSheet title={action === 'in' ? 'Chấm công vào ca' : 'Chấm công ra ca'} onClose={() => { if (!busy) { clockSessionRef.current++; initialLocationRef.current = null; setLocating(false); setAction(null); if (!pending) { photo?.dispose(); setPhoto(null); setLocation(null); } } }}>
       <ScrollView contentContainerStyle={{ padding: 20, gap: 16 }}>
         {copy(locating ? 'Đang tự động lấy vị trí GPS… Nếu thiết bị hỏi quyền vị trí, hãy chọn Cho phép. Bạn có thể chụp ảnh ngay trong lúc chờ.' : 'Chụp ảnh hiện tại để xác nhận chấm công. Vị trí gần nhất (trong 60 giây) sẽ được dùng ngay khi xác nhận.')}

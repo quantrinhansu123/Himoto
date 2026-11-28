@@ -2,7 +2,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useEffect, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { router, usePreventRemove } from 'expo-router';
-import { useQueryClient } from '@tanstack/react-query';
 import { uuid } from 'expo';
 import { Check, Square } from 'lucide-react-native';
 import { useSession } from '@/providers/session';
@@ -40,7 +39,6 @@ export function ManagedAccountForm({
   storeId: number | null;
 }) {
   const { api, session } = useSession();
-  const cache = useQueryClient();
   const theme = useTheme();
   const scoped = isOwnershipManager(session?.user);
   const isAdminActor = session?.user.role === 'admin';
@@ -145,33 +143,42 @@ export function ManagedAccountForm({
     setBusy(true);
     setConfirm(false);
     setError('');
+    const scope = {
+      origin: api.origin,
+      userId: session.user.id,
+      storeId: session.user.allStores ? null : session.user.storeId,
+      allStores: session.user.allStores,
+    };
+    const operation = record ? `account.update:${record.id}` : 'account.create';
+    const conflicts = record ? accountWriteOperations(record.id) : [operation];
+    let activeKey = '';
     try {
-      const scope = {
-        origin: api.origin,
-        userId: session.user.id,
-        storeId: session.user.allStores ? null : session.user.storeId,
-        allStores: session.user.allStores,
-      };
-      const operation = record ? `account.update:${record.id}` : 'account.create';
-      const intent = await pendingWrites.reserveExclusive(
-        scope,
-        operation,
-        record ? accountWriteOperations(record.id) : [operation],
-        () => uuid.v4().toLowerCase(),
-      );
+      let intent = await pendingWrites.reserveExclusive(scope, operation, conflicts, () => uuid.v4().toLowerCase());
       if (!alive.current) return;
+      if (!intent.created) {
+        try {
+          await api.resolveWrite(intent.key, intent.operation);
+        } catch {
+          await api.managedAccountResult(intent.key);
+        }
+        const original = await pendingWrites.entryScope(scope, intent.operation, intent.key);
+        await pendingWrites.complete(original || scope, intent.operation, intent.key);
+        intent = await pendingWrites.reserveExclusive(scope, operation, conflicts, () => uuid.v4().toLowerCase());
+        if (!alive.current) return;
+        if (!intent.created) {
+          setPending(true);
+          throw Error('Còn thay đổi tài khoản chưa đối chiếu. Mở Tài khoản để kiểm tra mã gốc.');
+        }
+      }
+      activeKey = intent.key;
       setPending(true);
-      if (!intent.created)
-        throw Error('Còn thay đổi tài khoản chưa đối chiếu. Mở Tài khoản để kiểm tra mã gốc.');
       const result = await api.saveManagedAccount(
         record ? String(record.id) : null,
         { ...form, ...(record ? { revision: record.revision } : {}) },
         intent.key,
       );
       await pendingWrites.complete(scope, operation, intent.key).catch(() => {});
-      for (const key of [['managed-accounts'], ['managed-account'], ['managed-account-options'], ['directory', 'staff']]) {
-        void cache.invalidateQueries({ queryKey: key });
-      }
+      activeKey = '';
       if (!alive.current) return;
       setPending(false);
       setForm((previous) => ({ ...previous, password: '' }));
@@ -179,14 +186,18 @@ export function ManagedAccountForm({
       if (result.credentials) {
         setSavedAccountId(nextId);
         setIssued(result.credentials);
-      } else if (nextId > 0) {
-        finishToAccount(nextId);
       } else {
-        setLeaving(true);
-        prevent();
-        router.replace('/managed-accounts');
+        finishToAccount(nextId);
       }
     } catch (cause) {
+      const status = typeof (cause as { status?: unknown })?.status === 'number' ? (cause as { status: number }).status : 0;
+      if (activeKey && status >= 400 && status < 500) {
+        const resolved = await api.resolveWrite(activeKey, operation).catch(() => null);
+        if (resolved && resolved.status === 'cancelled') {
+          await pendingWrites.complete(scope, operation, activeKey).catch(() => {});
+          if (alive.current) setPending(false);
+        }
+      }
       if (alive.current) setError((cause as Error).message);
     } finally {
       running.current = false;
